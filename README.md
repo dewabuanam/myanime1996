@@ -1,0 +1,44 @@
+# MyAnime1996
+
+A Tauri v2 + React + TypeScript desktop anime metadata browser styled with a retro VHS/CRT interface.
+
+## Scripts
+
+- `npm run dev` starts the Vite frontend.
+- `npm run build` type-checks and builds the frontend.
+- `npm run tauri:dev` starts the desktop app.
+- `npm run tauri:build` creates a desktop bundle.
+
+Jikan provides anime metadata only. This app includes local player-style controls and watch progress, with optional import-based source plugins for non-trailer playback.
+
+## Plugin Host Policy
+
+- Base desktop policy is intentionally broad for plugin development: CSP allows HTTPS origins and HTTP capability allows wildcard HTTP/HTTPS URLs.
+- Plugin artifacts should still declare `plugin.hostRequirements` for observability and maintenance.
+- Missing or incomplete host requirements are warn-only today: plugin execution is not blocked, but the app logs undeclared host usage.
+- Runtime ACL/CSP mutation from plugin artifacts is not supported; Tauri capabilities and CSP are loaded at startup.
+
+Minimum plugin metadata example:
+
+```json
+{
+	"schemaVersion": 2,
+	"compatibilityApiVersion": "1.0",
+	"plugin": {
+		"id": "example-source",
+		"name": "Example Source",
+		"version": "1.0.0",
+		"compatibilityApiVersion": "1.0",
+		"hostRequirements": {
+			"connectSrcOrigins": ["https://example.com"],
+			"frameSrcOrigins": ["https://example.com"],
+			"httpAllowlist": ["https://example.com/*"]
+		},
+		"resolver": {
+			"kind": "inline-js",
+			"code": "async function resolvePluginSource(request, api) { return null; }",
+			"timeoutMs": 7000
+		}
+	}
+}
+```
