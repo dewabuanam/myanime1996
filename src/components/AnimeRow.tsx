@@ -1,4 +1,5 @@
 import { History, Play } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import type { AnimeSummary, WatchProgress } from '../types/anime';
 import { useAppStore } from '../state/appStore';
 import { getDisplayTitle } from '../utils/title';
@@ -11,6 +12,7 @@ interface AnimeRowProps {
 }
 
 export default function AnimeRow({ title, anime = [], progress = [] }: AnimeRowProps) {
+  const navigate = useNavigate();
   const selectAnime = useAppStore((state) => state.selectAnime);
   const playEpisode = useAppStore((state) => state.playEpisode);
   const requestSeekTo = useAppStore((state) => state.requestSeekTo);
@@ -80,13 +82,17 @@ export default function AnimeRow({ title, anime = [], progress = [] }: AnimeRowP
 
   const isResumable = (item: WatchProgress) => item.progress > 0 && item.progress < 100;
 
+  const openEpisodeDetail = (item: WatchProgress) => {
+    navigate(`/anime/${item.animeId}?episode=${Math.max(1, item.episode)}`);
+  };
+
   return (
     <section className="space-y-4">
       <h2 className="section-title">{title}</h2>
       <div className="flex gap-4 overflow-x-auto pb-3">
         {progress.map((item) => (
           <div key={item.animeId} className="app-card min-w-72 p-3">
-            <div className="relative overflow-hidden rounded-xl">
+            <button type="button" onClick={() => openEpisodeDetail(item)} className="relative block w-full overflow-hidden rounded-xl text-left retro-tooltip" data-tooltip="Open Anime Detail">
               <img src={item.image} alt="" className="h-32 w-full object-cover" />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
                 <p className="line-clamp-1 font-display text-base font-semibold uppercase leading-tight text-cream">{getDisplayTitle(item, titleLanguage)}</p>
@@ -95,7 +101,7 @@ export default function AnimeRow({ title, anime = [], progress = [] }: AnimeRowP
                   {item.totalEpisodes && item.totalEpisodes > 0 ? `/${String(item.totalEpisodes).padStart(2, '0')}` : ''} · {formatElapsed(item.lastPlaybackSeconds ?? 0)}
                 </p>
               </div>
-            </div>
+            </button>
             <div className="mt-3">
               <div className="stream-progress">
                 <span style={{ width: `${item.progress}%` }} />

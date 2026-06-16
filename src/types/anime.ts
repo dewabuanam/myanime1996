@@ -13,6 +13,7 @@ export interface UserSession {
 
 export interface AnimeSummary {
   id: number;
+  jikanId?: number;
   title: string;
   titleEnglish?: string;
   titleJapanese?: string;
@@ -53,6 +54,36 @@ export interface AnimeDetail extends AnimeSummary {
   rank?: number;
   popularity?: number;
   aired?: string;
+}
+
+export interface AnimeEpisode {
+  episodeNumber: number;
+  malId?: number;
+  url?: string;
+  title?: string;
+  titleJapanese?: string;
+  titleRomanji?: string;
+  aired?: string;
+  score?: number | null;
+  filler?: boolean;
+  recap?: boolean;
+  forumUrl?: string;
+  durationMinutes?: number;
+  synopsis?: string;
+}
+
+export interface AnimeEpisodePagination {
+  page: number;
+  lastVisiblePage: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+}
+
+export interface AnimeDetailEpisodeBundle {
+  detail: AnimeDetail;
+  episodes: AnimeEpisode[];
+  hasEpisodeData: boolean;
+  pagination: AnimeEpisodePagination;
 }
 
 export interface Playlist {

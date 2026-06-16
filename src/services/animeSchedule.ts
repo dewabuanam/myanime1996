@@ -15,6 +15,7 @@ const DAY = 24 * HOUR;
 const SEARCH_SCAN_PAGES = 8;
 const DEFAULT_LIST_PAGE_SIZE = 60;
 const HOME_BACKGROUND_REFRESH_INTERVAL_MS = 60 * 1000;
+const MAX_REASONABLE_MAL_ID = 2_000_000;
 
 export const DEFAULT_ANIMESCHEDULE_TOKEN = 'kBPuq6vdcUS3pXtzzhtbrjItLZ3U4y';
 
@@ -165,12 +166,22 @@ function parseMalIdFromUrl(value?: string) {
   const direct = value.trim();
   if (/^\d+$/.test(direct)) {
     const parsedDirect = Number(direct);
-    return Number.isFinite(parsedDirect) && parsedDirect > 0 ? parsedDirect : undefined;
+    return Number.isFinite(parsedDirect) && parsedDirect > 0 && parsedDirect <= MAX_REASONABLE_MAL_ID ? parsedDirect : undefined;
   }
-  const match = value.match(/\/anime\/(\d+)/i);
-  if (!match) return undefined;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+
+  const animePathMatch = direct.match(/\/anime\/(\d+)/i);
+  if (animePathMatch) {
+    const parsed = Number(animePathMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0 && parsed <= MAX_REASONABLE_MAL_ID) return parsed;
+  }
+
+  const queryMatch = direct.match(/[?&]id=(\d+)/i);
+  if (queryMatch) {
+    const parsed = Number(queryMatch[1]);
+    if (Number.isFinite(parsed) && parsed > 0 && parsed <= MAX_REASONABLE_MAL_ID) return parsed;
+  }
+
+  return undefined;
 }
 
 function parseYearFromText(value?: string) {
@@ -221,6 +232,14 @@ function normalizeTimestampToUtc(value: string): string {
 }
 
 function normalizeAnimeScheduleId(record: Record<string, unknown>, media: Record<string, unknown>, title: string) {
+  const jikanId = resolveAnimeScheduleJikanId(record, media);
+  if (jikanId) return jikanId;
+
+  const route = getString(record, ['route']);
+  return Math.max(1, Math.floor(hashFromTitle(route || title)));
+}
+
+function resolveAnimeScheduleJikanId(record: Record<string, unknown>, media: Record<string, unknown>) {
   const websites = toRecord(record.websites);
   const mediaWebsites = toRecord(media.websites);
   const malUrl =
@@ -232,12 +251,16 @@ function normalizeAnimeScheduleId(record: Record<string, unknown>, media: Record
   if (malId) return malId;
 
   const idFromMedia =
-    getNumber(record, ['malId', 'mal_id', 'idMal', 'animeId']) ??
-    getNumber(media, ['malId', 'mal_id', 'idMal', 'animeId']);
-  if (idFromMedia && idFromMedia > 0) return Math.floor(idFromMedia);
+    getNumber(record, ['malId', 'mal_id', 'idMal']) ??
+    getNumber(media, ['malId', 'mal_id', 'idMal']);
+  if (idFromMedia && idFromMedia > 0 && idFromMedia <= MAX_REASONABLE_MAL_ID) return Math.floor(idFromMedia);
 
-  const route = getString(record, ['route']);
-  return Math.max(1, Math.floor(hashFromTitle(route || title)));
+  return undefined;
+}
+
+function isValidMalId(value?: number): value is number {
+  if (!Number.isFinite(value) || !value) return false;
+  return value > 0 && value <= MAX_REASONABLE_MAL_ID;
 }
 
 function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {}): AnimeSummary | null {
@@ -270,6 +293,7 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
     getString(recordNames, ['native']);
   const titleSynonyms = normalizeTitleSynonyms(mediaNames?.synonyms, recordNames?.synonyms);
 
+  const jikanId = resolveAnimeScheduleJikanId(record, media);
   const id = normalizeAnimeScheduleId(record, media, title);
   const route = getString(record, ['route']);
   if (route) {
@@ -323,6 +347,7 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
 
   return {
     id,
+    jikanId,
     title,
     titleEnglish,
     titleJapanese,
@@ -345,7 +370,7 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
   };
 }
 
-function toAnimeDetail(raw: unknown): AnimeDetail | null {
+function toAnimeDetail(raw: unknown, preferredId?: number): AnimeDetail | null {
   const summary = toAnimeSummary(raw);
   if (!summary) return null;
 
@@ -354,7 +379,7 @@ function toAnimeDetail(raw: unknown): AnimeDetail | null {
   const source = getString(toRecord((record?.sources as unknown[] | undefined)?.[0]), ['name']);
   const seasonTitle = getString(toRecord(record?.season), ['title']);
 
-  return {
+  const detail: AnimeDetail = {
     ...summary,
     rating: undefined,
     duration: summary.durationMinutes ? `${summary.durationMinutes} min` : undefined,
@@ -363,6 +388,42 @@ function toAnimeDetail(raw: unknown): AnimeDetail | null {
     popularity: getNumber(toRecord(record?.stats), ['trackedCount']),
     aired: seasonTitle || getString(record, ['premier', 'subPremier', 'dubPremier']) || getString(websites, ['official']),
   };
+
+  if (preferredId && preferredId > 0) {
+    detail.id = Math.floor(preferredId);
+    detail.jikanId = Math.floor(preferredId);
+  } else if (summary.jikanId && summary.jikanId > 0) {
+    detail.jikanId = Math.floor(summary.jikanId);
+  }
+
+  return detail;
+}
+
+function parseRequestedId(input: string | number) {
+  if (typeof input === 'number' && Number.isFinite(input) && input > 0 && input <= MAX_REASONABLE_MAL_ID) {
+    return Math.floor(input);
+  }
+
+  if (typeof input !== 'string') return undefined;
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+  if (/^\d+$/.test(trimmed)) {
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed) && parsed > 0 && parsed <= MAX_REASONABLE_MAL_ID) return Math.floor(parsed);
+  }
+  return parseMalIdFromUrl(trimmed);
+}
+
+async function resolveAnimeScheduleJikanIdByRoute(route: string) {
+  try {
+    const json = await fetchAnimeScheduleJson(`/anime/${encodeURIComponent(route)}`);
+    const record = toRecord(json);
+    if (!record) return undefined;
+    const media = toRecord(record.media) ?? toRecord(record.anime) ?? record;
+    return resolveAnimeScheduleJikanId(record, media);
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeList(json: unknown, options: AnimeScheduleNormalizeOptions = {}): AnimeSummary[] {
@@ -473,6 +534,25 @@ async function cachedFetch<T>(
   options: CacheFetchOptions<T> = {},
 ): Promise<T> {
   return cachedFetchByKey(cacheKey(path), path, ttl, mapper, options);
+}
+
+async function patchAnimeScheduleDetailCache(route: string, detail: AnimeDetail) {
+  const key = cacheKey(`/anime/${encodeURIComponent(route)}`);
+  const cache = await getStoredValue('animeScheduleCache', {} as Record<string, CachedPayload<unknown>>);
+  const existing = cache[key] as CachedPayload<AnimeDetail> | undefined;
+  if (!existing) return;
+
+  const now = Date.now();
+  const expiresAt = typeof existing.expiresAt === 'number' && Number.isFinite(existing.expiresAt) ? existing.expiresAt : now + DAY;
+
+  await setStoredValue('animeScheduleCache', {
+    ...cache,
+    [key]: {
+      value: detail,
+      savedAt: now,
+      expiresAt,
+    },
+  });
 }
 
 function ensureAnimeScheduleListEnvelope(json: unknown): unknown[] {
@@ -650,11 +730,31 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
     throw new Error('AnimeSchedule detail route unavailable');
   }
 
-  const detail = await cachedFetch(`/anime/${encodeURIComponent(route)}`, DAY, (json) => toAnimeDetail(json))
+  const preferredId = parseRequestedId(idOrRoute);
+
+  const detail = await cachedFetch(`/anime/${encodeURIComponent(route)}`, DAY, (json) => toAnimeDetail(json, preferredId))
     .catch(() => null as AnimeDetail | null);
 
   if (!detail) {
     throw new Error('AnimeSchedule detail unavailable');
+  }
+
+  if (isValidMalId(preferredId) && detail.id !== preferredId) {
+    const safePreferredId = Math.floor(preferredId);
+    detail.id = safePreferredId;
+    detail.jikanId = safePreferredId;
+    void patchAnimeScheduleDetailCache(route, detail);
+  } else if (isValidMalId(preferredId) && detail.jikanId !== preferredId) {
+    detail.jikanId = Math.floor(preferredId);
+    void patchAnimeScheduleDetailCache(route, detail);
+  } else if (!isValidMalId(detail.jikanId)) {
+    const recoveredJikanId = await resolveAnimeScheduleJikanIdByRoute(route);
+    if (isValidMalId(recoveredJikanId)) {
+      const safeRecoveredId = Math.floor(recoveredJikanId);
+      detail.jikanId = safeRecoveredId;
+      detail.id = safeRecoveredId;
+      void patchAnimeScheduleDetailCache(route, detail);
+    }
   }
 
   if (

@@ -104,9 +104,7 @@ export default function SettingsModal() {
   const clearJikanCache = useAppStore((state) => state.clearJikanCache);
   const exportUserData = useAppStore((state) => state.exportUserData);
   const factoryReset = useAppStore((state) => state.factoryReset);
-  const baseCatalogSource = useAppStore((state) => state.baseCatalogSource);
   const animeScheduleApiToken = useAppStore((state) => state.animeScheduleApiToken);
-  const setBaseCatalogSource = useAppStore((state) => state.setBaseCatalogSource);
   const setAnimeScheduleApiToken = useAppStore((state) => state.setAnimeScheduleApiToken);
 
   const [query, setQuery] = useState('');
@@ -365,22 +363,7 @@ export default function SettingsModal() {
 
                     <div className="space-y-2">
                       <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Catalog Source</p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className={`settings-action-btn ${baseCatalogSource === 'animeschedule' ? '' : 'opacity-80'}`}
-                          onClick={() => void setBaseCatalogSource('animeschedule').then(() => setStatusMessage('Base source set to AnimeSchedule.'))}
-                        >
-                          AnimeSchedule (Default)
-                        </button>
-                        <button
-                          type="button"
-                          className={`settings-action-btn ${baseCatalogSource === 'jikan' ? '' : 'opacity-80'}`}
-                          onClick={() => void setBaseCatalogSource('jikan').then(() => setStatusMessage('Base source set to Jikan.'))}
-                        >
-                          Jikan
-                        </button>
-                      </div>
+                      <p className="rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream/80">AnimeSchedule (Default)</p>
                     </div>
 
                     <div className="space-y-2">

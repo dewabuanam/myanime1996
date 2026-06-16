@@ -1,4 +1,4 @@
-import type { AnimeDetail, AnimeSummary, CachedPayload } from '../types/anime';
+import type { AnimeDetail, AnimeEpisode, AnimeSummary, CachedPayload } from '../types/anime';
 import { getStoredValue, setStoredValue } from './store';
 
 const BASE_URL = 'https://api.jikan.moe/v4';
@@ -75,6 +75,44 @@ interface JikanListResponse {
 
 interface JikanDetailResponse {
   data: JikanAnime;
+}
+
+interface JikanEpisodeListItem {
+  mal_id?: number;
+  url?: string;
+  title?: string;
+  title_japanese?: string;
+  title_romanji?: string;
+  aired?: string;
+  score?: number | null;
+  filler?: boolean;
+  recap?: boolean;
+  forum_url?: string;
+}
+
+interface JikanEpisodeListResponse {
+  data: JikanEpisodeListItem[];
+  pagination?: {
+    last_visible_page?: number;
+    has_next_page?: boolean;
+  };
+}
+
+interface JikanEpisodeDetailItem {
+  mal_id?: number;
+  url?: string;
+  title?: string;
+  title_japanese?: string;
+  title_romanji?: string;
+  duration?: number;
+  aired?: string;
+  filler?: boolean;
+  recap?: boolean;
+  synopsis?: string;
+}
+
+interface JikanEpisodeDetailResponse {
+  data: JikanEpisodeDetailItem;
 }
 
 interface JikanWatchEpisode {
@@ -272,6 +310,7 @@ function normalizeAnime(anime: JikanAnime): AnimeSummary {
 
   return {
     id: anime.mal_id,
+    jikanId: anime.mal_id,
     title: anime.title || selectJikanTitle(anime, 'Default') || selectJikanTitle(anime, 'Romaji') || selectJikanTitle(anime, 'English') || 'Unknown title',
     titleEnglish: anime.title_english || selectJikanTitle(anime, 'English'),
     titleJapanese: anime.title_japanese || selectJikanTitle(anime, 'Japanese'),
@@ -303,6 +342,108 @@ function normalizeDetail(anime: JikanAnime): AnimeDetail {
     popularity: anime.popularity,
     aired: anime.aired?.string,
   };
+}
+
+function toEpisodeDurationMinutes(duration?: number) {
+  if (!Number.isFinite(duration) || !duration || duration <= 0) return undefined;
+  if (duration <= 90) return Math.round(duration);
+  return Math.max(1, Math.round(duration / 60));
+}
+
+function normalizeEpisodeListItem(item: JikanEpisodeListItem, fallbackIndex: number): AnimeEpisode {
+  const malId = typeof item.mal_id === 'number' && item.mal_id > 0 ? item.mal_id : undefined;
+  return {
+    episodeNumber: malId ?? fallbackIndex,
+    malId,
+    url: item.url?.trim() || undefined,
+    title: item.title?.trim() || undefined,
+    titleJapanese: item.title_japanese?.trim() || undefined,
+    titleRomanji: item.title_romanji?.trim() || undefined,
+    aired: item.aired?.trim() || undefined,
+    score: typeof item.score === 'number' ? item.score : null,
+    filler: item.filler === true,
+    recap: item.recap === true,
+    forumUrl: item.forum_url?.trim() || undefined,
+  };
+}
+
+function normalizeEpisodeDetailItem(item: JikanEpisodeDetailItem, fallbackEpisodeNumber: number): AnimeEpisode {
+  const malId = typeof item.mal_id === 'number' && item.mal_id > 0 ? item.mal_id : undefined;
+  return {
+    episodeNumber: malId ?? fallbackEpisodeNumber,
+    malId,
+    url: item.url?.trim() || undefined,
+    title: item.title?.trim() || undefined,
+    titleJapanese: item.title_japanese?.trim() || undefined,
+    titleRomanji: item.title_romanji?.trim() || undefined,
+    durationMinutes: toEpisodeDurationMinutes(item.duration),
+    aired: item.aired?.trim() || undefined,
+    filler: item.filler === true,
+    recap: item.recap === true,
+    synopsis: item.synopsis?.trim() || undefined,
+  };
+}
+
+function mergeEpisodeDetail(existing: AnimeEpisode, incoming: AnimeEpisode): AnimeEpisode {
+  return {
+    ...existing,
+    ...incoming,
+    episodeNumber: existing.episodeNumber,
+    score: incoming.score ?? existing.score ?? null,
+    forumUrl: incoming.forumUrl || existing.forumUrl,
+    synopsis: incoming.synopsis || existing.synopsis,
+  };
+}
+
+async function patchCachedEpisodeListEntries(id: string | number, episode: AnimeEpisode) {
+  const cache = await getStoredValue('jikanCache', {} as Record<string, CachedPayload<unknown>>);
+  const animePrefix = `jikan:/anime/${id}/episodes?page=`;
+  let changed = false;
+  let sawEpisodeListCache = false;
+  let matchedEpisodeInCache = false;
+  const nextCache: Record<string, CachedPayload<unknown>> = { ...cache };
+
+  for (const [key, payload] of Object.entries(cache)) {
+    if (!key.startsWith(animePrefix)) continue;
+    sawEpisodeListCache = true;
+    const value = payload?.value as { data?: AnimeEpisode[] } | undefined;
+    if (!value || !Array.isArray(value.data)) continue;
+
+    let matched = false;
+    const nextData = value.data.map((entry) => {
+      if (entry.episodeNumber !== episode.episodeNumber) return entry;
+      matched = true;
+      return mergeEpisodeDetail(entry, episode);
+    });
+
+    if (!matched) continue;
+    matchedEpisodeInCache = true;
+    changed = true;
+    nextCache[key] = {
+      ...payload,
+      value: {
+        ...(value as Record<string, unknown>),
+        data: nextData,
+      },
+    };
+  }
+
+  // If detail exists for an episode but no cached list page contains it,
+  // expire list pages so next read refreshes and picks up newly aired episodes.
+  if (sawEpisodeListCache && !matchedEpisodeInCache) {
+    const now = Date.now();
+    for (const [key, payload] of Object.entries(nextCache)) {
+      if (!key.startsWith(animePrefix)) continue;
+      nextCache[key] = {
+        ...payload,
+        expiresAt: now - 1,
+      };
+    }
+    changed = true;
+  }
+
+  if (!changed) return;
+  await setStoredValue('jikanCache', nextCache);
 }
 
 function parseLatestEpisodeNumber(episodes?: JikanWatchEpisode[]) {
@@ -562,6 +703,65 @@ export function getAnimeDetails(id: string | number) {
     .catch(() => {
       throw new Error('Anime details unavailable');
     });
+}
+
+export function getAnimeEpisodes(id: string | number, page = 1) {
+  const safePage = Math.max(1, Math.floor(page));
+  return cachedFetch(`/anime/${id}/episodes?page=${safePage}`, 2 * HOUR, (json) => {
+    const payload = json as JikanEpisodeListResponse;
+    const episodes = (payload.data ?? []).map((item, index) => normalizeEpisodeListItem(item, index + 1));
+    return {
+      data: episodes,
+      pagination: {
+        lastVisiblePage: payload.pagination?.last_visible_page ?? safePage,
+        hasNextPage: payload.pagination?.has_next_page === true,
+      },
+    };
+  }).catch(() => ({
+    data: [] as AnimeEpisode[],
+    pagination: {
+      lastVisiblePage: safePage,
+      hasNextPage: false,
+    },
+  }));
+}
+
+export async function getAnimeEpisodesAll(id: string | number, maxPages = 8) {
+  const boundedMaxPages = Math.max(1, Math.floor(maxPages));
+  const combined: AnimeEpisode[] = [];
+  let page = 1;
+
+  while (page <= boundedMaxPages) {
+    const payload = await getAnimeEpisodes(id, page);
+    combined.push(...payload.data);
+    if (!payload.pagination.hasNextPage) break;
+    page += 1;
+  }
+
+  const byEpisode = new Map<number, AnimeEpisode>();
+  for (const episode of combined) {
+    if (!byEpisode.has(episode.episodeNumber)) {
+      byEpisode.set(episode.episodeNumber, episode);
+    }
+  }
+
+  return Array.from(byEpisode.values()).sort((a, b) => a.episodeNumber - b.episodeNumber);
+}
+
+export function getAnimeEpisodeById(id: string | number, episode: number) {
+  const safeEpisode = Math.max(1, Math.floor(episode));
+  return cachedFetch(`/anime/${id}/episodes/${safeEpisode}`, 2 * HOUR, (json) =>
+    normalizeEpisodeDetailItem((json as JikanEpisodeDetailResponse).data, safeEpisode),
+  )
+    .then(async (detail) => {
+      await patchCachedEpisodeListEntries(id, detail).catch(() => {
+        // Ignore cache patch failures; detail response is still valid.
+      });
+      return detail;
+    })
+    .catch(() => ({
+      episodeNumber: safeEpisode,
+    } as AnimeEpisode));
 }
 
 export function getAnimeGenres() {

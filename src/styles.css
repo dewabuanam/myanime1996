@@ -799,6 +799,7 @@ button {
 
 .right-now-video-section {
   min-height: 0;
+  margin-top: 0.45rem;
 }
 
 .right-now-video-section.is-collapsed {
@@ -1632,6 +1633,146 @@ button {
   height: 0;
   margin: 0;
   padding: 0;
+}
+
+.right-now-panel-split {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.65rem;
+}
+
+.right-now-panel-split.is-top-half {
+  grid-template-rows: minmax(0, 1.38fr) minmax(0, 1fr);
+}
+
+.right-now-panel-split.is-bottom-half {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1.38fr);
+}
+
+.right-now-pane-top,
+.right-now-pane-bottom {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-now-panel-split .right-now-pane-top,
+.right-now-panel-split .right-now-pane-bottom {
+  border: 1px solid rgba(236, 183, 104, 0.22);
+  border-radius: 0.75rem;
+  background: linear-gradient(180deg, rgba(20, 16, 12, 0.7), rgba(8, 7, 5, 0.62));
+  padding: 0.55rem;
+}
+
+.right-now-panel-split .right-now-pane-top {
+  box-shadow: inset 0 1px 0 rgba(255, 241, 212, 0.04);
+}
+
+.right-now-panel-split .right-now-pane-bottom {
+  box-shadow: inset 0 1px 0 rgba(255, 241, 212, 0.03);
+}
+
+.right-pane-layout-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 140;
+  min-width: 8rem;
+  border: 1px solid rgba(236, 183, 104, 0.36);
+  border-radius: 0.35rem;
+  background: linear-gradient(180deg, rgba(24, 18, 13, 0.98), rgba(8, 7, 5, 0.98));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.44);
+  padding: 0.28rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.right-pane-layout-btn {
+  border: 1px solid transparent;
+  border-radius: 0.28rem;
+  background: transparent;
+  color: rgba(245, 234, 210, 0.82);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 0.34rem 0.48rem;
+}
+
+.right-pane-layout-btn:hover,
+.right-pane-layout-btn:focus-visible {
+  border-color: rgba(236, 183, 104, 0.4);
+  background: rgba(236, 183, 104, 0.12);
+  color: rgba(255, 241, 212, 0.98);
+}
+
+.right-pane-layout-btn.is-active {
+  border-color: rgba(236, 183, 104, 0.55);
+  background: rgba(236, 183, 104, 0.2);
+  color: rgba(255, 241, 212, 0.98);
+}
+
+.right-now-episode-page-select {
+  min-width: 3.35rem;
+  height: 1.6rem;
+  border: 1px solid rgba(245, 234, 210, 0.18);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(28, 20, 14, 0.92), rgba(11, 8, 6, 0.9));
+  color: rgba(245, 234, 210, 0.9);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 1.55rem 0 0.65rem;
+  line-height: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(236, 183, 104, 0.9) 50%),
+    linear-gradient(135deg, rgba(236, 183, 104, 0.9) 50%, transparent 50%),
+    linear-gradient(180deg, rgba(28, 20, 14, 0.92), rgba(11, 8, 6, 0.9));
+  background-position:
+    calc(100% - 12px) calc(50% - 2px),
+    calc(100% - 8px) calc(50% - 2px),
+    0 0;
+  background-size:
+    4px 4px,
+    4px 4px,
+    100% 100%;
+  background-repeat: no-repeat;
+  transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.right-now-episode-page-select:hover {
+  border-color: rgba(236, 183, 104, 0.45);
+  color: rgba(255, 241, 212, 0.98);
+}
+
+.right-now-episode-page-select:focus-visible {
+  outline: none;
+  border-color: rgba(236, 183, 104, 0.58);
+  box-shadow: 0 0 0 1px rgba(236, 183, 104, 0.3);
+}
+
+.right-now-episode-page-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.right-now-episode-page-select option {
+  background: rgba(14, 10, 8, 0.98);
+  color: rgba(245, 234, 210, 0.92);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+}
+
+.right-now-episode-page-select option:checked {
+  background: rgba(236, 183, 104, 0.28);
+  color: rgba(255, 241, 212, 0.98);
 }
 
 .right-now-queue-drawer {

@@ -1,11 +1,14 @@
-import { Check, ChevronDown, EllipsisVertical, List, ListX, Play, RotateCcw, ScrollText, Trash2 } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Clock3, EllipsisVertical, List, ListX, Play, RotateCcw, ScrollText, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { getLatestUpdatedAnime, refreshHomeShelvesIfNeeded } from '../services/catalogSource';
+import { getAnimeDetailEpisodeBundle } from '../services/animeDetailEpisodes';
+import { getAnimeEpisodeById } from '../services/jikan';
 import { getAvailableSourcePlugins, resolveSourceForPlayable, resolveSourceForPlayableWithTrace } from '../services/sourceResolver';
 import { useAppStore } from '../state/appStore';
-import type { PlayableItem } from '../types/anime';
+import type { AnimeDetail as AnimeDetailType, AnimeEpisode, AnimeEpisodePagination, PlayableItem } from '../types/anime';
 import type { ResolvedSource, ResolvedSourceOption, SourceResolveAttemptStatus, SourceResolveTrace } from '../types/plugin';
+import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
 import { getDisplayTitle } from '../utils/title';
 import { extractYouTubeVideoId } from '../utils/youtubeUrl';
 import PluginsPanel from './PluginsPanel';
@@ -17,6 +20,24 @@ const WATCH_PROGRESS_SAVE_INTERVAL_SECONDS = 5;
 const FULLSCREEN_OVERLAY_HIDE_MS = 2200;
 const BACKGROUND_LATEST_RESOLVE_LIMIT = 5;
 const HOME_REFRESH_LIMIT = 20;
+
+function formatEpisodeDuration(durationMinutes?: number) {
+  if (durationMinutes && durationMinutes > 0) return `${durationMinutes}m`;
+  return 'Unknown';
+}
+
+function formatEpisodeScoreOutOfTen(score?: number | null) {
+  if (score === null || score === undefined || !Number.isFinite(score)) return null;
+  const scaled = Math.max(0, Math.min(10, score * 2));
+  return scaled.toFixed(2);
+}
+
+function formatAnimeYear(year?: number, aired?: string) {
+  if (year && Number.isFinite(year) && year > 0) return String(Math.floor(year));
+  if (!aired) return 'TBA';
+  const match = aired.match(/(19|20)\d{2}/);
+  return match ? match[0] : 'TBA';
+}
 
 type LogoSelectItem = {
   value: string;
@@ -260,6 +281,7 @@ export default function RightNowPlaying() {
   const clearQueue = useAppStore((state) => state.clearQueue);
   const removeFromQueue = useAppStore((state) => state.removeFromQueue);
   const playFromQueue = useAppStore((state) => state.playFromQueue);
+  const playEpisode = useAppStore((state) => state.playEpisode);
   const isRightPanelFullpage = useAppStore((state) => state.isRightPanelFullpage);
   const toggleRightPanelFullpage = useAppStore((state) => state.toggleRightPanelFullpage);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
@@ -296,6 +318,7 @@ export default function RightNowPlaying() {
   const queueToggleRef = useRef<HTMLButtonElement | null>(null);
   const logDrawerRef = useRef<HTMLDivElement | null>(null);
   const logToggleRef = useRef<HTMLButtonElement | null>(null);
+  const paneLayoutMenuRef = useRef<HTMLDivElement | null>(null);
   const trailerPlayerMountRef = useRef<HTMLDivElement | null>(null);
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -315,6 +338,20 @@ export default function RightNowPlaying() {
   const [isSourceLogOpen, setIsSourceLogOpen] = useState(false);
   const [sourceResolveRetryToken, setSourceResolveRetryToken] = useState(0);
   const [isFullscreenOverlayVisible, setIsFullscreenOverlayVisible] = useState(true);
+  const [detailAnime, setDetailAnime] = useState<AnimeDetailType | null>(null);
+  const [detailEpisodes, setDetailEpisodes] = useState<AnimeEpisode[]>([]);
+  const [detailEpisodePage, setDetailEpisodePage] = useState(1);
+  const [detailEpisodePagination, setDetailEpisodePagination] = useState<AnimeEpisodePagination>({
+    page: 1,
+    lastVisiblePage: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
+  const [detailExpandedEpisode, setDetailExpandedEpisode] = useState<number | null>(null);
+  const [detailLoadingEpisode, setDetailLoadingEpisode] = useState<number | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailEpisodeSearchQuery, setDetailEpisodeSearchQuery] = useState('');
+  const [isPaneLayoutMenuOpen, setIsPaneLayoutMenuOpen] = useState(false);
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(() =>
     typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false,
   );
@@ -327,18 +364,43 @@ export default function RightNowPlaying() {
   const hasTrailerPlayback = currentlyPlayingItem?.kind === 'trailer' && Boolean(trailerVideoId);
   const isNonTrailerPlayback = Boolean(currentlyPlayingItem && currentlyPlayingItem.kind !== 'trailer');
   const isNowPlayingView = rightPanelView === 'now-playing';
+  const isDetailView = rightPanelView === 'detail';
+  const isPluginsView = rightPanelView === 'plugins';
+  const isSplitPaneMode = false;
+  const showNowPlayingPane = isNowPlayingView;
   const isFullNowPlayingView = isRightPanelFullpage && isNowPlayingView;
   const showVideoOverlayControls = isNowPlayingView && isDocumentFullscreen;
-  const isPluginsView = rightPanelView === 'plugins';
   const fallbackDisplayTitle = currentlyPlayingItem?.title ?? (selectedAnime ? getDisplayTitle(selectedAnime, titleLanguage) : 'Nothing Playing');
   const fallbackDisplayJapanese = currentlyPlayingItem?.titleJapanese ?? selectedAnime?.titleJapanese ?? 'No Japanese title available';
   const fallbackTypeLabel = currentlyPlayingItem?.typeLabel ?? (selectedAnime?.mediaType?.toUpperCase() ?? 'No Media');
+  const detailAnimeView = detailAnime ?? selectedAnime;
+  const detailYearLabel = formatAnimeYear(detailAnimeView?.year, detailAnime?.aired);
+  const filteredDetailEpisodes = useMemo(() => {
+    const term = detailEpisodeSearchQuery.trim().toLowerCase();
+    if (!term) return detailEpisodes;
+
+    return detailEpisodes.filter((episode) => {
+      const haystack = [
+        String(episode.episodeNumber),
+        episode.title ?? '',
+        episode.titleJapanese ?? '',
+        episode.titleRomanji ?? '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [detailEpisodeSearchQuery, detailEpisodes]);
 
   const queueUpcoming = useMemo(() => {
     if (!queue.length) return [];
     if (queueCursor < 0) return queue;
     return queue.slice(queueCursor + 1);
   }, [queue, queueCursor]);
+
+  useEffect(() => {
+    setDetailEpisodeSearchQuery('');
+  }, [detailAnimeView?.id]);
 
   const sourcePlugins = useMemo(() => getAvailableSourcePlugins(importedSourcePlugins), [importedSourcePlugins]);
   const sourcePluginById = useMemo(
@@ -561,6 +623,86 @@ export default function RightNowPlaying() {
     if (status === 'error') return 'Error';
     return 'Skipped';
   };
+
+  const handleDetailEpisodeToggle = async (_animeId: number, episodeNumber: number) => {
+    const next = detailExpandedEpisode === episodeNumber ? null : episodeNumber;
+    setDetailExpandedEpisode(next);
+
+    if (!next || !detailAnimeView) return;
+
+    const jikanAnimeId = detailAnimeView.jikanId ?? detailAnimeView.id;
+    if (!Number.isFinite(jikanAnimeId) || jikanAnimeId <= 0) return;
+
+    setDetailLoadingEpisode(episodeNumber);
+    const detail = await getAnimeEpisodeById(Math.floor(jikanAnimeId), episodeNumber).catch(() => null);
+    if (detail) {
+      setDetailEpisodes((current) =>
+        current.map((entry) => {
+          if (entry.episodeNumber !== episodeNumber) return entry;
+          return {
+            ...entry,
+            ...detail,
+            episodeNumber,
+          };
+        }),
+      );
+    }
+    setDetailLoadingEpisode((current) => (current === episodeNumber ? null : current));
+  };
+
+  useEffect(() => {
+    setDetailEpisodePage(1);
+  }, [selectedAnime?.id]);
+
+  useEffect(() => {
+    if (!selectedAnime) return;
+    setDetailAnime(selectedAnime);
+  }, [selectedAnime?.id]);
+
+  useEffect(() => {
+    const shouldLoadDetailPane = rightPanelView === 'detail';
+    if (!shouldLoadDetailPane) {
+      setIsDetailLoading(false);
+      return;
+    }
+
+    const targetAnime = selectedAnime ?? detailAnime;
+    if (!targetAnime) {
+      setDetailEpisodes([]);
+      setDetailEpisodePagination({ page: 1, lastVisiblePage: 1, hasNextPage: false, hasPrevPage: false });
+      setDetailExpandedEpisode(null);
+      setIsDetailLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsDetailLoading(true);
+
+    const run = async () => {
+      const payload = await getAnimeDetailEpisodeBundle(targetAnime.id, detailEpisodePage).catch(() => null);
+      if (cancelled) return;
+
+      if (!payload) {
+        setDetailAnime(targetAnime);
+        setDetailEpisodes([]);
+        setDetailEpisodePagination({ page: 1, lastVisiblePage: 1, hasNextPage: false, hasPrevPage: false });
+        setIsDetailLoading(false);
+        return;
+      }
+
+      setDetailAnime(payload.detail);
+      setDetailEpisodes(payload.episodes);
+      setDetailEpisodePagination(payload.pagination);
+      setDetailExpandedEpisode(null);
+      setIsDetailLoading(false);
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [detailAnime?.id, detailEpisodePage, rightPanelView, selectedAnime?.id]);
 
   useEffect(() => {
     if (!activeResolvedSource?.selectedOptionId) {
@@ -1259,6 +1401,17 @@ export default function RightNowPlaying() {
   }, [isFullQueueDrawerOpen, isSourceLogOpen, showVideoOverlayControls]);
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsPaneLayoutMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
     const onDocumentMouseDown = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -1281,6 +1434,10 @@ export default function RightNowPlaying() {
 
       if (target.closest('.right-queue-item-menu') || target.closest('.right-queue-item-menu-trigger')) return;
       setOpenMenuQueueItemId(null);
+
+      if (!paneLayoutMenuRef.current?.contains(target)) {
+        setIsPaneLayoutMenuOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', onDocumentMouseDown);
@@ -1381,12 +1538,13 @@ export default function RightNowPlaying() {
 
   return (
     <aside className={`right-now-panel vhs-panel relative flex h-full min-h-0 flex-col gap-3 bg-carbon/45 p-4 ${isFullNowPlayingView ? 'right-now-panel-full' : ''}`}>
+      <div className="right-now-pane-top min-h-0 shrink-0">
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-2">
           <div className="inline-flex items-center gap-2">
             {isRightPanelFullpage ? <WindowControls /> : null}
-            <p className="eyebrow">{isNowPlayingView ? 'Now Playing' : isPluginsView ? 'Plugins' : 'Anime Detail'}</p>
-            {isNowPlayingView ? (
+            <p className="eyebrow">{isPluginsView ? 'Plugins' : showNowPlayingPane ? 'Now Playing' : 'Anime Detail'}</p>
+            {showNowPlayingPane ? (
               <span className={`right-now-indicator ${isPlaying ? 'is-playing' : ''}`} aria-hidden="true">
                 <span />
                 <span />
@@ -1407,7 +1565,7 @@ export default function RightNowPlaying() {
                 <List size={13} />
               </button>
             ) : null}
-            {isNowPlayingView ? (
+            {showNowPlayingPane ? (
               <button
                 type="button"
                 className={`right-panel-mode-btn retro-tooltip ${isRightPanelFullpage ? 'is-full' : 'is-docked'}`}
@@ -1430,7 +1588,7 @@ export default function RightNowPlaying() {
                 )}
               </button>
             ) : null}
-            {isNowPlayingView && isNonTrailerPlayback && !showVideoOverlayControls ? (
+            {showNowPlayingPane && isNonTrailerPlayback && !showVideoOverlayControls ? (
               <button
                 type="button"
                 ref={logToggleRef}
@@ -1442,9 +1600,27 @@ export default function RightNowPlaying() {
                 <ScrollText size={12} />
               </button>
             ) : null}
+            <div ref={paneLayoutMenuRef} className="relative">
+              <button
+                type="button"
+                className="right-panel-fullpage-btn retro-tooltip"
+                aria-label="Pane layout options"
+                data-tooltip="Pane Layout"
+                onClick={() => setIsPaneLayoutMenuOpen((open) => !open)}
+              >
+                <EllipsisVertical size={13} />
+              </button>
+              {isPaneLayoutMenuOpen ? (
+                <div className="right-pane-layout-menu" role="menu" aria-label="Pane layout options">
+                  <button type="button" role="menuitem" className="right-pane-layout-btn is-active" onClick={() => setIsPaneLayoutMenuOpen(false)}>
+                    Full Right Panel
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
-        {isNowPlayingView ? (
+        {showNowPlayingPane ? (
           <>
             <h2 className="anime-card-title line-clamp-2">
               {fallbackDisplayTitle}
@@ -1501,14 +1677,14 @@ export default function RightNowPlaying() {
         ) : (
           <>
             <h2 className="line-clamp-2 font-display text-xl font-semibold uppercase text-cream">
-              {selectedAnime ? getDisplayTitle(selectedAnime, titleLanguage) : 'Kimi no Shiranai Monogatari'}
+              {detailAnimeView ? getDisplayTitle(detailAnimeView, titleLanguage) : ''}
             </h2>
-            <p className="mt-0.5 text-xs text-cream/68">{selectedAnime?.studios?.[0] ?? 'supercell'}</p>
+            {detailAnimeView ? <p className="anime-card-jp mt-0.5 line-clamp-1">{detailAnimeView.titleJapanese}</p> : null}
           </>
         )}
       </div>
 
-      <div className={`right-now-video-section ${isNowPlayingView ? '' : 'is-collapsed'}`} aria-hidden={!isNowPlayingView}>
+      <div className={`right-now-video-section ${showNowPlayingPane ? '' : 'is-collapsed'}`} aria-hidden={!showNowPlayingPane}>
         <div className="right-now-video-wrap relative -mx-4 w-[calc(100%+2rem)] overflow-hidden bg-black/45">
           {fullscreenTopLeftOverlay}
           {fullscreenTopRightOverlay}
@@ -1607,24 +1783,145 @@ export default function RightNowPlaying() {
           </div>
         </div>
       </div>
+      </div>
 
+      <div className="right-now-pane-bottom min-h-0 flex-1">
       <div ref={menuRootRef} data-right-now-scroll="true" className="min-h-0 flex-1 overflow-y-auto px-0 py-2 text-sm leading-5 text-cream/62">
         {rightPanelView === 'detail' ? (
-          <>
-            <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.13em] text-amberline/70">Anime Detail</p>
-            <div className="space-y-1.5">
-              <p className="text-cream/72">{selectedAnime?.synopsis ?? 'Select an anime to view details and playback context.'}</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-cream/55">Episodes: {selectedAnime?.episodes ?? '?'}</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-cream/55">Year: {selectedAnime?.year ?? 'TBA'}</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-cream/55">Status: {selectedAnime?.status ?? 'Unknown'}</p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-cream/55">Genres: {(selectedAnime?.genres?.length ? selectedAnime.genres.join(', ') : 'N/A')}</p>
+          detailAnimeView ? (
+            <div className="space-y-2.5">
+              <div className="relative overflow-hidden rounded-2xl border border-cream/12 bg-black/45">
+                <img src={detailAnimeView.image} alt="" className="h-40 w-full object-cover" />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+              </div>
+
+              <p className="line-clamp-4 text-cream/72">{detailAnimeView.synopsis ?? 'Select an anime to view details and playback context.'}</p>
+
+              <div className="flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Year">
+                  <CalendarDays size={11} className="text-amberline" /> {detailYearLabel}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Episodes">
+                  <List size={11} className="text-amberline" /> {detailAnimeView.episodes ?? '?'}
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Status">
+                  <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
+                </span>
+              </div>
+
+              <div className="space-y-1.5 border-t border-cream/10 pt-2">
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.13em] text-amberline/75">Episodes</p>
+                  <div className="inline-flex flex-wrap items-center gap-1.5">
+                    <input
+                      type="search"
+                      value={detailEpisodeSearchQuery}
+                      onChange={(event) => setDetailEpisodeSearchQuery(event.target.value)}
+                      placeholder="Search episode # / title"
+                      className="w-40 rounded-md border border-cream/20 bg-black/25 px-2 py-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/85 placeholder:text-cream/45 focus:border-amberline/55 focus:outline-none"
+                    />
+                    <label className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/58">
+                      <span>Page</span>
+                      <select
+                        className="right-now-episode-page-select"
+                        value={detailEpisodePagination.page}
+                        onChange={(event) => setDetailEpisodePage(Number(event.target.value) || 1)}
+                        disabled={isDetailLoading || detailEpisodePagination.lastVisiblePage <= 1}
+                      >
+                        {Array.from({ length: Math.max(1, detailEpisodePagination.lastVisiblePage) }, (_, index) => {
+                          const page = index + 1;
+                          return (
+                            <option key={page} value={page}>
+                              {page}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+                {isDetailLoading ? (
+                  <p className="text-cream/60">Loading episodes...</p>
+                ) : filteredDetailEpisodes.length > 0 ? (
+                  filteredDetailEpisodes.map((episode) => {
+                    const isExpanded = detailExpandedEpisode === episode.episodeNumber;
+                    const labels = getEpisodeDisplayTitles(episode, detailAnimeView, titleLanguage);
+                    return (
+                      <article key={episode.episodeNumber} className="rounded-xl border border-cream/10 bg-carbon/35 px-2.5 py-2">
+                        <div className="flex items-start gap-2">
+                          <button
+                            type="button"
+                            className="vhs-button-ghost px-2 py-1 text-[11px] retro-tooltip"
+                            onClick={() => void playEpisode(detailAnimeView, episode.episodeNumber)}
+                            data-tooltip={`Play Episode ${String(episode.episodeNumber).padStart(2, '0')}`}
+                          >
+                            <Play size={11} /> {String(episode.episodeNumber).padStart(2, '0')}
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <p className="line-clamp-1 font-display text-sm uppercase text-cream">{labels.primary}</p>
+                            {labels.secondary ? <p className="anime-card-jp line-clamp-1">{labels.secondary}</p> : null}
+                            <div className="mt-1 flex flex-wrap gap-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/55">
+                              <span className="inline-flex items-center gap-1"><CalendarDays size={10} className="text-amberline" /> {episode.aired?.slice(0, 10) || 'TBA'}</span>
+                              {episode.filler ? <span className="rounded-full bg-rust/80 px-1.5 py-0.5 text-white">Filler</span> : null}
+                              {episode.recap ? <span className="rounded-full bg-amberline/85 px-1.5 py-0.5 text-ink">Recap</span> : null}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="vhs-button-ghost px-2 py-1 text-[10px] retro-tooltip"
+                            onClick={() => void handleDetailEpisodeToggle(detailAnimeView.id, episode.episodeNumber)}
+                            data-tooltip={isExpanded ? 'Collapse Episode' : 'Expand Episode'}
+                          >
+                            {detailLoadingEpisode === episode.episodeNumber ? 'Loading...' : isExpanded ? 'Hide' : 'More'}
+                          </button>
+                        </div>
+                        {isExpanded ? (
+                          <div className="mt-1.5 rounded-lg border border-cream/10 bg-black/20 p-2">
+                            <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                              {formatEpisodeScoreOutOfTen(episode.score) ? (
+                                <span className="inline-flex items-center rounded-full border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
+                                  Score {formatEpisodeScoreOutOfTen(episode.score)}
+                                </span>
+                              ) : null}
+                              {episode.durationMinutes && episode.durationMinutes > 0 ? (
+                                <span className="inline-flex items-center rounded-full border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
+                                  <Clock3 size={10} className="mr-1 text-amberline" /> {formatEpisodeDuration(episode.durationMinutes)}
+                                </span>
+                              ) : null}
+                              {episode.forumUrl ? (
+                                <a
+                                  href={episode.forumUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center rounded-full border border-amberline/55 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-amberline transition-colors hover:bg-amberline/12"
+                                >
+                                  Forum Thread
+                                </a>
+                              ) : null}
+                            </div>
+                            <p className="font-mono text-[10px] uppercase tracking-[0.13em] text-amberline/72">Synopsis</p>
+                            <p className="mt-1 text-xs leading-5 text-cream/70">{episode.synopsis || 'No synopsis recorded for this episode.'}</p>
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })
+                ) : detailEpisodeSearchQuery.trim() ? (
+                  <p className="text-cream/60">No episodes match your search.</p>
+                ) : (
+                  <p className="text-cream/60">No episode metadata available yet.</p>
+                )}
+              </div>
             </div>
-          </>
-        ) : rightPanelView === 'plugins' ? (
+          ) : (
+            <p className="text-cream/72">Select an anime to view details and playback context.</p>
+          )
+        ) : isPluginsView ? (
           <PluginsPanel />
         ) : (
           isFullNowPlayingView ? null : queueContent
         )}
+      </div>
       </div>
 
       {isFullNowPlayingView ? (
