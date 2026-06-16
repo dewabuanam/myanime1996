@@ -3151,6 +3151,13 @@ button {
   pointer-events: none;
 }
 
+.anime-hover-trailer-blocker {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: transparent;
+}
+
 .anime-hover-mute-btn {
   position: absolute;
   top: 0.55rem;
@@ -3164,7 +3171,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  z-index: 2;
+  z-index: 3;
 }
 
 .anime-hover-mute-btn:hover {
@@ -3184,7 +3191,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  z-index: 2;
+  z-index: 3;
 }
 
 .anime-hover-trailer-play-btn:hover {

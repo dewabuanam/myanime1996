@@ -25,6 +25,7 @@ function toExternalPlaybackUrl(url: string, isTrailer: boolean) {
 export default function BottomPlayer() {
   const currentlyPlayingItem = useAppStore((state) => state.currentlyPlayingItem);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
+  const episodeMetadata = useAppStore((state) => state.episodeMetadata);
   const isPlaying = useAppStore((state) => state.isPlaying);
   const playbackTime = useAppStore((state) => state.playbackTime);
   const playbackDuration = useAppStore((state) => state.playbackDuration);
@@ -79,6 +80,16 @@ export default function BottomPlayer() {
   const shuffleTooltip = shuffleEnabled ? 'Shuffle: On' : 'Shuffle: Off';
   const japaneseTitle = currentlyPlayingItem?.titleJapanese?.trim() || currentlyPlayingItem?.anime.titleJapanese?.trim() || '';
   const displayAnimeTitle = currentlyPlayingItem ? getDisplayTitle(currentlyPlayingItem.anime, titleLanguage) : 'Kimi no Shiranai Monogatari';
+  const episodeDisplayTitle =
+    titleLanguage === 'english'
+      ? episodeMetadata?.title?.trim() || episodeMetadata?.titleRomanji?.trim() || ''
+      : episodeMetadata?.titleRomanji?.trim() || episodeMetadata?.title?.trim() || '';
+  const episodeDisplayJapanese = episodeMetadata?.titleJapanese?.trim() || '';
+  const episodeDisplayLabel = (() => {
+    const episodeNumber = Math.max(1, Math.round(currentlyPlayingItem?.episodeNumber ?? episodeMetadata?.episodeNumber ?? 1));
+    return episodeDisplayTitle ? `Episode ${episodeNumber} - ${episodeDisplayTitle}` : `Episode ${episodeNumber}`;
+  })();
+  const displayTypeLabel = currentlyPlayingItem?.typeLabel ?? 'No media selected';
   const canOpenPlaybackAction = Boolean(activePlaybackUrl?.trim()) && !isFullyUnsupported;
 
   const getExternalTargetUrl = () => {
@@ -558,11 +569,22 @@ export default function BottomPlayer() {
       style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(220px, clamp(16rem, 50vw, 40rem)) minmax(0,1fr)' }}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <img src={currentlyPlayingItem?.anime.image ?? '/assets/logo.png'} alt="" className="h-12 w-12 rounded-lg object-cover" />
-        <div className="min-w-0">
+        <div className="h-16 w-16 min-h-16 min-w-16 shrink-0 overflow-hidden rounded-lg">
+          <img src={currentlyPlayingItem?.anime.image ?? '/assets/logo.png'} alt="" className="h-full w-full object-cover" />
+        </div>
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm text-cream/90">{displayAnimeTitle}</p>
           {japaneseTitle ? <p className="truncate text-[11px] text-amberline/80">{japaneseTitle}</p> : null}
-          <p className="truncate text-xs text-cream/55">{currentlyPlayingItem?.typeLabel ?? 'No media selected'}</p>
+          {currentlyPlayingItem?.kind === 'episode' ? (
+            <>
+              <p className="truncate text-xs text-cream/55" data-tooltip={episodeDisplayLabel} data-tooltip-sub={episodeDisplayJapanese || undefined}>
+                {episodeDisplayLabel}
+              </p>
+              {episodeDisplayJapanese ? <p className="truncate text-[11px] text-amberline/80">{episodeDisplayJapanese}</p> : null}
+            </>
+          ) : (
+            <p className="truncate text-xs text-cream/55">{displayTypeLabel}</p>
+          )}
         </div>
       </div>
 

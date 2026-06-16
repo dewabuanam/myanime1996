@@ -75,14 +75,24 @@ function mergeEpisodeLists(primary: AnimeEpisode[], fallback: AnimeEpisode[]): A
 export async function getAnimeDetailEpisodeBundle(id: string | number, page = 1): Promise<AnimeDetailEpisodeBundle> {
   const safePage = Math.max(1, Math.floor(page));
   const detail = await getAnimeDetails(id);
-  const jikanAnimeId = toJikanAnimeId(detail);
+  const requestedId = typeof id === 'number' ? id : Number(id);
+  const fallbackIds = [toJikanAnimeId(detail), detail.id, Number.isFinite(requestedId) ? requestedId : undefined]
+    .filter(
+      (candidate): candidate is number =>
+        typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0 && candidate <= MAX_REASONABLE_MAL_ID,
+    )
+    .map((candidate) => Math.floor(candidate));
+  const uniqueIds = Array.from(new Set(fallbackIds));
 
-  const listPayload = await getAnimeEpisodes(jikanAnimeId ?? id, safePage).catch(() => null);
-  const retriedPayload =
-    !listPayload && jikanAnimeId && String(jikanAnimeId) !== String(id)
-      ? await getAnimeEpisodes(jikanAnimeId, safePage).catch(() => null)
-      : null;
-  const effectivePayload = listPayload ?? retriedPayload;
+  let effectivePayload: Awaited<ReturnType<typeof getAnimeEpisodes>> | null = null;
+  for (const candidateId of uniqueIds) {
+    const payload = await getAnimeEpisodes(candidateId, safePage).catch(() => null);
+    if (!payload) continue;
+
+    effectivePayload = payload;
+    if (payload.data.length > 0) break;
+  }
+
   const jikanEpisodes = effectivePayload?.data ?? [];
 
   if (!jikanEpisodes.length) {

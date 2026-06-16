@@ -6,6 +6,7 @@ const HOUR = 60 * 60 * 1000;
 const RATE_LIMIT_RETRY_ATTEMPTS = 3;
 const RATE_LIMIT_BASE_DELAY_MS = 1200;
 const RATE_LIMIT_MAX_DELAY_MS = 10_000;
+const EPISODE_ENDPOINT_TIMEOUT_MS = 3500;
 const HOME_BACKGROUND_REFRESH_KEY = 'homeShelvesLastRefreshAt';
 const HOME_BACKGROUND_REFRESH_INTERVAL_MS = 60 * 1000;
 const ANIME_ENTITY_CACHE_KEY = 'jikan:anime:entities';
@@ -161,6 +162,15 @@ const isSamePayload = <T>(a: T, b: T) => JSON.stringify(a) === JSON.stringify(b)
 const isFilled = (value?: string) => !!value?.trim();
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+  return Promise.race([
+    promise,
+    wait(timeoutMs).then(() => {
+      throw new Error(errorMessage);
+    }),
+  ]);
+}
 
 function parseRetryAfterMs(response: Response): number | null {
   const header = response.headers.get('Retry-After');
@@ -707,17 +717,21 @@ export function getAnimeDetails(id: string | number) {
 
 export function getAnimeEpisodes(id: string | number, page = 1) {
   const safePage = Math.max(1, Math.floor(page));
-  return cachedFetch(`/anime/${id}/episodes?page=${safePage}`, 2 * HOUR, (json) => {
-    const payload = json as JikanEpisodeListResponse;
-    const episodes = (payload.data ?? []).map((item, index) => normalizeEpisodeListItem(item, index + 1));
-    return {
-      data: episodes,
-      pagination: {
-        lastVisiblePage: payload.pagination?.last_visible_page ?? safePage,
-        hasNextPage: payload.pagination?.has_next_page === true,
-      },
-    };
-  }).catch(() => ({
+  return withTimeout(
+    cachedFetch(`/anime/${id}/episodes?page=${safePage}`, 2 * HOUR, (json) => {
+      const payload = json as JikanEpisodeListResponse;
+      const episodes = (payload.data ?? []).map((item, index) => normalizeEpisodeListItem(item, index + 1));
+      return {
+        data: episodes,
+        pagination: {
+          lastVisiblePage: payload.pagination?.last_visible_page ?? safePage,
+          hasNextPage: payload.pagination?.has_next_page === true,
+        },
+      };
+    }),
+    EPISODE_ENDPOINT_TIMEOUT_MS,
+    'Jikan episode list request timed out',
+  ).catch(() => ({
     data: [] as AnimeEpisode[],
     pagination: {
       lastVisiblePage: safePage,
@@ -750,8 +764,12 @@ export async function getAnimeEpisodesAll(id: string | number, maxPages = 8) {
 
 export function getAnimeEpisodeById(id: string | number, episode: number) {
   const safeEpisode = Math.max(1, Math.floor(episode));
-  return cachedFetch(`/anime/${id}/episodes/${safeEpisode}`, 2 * HOUR, (json) =>
-    normalizeEpisodeDetailItem((json as JikanEpisodeDetailResponse).data, safeEpisode),
+  return withTimeout(
+    cachedFetch(`/anime/${id}/episodes/${safeEpisode}`, 2 * HOUR, (json) =>
+      normalizeEpisodeDetailItem((json as JikanEpisodeDetailResponse).data, safeEpisode),
+    ),
+    EPISODE_ENDPOINT_TIMEOUT_MS,
+    'Jikan episode detail request timed out',
   )
     .then(async (detail) => {
       await patchCachedEpisodeListEntries(id, detail).catch(() => {

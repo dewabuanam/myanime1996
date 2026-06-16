@@ -18,6 +18,7 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
   const watchProgress = useAppStore((state) => state.watchProgress);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
   const displayTitle = getDisplayTitle(anime, titleLanguage);
+  const detailAnimeId = anime.jikanId ?? anime.id;
   const mediaType = anime.mediaType?.trim().toLowerCase() ?? '';
   const hasTrailer = Boolean(anime.trailerUrl?.trim());
   const watchEntry = watchProgress[anime.id];
@@ -83,7 +84,7 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
         </div>
         {!compact && <p className="line-clamp-3 text-sm leading-5 text-cream/62">{anime.synopsis}</p>}
         <div className="flex items-center justify-between gap-3">
-          <Link to={`/anime/${anime.id}`} className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amberline hover:text-cream">
+          <Link to={`/anime/${detailAnimeId}`} className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amberline hover:text-cream">
             Details
           </Link>
           <div className="flex items-center gap-2">

@@ -8,6 +8,7 @@ import { getDisplayTitle } from '../utils/title';
 
 type AnimeHoverPreviewProps = {
   anime: AnimeSummary;
+  posterOverlayLabel?: string | null;
   episodeLabel: string;
   mediaLabel?: string;
   onPlay?: () => void;
@@ -86,6 +87,7 @@ const toAutoplayEmbedUrl = (url?: string, muted = false) => {
 
 export default function AnimeHoverPreview({
   anime,
+  posterOverlayLabel,
   episodeLabel,
   mediaLabel,
   onPlay,
@@ -120,6 +122,7 @@ export default function AnimeHoverPreview({
   const trailerUrl = useMemo(() => toAutoplayEmbedUrl(resolvedTrailerUrl, true), [resolvedTrailerUrl]);
   const displayTitle = useMemo(() => getDisplayTitle(anime, titleLanguage), [anime, titleLanguage]);
   const japaneseTitle = anime.titleJapanese?.trim() ?? '';
+  const fallbackVisual = anime.banner?.trim() || anime.image;
 
   useEffect(() => {
     setResolvedTrailerUrl(anime.trailerUrl);
@@ -299,6 +302,7 @@ export default function AnimeHoverPreview({
               referrerPolicy="strict-origin-when-cross-origin"
               onLoad={applyPreviewVolume}
             />
+            <div className="anime-hover-trailer-blocker" aria-hidden="true" />
             {staticActive && <div className="anime-hover-static-overlay" aria-hidden="true" />}
             <button
               type="button"
@@ -322,8 +326,9 @@ export default function AnimeHoverPreview({
             ) : null}
           </>
         ) : (
-          <img src={anime.image} alt="" className="anime-hover-preview-poster" />
+          <img src={fallbackVisual} alt="" className="anime-hover-preview-poster" />
         )}
+        {posterOverlayLabel ? <span className="anime-card-poster-overlay-badge">{posterOverlayLabel}</span> : null}
       </div>
 
       <div className="anime-hover-preview-body">
@@ -331,20 +336,20 @@ export default function AnimeHoverPreview({
         {japaneseTitle && <p className="anime-hover-preview-japanese line-clamp-1" title={japaneseTitle}>{japaneseTitle}</p>}
 
         <div className="anime-hover-preview-actions">
+          {canPlayAnime && onPlay ? (
+            <button type="button" className="anime-hover-btn anime-hover-btn-play retro-tooltip" onClick={onPlay} aria-label={playLabel} data-tooltip={playLabel}>
+              {isResumeAction ? <History size={14} /> : <Play size={14} />}
+            </button>
+          ) : null}
           {canPlayAnime && isResumeAction && onStartOver ? (
             <button
               type="button"
-              className="anime-hover-btn anime-hover-btn-play retro-tooltip"
+              className="anime-hover-btn anime-hover-btn-info retro-tooltip"
               onClick={onStartOver}
               aria-label="Start Over"
               data-tooltip="Start Over"
             >
-              <Play size={14} />
-            </button>
-          ) : null}
-          {canPlayAnime && onPlay ? (
-            <button type="button" className="anime-hover-btn anime-hover-btn-play retro-tooltip" onClick={onPlay} aria-label={playLabel} data-tooltip={playLabel}>
-              {isResumeAction ? <History size={14} /> : <Play size={14} />}
+              <RotateCcw size={14} />
             </button>
           ) : null}
           {hasQueueableTrailer && onAddToQueue ? (

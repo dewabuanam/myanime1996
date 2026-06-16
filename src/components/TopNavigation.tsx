@@ -181,7 +181,7 @@ export default function TopNavigation() {
         type="button"
         className="top-icon-btn top-language-btn retro-tooltip tooltip-down"
         aria-label="Toggle title language"
-        data-tooltip={`Title Language: ${titleLanguage === 'english' ? 'EN' : 'JP'}`}
+        data-tooltip={`Title Language: ${titleLanguage === 'english' ? 'English' : 'Romaji'}`}
         data-tauri-drag-region="false"
         onClick={() => void toggleTitleLanguage()}
       >

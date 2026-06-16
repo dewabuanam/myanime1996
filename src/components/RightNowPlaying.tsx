@@ -25,6 +25,7 @@ const FULLSCREEN_OVERLAY_HIDE_MS = 2000;
 const ANISKIP_OVERLAY_FADE_MS = 10000;
 const BACKGROUND_LATEST_RESOLVE_LIMIT = 5;
 const HOME_REFRESH_LIMIT = 20;
+const MAX_REASONABLE_MAL_ID = 2_000_000;
 
 function formatEpisodeDuration(durationMinutes?: number) {
   if (durationMinutes && durationMinutes > 0) return `${durationMinutes}m`;
@@ -295,6 +296,7 @@ export default function RightNowPlaying() {
   const playbackTime = useAppStore((state) => state.playbackTime);
   const playbackDuration = useAppStore((state) => state.playbackDuration);
   const trailerVolume = useAppStore((state) => state.trailerVolume);
+  const episodeMetadata = useAppStore((state) => state.episodeMetadata);
   const pendingSeekTo = useAppStore((state) => state.pendingSeekTo);
   const setPlaying = useAppStore((state) => state.setPlaying);
   const setPlaybackTime = useAppStore((state) => state.setPlaybackTime);
@@ -322,7 +324,7 @@ export default function RightNowPlaying() {
   const setSelectedSourceOptionId = useAppStore((state) => state.setSelectedSourceOptionId);
   const requestSeekTo = useAppStore((state) => state.requestSeekTo);
   const setAnimeSkipButtonSegment = useAppStore((state) => state.setAnimeSkipButtonSegment);
-  const setCurrentlyPlayingTypeLabel = useAppStore((state) => state.setCurrentlyPlayingTypeLabel);
+  const setEpisodeMetadata = useAppStore((state) => state.setEpisodeMetadata);
 
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const queueDrawerRef = useRef<HTMLDivElement | null>(null);
@@ -394,9 +396,25 @@ export default function RightNowPlaying() {
   const showNowPlayingPane = isNowPlayingView;
   const isFullNowPlayingView = isRightPanelFullpage && isNowPlayingView;
   const showVideoOverlayControls = isDocumentFullscreen;
-  const fallbackDisplayTitle = currentlyPlayingItem?.title ?? (selectedAnime ? getDisplayTitle(selectedAnime, titleLanguage) : 'Nothing Playing');
-  const fallbackDisplayJapanese = currentlyPlayingItem?.titleJapanese ?? selectedAnime?.titleJapanese ?? 'No Japanese title available';
-  const fallbackTypeLabel = currentlyPlayingItem?.typeLabel ?? (selectedAnime?.mediaType?.toUpperCase() ?? 'No Media');
+  const fallbackDisplayTitle = currentlyPlayingItem
+    ? getDisplayTitle(currentlyPlayingItem.anime, titleLanguage)
+    : selectedAnime
+      ? getDisplayTitle(selectedAnime, titleLanguage)
+      : 'Nothing Playing';
+  const fallbackDisplayJapanese = currentlyPlayingItem?.anime.titleJapanese ?? selectedAnime?.titleJapanese ?? 'No Japanese title available';
+  const episodeDisplayTitle =
+    titleLanguage === 'english'
+      ? episodeMetadata?.title?.trim() || episodeMetadata?.titleRomanji?.trim() || ''
+      : episodeMetadata?.titleRomanji?.trim() || episodeMetadata?.title?.trim() || '';
+  const episodeDisplayJapanese = episodeMetadata?.titleJapanese?.trim() || '';
+  const fallbackTypeLabel = (() => {
+    if (currentlyPlayingItem?.kind === 'episode') {
+      const episodeNumber = Math.max(1, Math.round(currentlyPlayingItem.episodeNumber ?? episodeMetadata?.episodeNumber ?? 1));
+      return episodeDisplayTitle ? `Episode ${episodeNumber} - ${episodeDisplayTitle}` : `Episode ${episodeNumber}`;
+    }
+
+    return currentlyPlayingItem?.typeLabel ?? (selectedAnime?.mediaType?.toUpperCase() ?? 'No Media');
+  })();
   const detailAnimeView = detailAnime ?? selectedAnime;
   const detailYearLabel = formatAnimeYear(detailAnimeView?.year, detailAnime?.aired);
   const filteredDetailEpisodes = useMemo(() => {
@@ -465,6 +483,8 @@ export default function RightNowPlaying() {
       selectedOptionId: selected.id,
     };
   }, [preferredAudioLanguage, resolvedSource, selectedSourceOptionId, sourceOptions]);
+
+  const shouldBlockPlaybackSurface = hasTrailerPlayback || Boolean(activeResolvedSource) || isResolvingSource;
 
   const sourceSelectorItems = useMemo<LogoSelectItem[]>(() => {
     const items: LogoSelectItem[] = [
@@ -973,7 +993,7 @@ export default function RightNowPlaying() {
     if (!next || !detailAnimeView) return;
 
     const jikanAnimeId = detailAnimeView.jikanId ?? detailAnimeView.id;
-    if (!Number.isFinite(jikanAnimeId) || jikanAnimeId <= 0) return;
+    if (!Number.isFinite(jikanAnimeId) || jikanAnimeId <= 0 || jikanAnimeId > MAX_REASONABLE_MAL_ID) return;
 
     setDetailLoadingEpisode(episodeNumber);
     const detail = await getAnimeEpisodeById(Math.floor(jikanAnimeId), episodeNumber).catch(() => null);
@@ -1021,7 +1041,11 @@ export default function RightNowPlaying() {
     setIsDetailLoading(true);
 
     const run = async () => {
-      const payload = await getAnimeDetailEpisodeBundle(targetAnime.id, detailEpisodePage).catch(() => null);
+      const preferredDetailId =
+        typeof targetAnime.jikanId === 'number' && Number.isFinite(targetAnime.jikanId) && targetAnime.jikanId > 0
+          ? Math.floor(targetAnime.jikanId)
+          : targetAnime.id;
+      const payload = await getAnimeDetailEpisodeBundle(preferredDetailId, detailEpisodePage).catch(() => null);
       if (cancelled) return;
 
       if (!payload) {
@@ -1265,8 +1289,8 @@ export default function RightNowPlaying() {
             <div key={queueItem.id} className="right-queue-item group">
               <img src={queueItem.anime.image} alt="" className="right-queue-item-thumb" />
               <div className="min-w-0 flex-1">
-                <p className="right-queue-item-title line-clamp-1">{queueItem.title}</p>
-                <p className="right-queue-item-jp line-clamp-1">{queueItem.titleJapanese ?? 'No Japanese title'}</p>
+                <p className="right-queue-item-title line-clamp-1">{getDisplayTitle(queueItem.anime, titleLanguage)}</p>
+                <p className="right-queue-item-jp line-clamp-1">{queueItem.anime.titleJapanese ?? 'No Japanese title'}</p>
                 <p className="right-queue-item-type line-clamp-1">{queueItem.typeLabel}</p>
               </div>
 
@@ -1533,6 +1557,7 @@ export default function RightNowPlaying() {
 
       // Prime AniSkip before starting playback so skip UI can appear immediately in-range.
       if (resolved && playable.kind === 'episode') {
+        setEpisodeMetadata(null);
         const malId = await getAniSkipMalId();
         const episodeNumber = getAniSkipEpisodeNumber();
         const episodeLength = getAniSkipEpisodeLength();
@@ -1557,16 +1582,20 @@ export default function RightNowPlaying() {
             getAnimeEpisodeById(jikanMalId, episodeNumber)
               .then((episodeDetail) => {
                 if (cancelled) return;
-                const title = episodeDetail?.title?.trim();
-                if (title) {
-                  setCurrentlyPlayingTypeLabel(`Episode ${episodeNumber} - ${title}`);
-                }
+                setEpisodeMetadata({
+                  episodeNumber,
+                  title: episodeDetail?.title?.trim() || undefined,
+                  titleJapanese: episodeDetail?.titleJapanese?.trim() || undefined,
+                  titleRomanji: episodeDetail?.titleRomanji?.trim() || undefined,
+                });
               })
               .catch(() => {
                 // Episode metadata is optional — keep UX unchanged on failure.
               });
           }
         }
+      } else {
+        setEpisodeMetadata(null);
       }
 
       setResolvedSource(resolved);
@@ -1598,6 +1627,7 @@ export default function RightNowPlaying() {
     preferredAudioLanguage,
     preferredSourcePluginId,
     sourceResolveRetryToken,
+    setEpisodeMetadata,
     setPlaying,
     setResolvingPlaybackSource,
     setSelectedSourceOptionId,
@@ -2054,7 +2084,16 @@ export default function RightNowPlaying() {
               {fallbackDisplayTitle}
             </h2>
             <p className="anime-card-jp mt-0.5 line-clamp-1">{fallbackDisplayJapanese}</p>
-            <p className="anime-card-video-badge mt-1 inline-flex">{fallbackTypeLabel}</p>
+            {currentlyPlayingItem?.kind === 'episode' ? (
+              <>
+                <p className="anime-card-video-badge mt-1 block max-w-full line-clamp-1" data-tooltip={fallbackTypeLabel} data-tooltip-sub={episodeDisplayJapanese || undefined}>
+                  {fallbackTypeLabel}
+                </p>
+                {episodeDisplayJapanese ? <p className="anime-card-jp mt-0.5 line-clamp-1 text-amberline/80">{episodeDisplayJapanese}</p> : null}
+              </>
+            ) : (
+              <p className="anime-card-video-badge mt-1 inline-flex">{fallbackTypeLabel}</p>
+            )}
             {!showVideoOverlayControls ? sourceResolveControls : null}
             {isNonTrailerPlayback && isSourceLogOpen && !showVideoOverlayControls ? (
               <div className="source-trace-panel">
@@ -2222,6 +2261,7 @@ export default function RightNowPlaying() {
                 </div>
               </div>
             )}
+            {shouldBlockPlaybackSurface ? <div className="right-now-video-blocker" aria-hidden="true" /> : null}
           </div>
         </div>
       </div>

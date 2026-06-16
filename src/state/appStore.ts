@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { AnimeSummary, PlayableItem, PlayableKind, Playlist, RightPanelView, TitleLanguage, UserSession, WatchProgress } from '../types/anime';
 import type { ImportedSourcePluginDefinition, SourceAudioLanguage } from '../types/plugin';
 import type { BaseCatalogSource } from '../services/catalogSource';
-import { DEFAULT_BASE_CATALOG_SOURCE } from '../services/catalogSource';
+import { DEFAULT_BASE_CATALOG_SOURCE, getAnimeTrailerUrl } from '../services/catalogSource';
 import { clearAnimeScheduleDataCache, DEFAULT_ANIMESCHEDULE_TOKEN } from '../services/animeSchedule';
 import { clearJikanDataCache } from '../services/jikan';
 import { getStoredValue, removeStoredValue, setStoredValue } from '../services/store';
@@ -85,7 +85,7 @@ interface AppState {
   selectedSourceOptionId: string | null;
   pendingSeekTo: number | null;
   isTrailerPlayerReady: boolean;
-  episodeMetadata: { title?: string; titleJapanese?: string; episodeNumber: number } | null;
+  episodeMetadata: { title?: string; titleJapanese?: string; titleRomanji?: string; episodeNumber: number } | null;
   initialize: () => Promise<void>;
   continueAsGuest: () => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
@@ -137,7 +137,7 @@ interface AppState {
   requestSeekTo: (seconds: number) => void;
   clearPendingSeekTo: () => void;
   setTrailerPlayerReady: (ready: boolean) => void;
-  setEpisodeMetadata: (meta: { title?: string; titleJapanese?: string; episodeNumber: number } | null) => void;
+  setEpisodeMetadata: (meta: { title?: string; titleJapanese?: string; titleRomanji?: string; episodeNumber: number } | null) => void;
   setCurrentlyPlayingTypeLabel: (typeLabel: string) => void;
   resetPlaybackTransport: () => void;
   toggleSidebarCompact: () => Promise<void>;
@@ -936,7 +936,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   playTrailer: async (anime) => {
-    await get().replaceQueueAndPlay([makeTrailerItem(anime)], 0);
+    let trailerAnime = anime;
+    const hasTrailer = Boolean(anime.trailerUrl?.trim());
+
+    if (!hasTrailer) {
+      const resolvedTrailerUrl = await getAnimeTrailerUrl(anime.id);
+      if (resolvedTrailerUrl?.trim()) {
+        trailerAnime = {
+          ...anime,
+          trailerUrl: resolvedTrailerUrl,
+        };
+      }
+    }
+
+    await get().replaceQueueAndPlay([makeTrailerItem(trailerAnime)], 0);
   },
 
   addAnimeSeriesToQueue: async (anime) => {

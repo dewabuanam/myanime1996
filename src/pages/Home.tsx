@@ -1,4 +1,4 @@
-import { Play } from 'lucide-react';
+import { Info, Play } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AnimeHoverPreview from '../components/AnimeHoverPreview';
@@ -183,7 +183,7 @@ export default function Home() {
   const [topAiring, setTopAiring] = useState<AnimeSummary[]>([]);
   const [topAnime, setTopAnime] = useState<AnimeSummary[]>([]);
   const [topUpcoming, setTopUpcoming] = useState<AnimeSummary[]>([]);
-  const [heroIndex, setHeroIndex] = useState(0);
+  const [featuredAnimeId, setFeaturedAnimeId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const selectAnime = useAppStore((state) => state.selectAnime);
@@ -350,15 +350,34 @@ export default function Home() {
     };
   }, [homeRefreshVersion]);
 
-  useEffect(() => {
-    if (!seasonal.length) return;
-    setHeroIndex(Math.floor(Math.random() * seasonal.length));
-  }, [seasonal.length]);
+  const heroPool = useMemo(() => {
+    const poolMap = new Map<number, AnimeSummary>();
+    [...seasonal, ...popular, ...latestUpdated, ...latestPromo, ...topAiring, ...topAnime, ...topUpcoming].forEach((anime) => {
+      if (!poolMap.has(anime.id)) {
+        poolMap.set(anime.id, anime);
+      }
+    });
+    return Array.from(poolMap.values());
+  }, [latestPromo, latestUpdated, popular, seasonal, topAiring, topAnime, topUpcoming]);
 
-  const featured = useMemo(
-    () => seasonal[heroIndex] ?? seasonal[0] ?? topAnime[0] ?? popular[0] ?? topAiring[0] ?? topUpcoming[0],
-    [heroIndex, popular, seasonal, topAiring, topAnime, topUpcoming],
-  );
+  useEffect(() => {
+    if (!heroPool.length) {
+      setFeaturedAnimeId(null);
+      return;
+    }
+    setFeaturedAnimeId((currentId) => {
+      if (currentId !== null && heroPool.some((anime) => anime.id === currentId)) {
+        return currentId;
+      }
+      const randomAnime = heroPool[Math.floor(Math.random() * heroPool.length)];
+      return randomAnime?.id ?? null;
+    });
+  }, [heroPool]);
+
+  const featured = useMemo(() => {
+    if (!heroPool.length || featuredAnimeId === null) return undefined;
+    return heroPool.find((anime) => anime.id === featuredAnimeId) ?? heroPool[0];
+  }, [featuredAnimeId, heroPool]);
 
   const animeLookup = useMemo(() => {
     const map = new Map<number, AnimeSummary>();
@@ -383,6 +402,16 @@ export default function Home() {
     if (!featured) return;
     await playAnimeSeries(featured);
   };
+
+  const openFeaturedDetails = async () => {
+    if (!featured) return;
+    await selectAnime(featured);
+    await openRightPanelWithView('detail');
+  };
+
+  const heroIsFromLatestPromo = Boolean(featured && latestPromo.some((anime) => anime.id === featured.id));
+  const heroIsFromTopUpcoming = Boolean(featured && topUpcoming.some((anime) => anime.id === featured.id));
+  const showStartWatching = Boolean(featured && !heroIsFromLatestPromo && !heroIsFromTopUpcoming && !isNotYetAired(featured));
 
   const continueWatching = useMemo<ContinueWatchingItem[]>(() => {
     return watchHistory
@@ -523,6 +552,11 @@ export default function Home() {
       : anime;
     const mode = getCardActionMode(shelfKey);
 
+    if (mode === 'trailer') {
+      await playTrailer(anime);
+      return;
+    }
+
     if (hasResume && resumeEntry) {
       const resumeAt = Math.max(0, Math.floor(resumeEntry.lastPlaybackSeconds ?? 0));
       const resumeDuration = Math.max(0, Math.floor(resumeEntry.episodeDurationSeconds ?? 0));
@@ -619,9 +653,18 @@ export default function Home() {
             again.
           </h1>
           <p className="retro-hero-subtitle mt-3 text-base text-cream/72">Where will we go today?</p>
-          <button type="button" onClick={startWatching} disabled={!featured} data-tooltip="Start Watching" className="retro-tooltip vhs-button mt-5 rounded-full px-5 py-2.5 disabled:cursor-not-allowed disabled:opacity-50">
-            <Play size={16} /> Start Watching
-          </button>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            {showStartWatching ? (
+              <button type="button" onClick={startWatching} data-tooltip="Start Watching" className="retro-tooltip vhs-button rounded-full px-5 py-2.5">
+                <Play size={16} /> Start Watching
+              </button>
+            ) : null}
+            {featured ? (
+              <button type="button" onClick={openFeaturedDetails} data-tooltip="Open Details" className="retro-tooltip vhs-button-ghost rounded-full px-5 py-2.5">
+                <Info size={16} /> Open Details
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {featured && (
@@ -678,6 +721,7 @@ export default function Home() {
                 <AnimeHoverPreview
                   key={`${shelf.key}-${item.id}`}
                   anime={previewAnime}
+                  posterOverlayLabel={posterOverlayLabel}
                   episodeLabel={previewEpisodeLabel}
                   mediaLabel={mediaLabel}
                   playLabel={playLabel}
