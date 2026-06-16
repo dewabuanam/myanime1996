@@ -1089,6 +1089,74 @@ button {
   background: rgba(236, 183, 104, 0.2);
 }
 
+.skip-btn-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.72rem;
+  padding: 0.18rem 0.6rem;
+  border-radius: 0.3rem;
+  border: 1px solid rgba(236, 183, 104, 0.45);
+  background: linear-gradient(180deg, rgba(18, 13, 9, 0.9), rgba(35, 24, 17, 0.9));
+  color: rgba(245, 234, 210, 0.94);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.61rem;
+  letter-spacing: 0.085em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.34);
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.skip-btn-control.is-mini {
+  min-height: 1.38rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.56rem;
+  letter-spacing: 0.09em;
+}
+
+.skip-btn-control.is-inline {
+  min-height: 1.34rem;
+  padding: 0.08rem 0.46rem;
+}
+
+.player-transport-zone {
+  position: relative;
+}
+
+.player-skip-inline-wrap {
+  position: absolute;
+  top: 1rem;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.player-skip-inline-wrap .skip-btn-control {
+  pointer-events: auto;
+}
+
+.player-skip-inline-wrap.is-op {
+  left: 2.45rem;
+}
+
+.player-skip-inline-wrap.is-ed,
+.player-skip-inline-wrap.is-recap {
+  right: 2.45rem;
+}
+
+.player-skip-inline-wrap.is-recap {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.skip-btn-control:hover,
+.skip-btn-control:focus-visible {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, rgba(30, 21, 15, 0.92), rgba(58, 40, 28, 0.92));
+  border-color: rgba(236, 183, 104, 0.72);
+}
+
 .source-trace-panel {
   margin-top: 0.4rem;
   border: 1px solid rgba(236, 183, 104, 0.3);
@@ -1589,6 +1657,62 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 0.34rem;
+}
+
+.aniskip-overlay-wrap {
+  position: absolute;
+  right: 0.9rem;
+  bottom: 7.1rem;
+  z-index: 28;
+  pointer-events: none;
+}
+
+.aniskip-overlay-wrap.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.aniskip-overlay-btn {
+  pointer-events: auto;
+  border: 1px solid rgba(236, 183, 104, 0.58);
+  border-radius: 0.34rem;
+  background: linear-gradient(180deg, rgba(16, 11, 8, 0.96), rgba(39, 27, 19, 0.94));
+  color: rgba(245, 234, 210, 0.96);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 0.48rem 0.82rem;
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.4);
+  opacity: 0.76;
+  transition: opacity 220ms ease, transform 180ms ease, border-color 180ms ease;
+}
+
+.aniskip-overlay-btn:hover,
+.aniskip-overlay-btn:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(236, 183, 104, 0.75);
+  opacity: 0.94;
+}
+
+.aniskip-overlay-btn.is-fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.skip-toast {
+  position: absolute;
+  right: 1.2rem;
+  bottom: 4.55rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.6);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.67rem;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  z-index: 28;
 }
 
 .right-now-full-overlay-row {

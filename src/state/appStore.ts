@@ -9,6 +9,7 @@ import { getStoredValue, removeStoredValue, setStoredValue } from '../services/s
 import { importSourcePluginFromPicker } from '../services/pluginImport';
 import { getAvailableSourcePlugins, getDefaultPluginPriority } from '../services/sourceResolver';
 import { clearSourceResolveCache } from '../services/sourceCache';
+import { clearAniSkipDataCache } from '../services/aniSkip';
 import { clearPluginResolverCaches } from '../services/pluginExecutor';
 
 const WATCH_HISTORY_PROFILE_KEY = 'watchHistoryByProfile';
@@ -17,6 +18,14 @@ const LEGACY_PLAYBACK_MIGRATED_KEY = 'legacyPlaybackMigrated';
 const WATCH_COMPLETE_THRESHOLD_PERCENT = 90;
 
 export type PlaybackSupportMode = 'fully-supported' | 'fullscreen-only' | 'fully-unsupported';
+export type AnimeSkipType = 'op' | 'ed' | 'recap';
+
+export type AnimeSkipButtonSegment = {
+  type: AnimeSkipType;
+  startTime: number;
+  endTime: number;
+  skipId: string;
+};
 
 function hashString(input: string) {
   let hash = 0;
@@ -65,6 +74,10 @@ interface AppState {
   pluginEnabled: Record<string, boolean>;
   preferredSourcePluginId: string | null;
   preferredAudioLanguage: SourceAudioLanguage;
+  autoSkipOpening: boolean;
+  autoSkipEnding: boolean;
+  autoSkipRecap: boolean;
+  animeSkipButtonSegment: AnimeSkipButtonSegment | null;
   baseCatalogSource: BaseCatalogSource;
   animeScheduleApiToken: string;
   playbackSupportMode: PlaybackSupportMode;
@@ -72,6 +85,7 @@ interface AppState {
   selectedSourceOptionId: string | null;
   pendingSeekTo: number | null;
   isTrailerPlayerReady: boolean;
+  episodeMetadata: { title?: string; titleJapanese?: string; episodeNumber: number } | null;
   initialize: () => Promise<void>;
   continueAsGuest: () => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
@@ -111,6 +125,10 @@ interface AppState {
   setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<void>;
   setPreferredSourcePluginId: (pluginId: string | null) => Promise<void>;
   setPreferredAudioLanguage: (language: SourceAudioLanguage) => Promise<void>;
+  setAutoSkipOpening: (enabled: boolean) => Promise<void>;
+  setAutoSkipEnding: (enabled: boolean) => Promise<void>;
+  setAutoSkipRecap: (enabled: boolean) => Promise<void>;
+  setAnimeSkipButtonSegment: (segment: AnimeSkipButtonSegment | null) => void;
   setBaseCatalogSource: (source: BaseCatalogSource) => Promise<void>;
   setAnimeScheduleApiToken: (token: string) => Promise<void>;
   setPlaybackSupportMode: (mode: PlaybackSupportMode) => void;
@@ -119,6 +137,8 @@ interface AppState {
   requestSeekTo: (seconds: number) => void;
   clearPendingSeekTo: () => void;
   setTrailerPlayerReady: (ready: boolean) => void;
+  setEpisodeMetadata: (meta: { title?: string; titleJapanese?: string; episodeNumber: number } | null) => void;
+  setCurrentlyPlayingTypeLabel: (typeLabel: string) => void;
   resetPlaybackTransport: () => void;
   toggleSidebarCompact: () => Promise<void>;
   toggleRightPanelHidden: () => Promise<void>;
@@ -548,6 +568,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   pluginEnabled: {},
   preferredSourcePluginId: null,
   preferredAudioLanguage: 'sub',
+  autoSkipOpening: false,
+  autoSkipEnding: false,
+  autoSkipRecap: false,
+  animeSkipButtonSegment: null,
   baseCatalogSource: DEFAULT_BASE_CATALOG_SOURCE,
   animeScheduleApiToken: DEFAULT_ANIMESCHEDULE_TOKEN,
   playbackSupportMode: 'fully-supported',
@@ -555,6 +579,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedSourceOptionId: null,
   pendingSeekTo: null,
   isTrailerPlayerReady: false,
+  episodeMetadata: null,
 
   initialize: async () => {
     try {
@@ -573,6 +598,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawPluginEnabled,
         rawPreferredSourcePluginId,
         rawPreferredAudioLanguage,
+        rawAutoSkipOpening,
+        rawAutoSkipEnding,
+        rawAutoSkipRecap,
         rawBaseCatalogSource,
         rawAnimeScheduleApiToken,
         isTrailerMuted,
@@ -599,6 +627,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
         getStoredValue('preferredSourcePluginId', null),
         getStoredValue('preferredAudioLanguage', 'sub' as SourceAudioLanguage),
+        getStoredValue('autoSkipOpening', false),
+        getStoredValue('autoSkipEnding', false),
+        getStoredValue('autoSkipRecap', false),
         getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
         getStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
         getStoredValue('isTrailerMuted', false),
@@ -704,6 +735,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         pluginEnabled,
         preferredSourcePluginId,
         preferredAudioLanguage,
+        autoSkipOpening: Boolean(rawAutoSkipOpening),
+        autoSkipEnding: Boolean(rawAutoSkipEnding),
+        autoSkipRecap: Boolean(rawAutoSkipRecap),
+        animeSkipButtonSegment: null,
         baseCatalogSource,
         animeScheduleApiToken,
         playbackSupportMode: 'fully-supported',
@@ -744,6 +779,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         pluginEnabled: {},
         preferredSourcePluginId: null,
         preferredAudioLanguage: 'sub',
+        autoSkipOpening: false,
+        autoSkipEnding: false,
+        autoSkipRecap: false,
+        episodeMetadata: null,
+        animeSkipButtonSegment: null,
         baseCatalogSource: DEFAULT_BASE_CATALOG_SOURCE,
         animeScheduleApiToken: DEFAULT_ANIMESCHEDULE_TOKEN,
         playbackSupportMode: 'fully-supported',
@@ -818,6 +858,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       activePlaybackUrl: null,
       pendingSeekTo: null,
       isTrailerPlayerReady: false,
+      animeSkipButtonSegment: null,
       selectedSourceOptionId: null,
     });
   },
@@ -841,8 +882,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         playbackTime: 0,
         playbackDuration: 0,
         activePlaybackUrl: null,
+        episodeMetadata: null,
         pendingSeekTo: null,
         isTrailerPlayerReady: false,
+        animeSkipButtonSegment: null,
         selectedSourceOptionId: null,
       });
       return;
@@ -869,8 +912,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       playbackTime: 0,
       playbackDuration: 0,
       activePlaybackUrl: null,
+      episodeMetadata: null,
       pendingSeekTo: null,
       isTrailerPlayerReady: false,
+      animeSkipButtonSegment: null,
       selectedSourceOptionId: null,
     });
 
@@ -997,6 +1042,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       playbackDuration: 0,
       pendingSeekTo: null,
       isTrailerPlayerReady: false,
+      animeSkipButtonSegment: null,
       selectedSourceOptionId: null,
     });
   },
@@ -1323,6 +1369,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ preferredAudioLanguage: next, selectedSourceOptionId: null });
   },
 
+  setAutoSkipOpening: async (enabled) => {
+    const next = Boolean(enabled);
+    await setStoredValue('autoSkipOpening', next);
+    set({ autoSkipOpening: next });
+  },
+
+  setAutoSkipEnding: async (enabled) => {
+    const next = Boolean(enabled);
+    await setStoredValue('autoSkipEnding', next);
+    set({ autoSkipEnding: next });
+  },
+
+  setAutoSkipRecap: async (enabled) => {
+    const next = Boolean(enabled);
+    await setStoredValue('autoSkipRecap', next);
+    set({ autoSkipRecap: next });
+  },
+
+  setAnimeSkipButtonSegment: (segment) => {
+    set({ animeSkipButtonSegment: segment });
+  },
+
   setBaseCatalogSource: async (source) => {
     const next = normalizeBaseCatalogSource(source);
     await setStoredValue('baseCatalogSource', next);
@@ -1361,13 +1429,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isTrailerPlayerReady: ready });
   },
 
+  setEpisodeMetadata: (meta) => {
+    set({ episodeMetadata: meta });
+  },
+
+  setCurrentlyPlayingTypeLabel: (typeLabel) => {
+    const current = get().currentlyPlayingItem;
+    if (!current) return;
+    set({ currentlyPlayingItem: { ...current, typeLabel } });
+  },
+
   resetPlaybackTransport: () => {
     set({
       playbackTime: 0,
       playbackDuration: 0,
       activePlaybackUrl: null,
+      episodeMetadata: null,
       pendingSeekTo: null,
       isTrailerPlayerReady: false,
+      animeSkipButtonSegment: null,
     });
   },
 
@@ -1472,6 +1552,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       clearJikanDataCache(),
       clearAnimeScheduleDataCache(),
       clearSourceResolveCache(),
+      clearAniSkipDataCache(),
     ]);
     set({ homeRefreshVersion: get().homeRefreshVersion + 1 });
   },
@@ -1517,6 +1598,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         pluginEnabled: current.pluginEnabled,
         preferredSourcePluginId: current.preferredSourcePluginId,
         preferredAudioLanguage: current.preferredAudioLanguage,
+        autoSkipOpening: current.autoSkipOpening,
+        autoSkipEnding: current.autoSkipEnding,
+        autoSkipRecap: current.autoSkipRecap,
         baseCatalogSource: current.baseCatalogSource,
         animeScheduleApiToken: current.animeScheduleApiToken,
         isTrailerMuted,
@@ -1567,6 +1651,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('pluginEnabled', {}),
       setStoredValue('preferredSourcePluginId', null),
       setStoredValue('preferredAudioLanguage', 'sub' as SourceAudioLanguage),
+      setStoredValue('autoSkipOpening', false),
+      setStoredValue('autoSkipEnding', false),
+      setStoredValue('autoSkipRecap', false),
       setStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
       setStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
       setStoredValue('isTrailerMuted', false),
@@ -1578,8 +1665,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('favorites', []),
       setStoredValue('watchProgress', {}),
       setStoredValue('sourceResolveCache', {}),
+      setStoredValue('aniSkipCache', {}),
       clearJikanDataCache(),
       clearAnimeScheduleDataCache(),
+      clearAniSkipDataCache(),
       removeStoredValue('localCredentials'),
     ]);
 
@@ -1598,6 +1687,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       pluginEnabled: {},
       preferredSourcePluginId: null,
       preferredAudioLanguage: 'sub',
+      autoSkipOpening: false,
+      autoSkipEnding: false,
+      autoSkipRecap: false,
+      episodeMetadata: null,
+      animeSkipButtonSegment: null,
       baseCatalogSource: DEFAULT_BASE_CATALOG_SOURCE,
       animeScheduleApiToken: DEFAULT_ANIMESCHEDULE_TOKEN,
       playbackSupportMode: 'fully-supported',

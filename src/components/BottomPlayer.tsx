@@ -4,6 +4,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { ANISKIP_LABELS, voteOnAniSkip } from '../services/aniSkip';
 import { useAppStore } from '../state/appStore';
 import { getDisplayTitle } from '../utils/title';
 import { toCanonicalYouTubeWatchUrl } from '../utils/youtubeUrl';
@@ -37,6 +38,8 @@ export default function BottomPlayer() {
   const setPlaybackTime = useAppStore((state) => state.setPlaybackTime);
   const setPlaybackDuration = useAppStore((state) => state.setPlaybackDuration);
   const requestSeekTo = useAppStore((state) => state.requestSeekTo);
+  const animeSkipButtonSegment = useAppStore((state) => state.animeSkipButtonSegment);
+  const setAnimeSkipButtonSegment = useAppStore((state) => state.setAnimeSkipButtonSegment);
   const setTrailerVolume = useAppStore((state) => state.setTrailerVolume);
   const playNextInQueue = useAppStore((state) => state.playNextInQueue);
   const playPreviousInQueue = useAppStore((state) => state.playPreviousInQueue);
@@ -75,6 +78,7 @@ export default function BottomPlayer() {
   const repeatTooltip = repeatMode === 'off' ? 'Repeat: Off' : 'Repeat: One';
   const shuffleTooltip = shuffleEnabled ? 'Shuffle: On' : 'Shuffle: Off';
   const japaneseTitle = currentlyPlayingItem?.titleJapanese?.trim() || currentlyPlayingItem?.anime.titleJapanese?.trim() || '';
+  const displayAnimeTitle = currentlyPlayingItem ? getDisplayTitle(currentlyPlayingItem.anime, titleLanguage) : 'Kimi no Shiranai Monogatari';
   const canOpenPlaybackAction = Boolean(activePlaybackUrl?.trim()) && !isFullyUnsupported;
 
   const getExternalTargetUrl = () => {
@@ -431,6 +435,18 @@ export default function BottomPlayer() {
 
   const canUseAppFullscreen = true;
   const appFullscreenTooltip = isAppFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen';
+  const showControlBarSkipButton =
+    Boolean(animeSkipButtonSegment) &&
+    !isAppFullscreen &&
+    playbackSupportMode === 'fully-supported' &&
+    !isWindowToggleMode;
+
+  const handleControlBarSkipClick = () => {
+    if (!animeSkipButtonSegment) return;
+    requestSeekTo(animeSkipButtonSegment.endTime);
+    setAnimeSkipButtonSegment(null);
+    void voteOnAniSkip('upvote', animeSkipButtonSegment.skipId);
+  };
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -544,13 +560,13 @@ export default function BottomPlayer() {
       <div className="flex min-w-0 items-center gap-3">
         <img src={currentlyPlayingItem?.anime.image ?? '/assets/logo.png'} alt="" className="h-12 w-12 rounded-lg object-cover" />
         <div className="min-w-0">
-          <p className="truncate text-sm text-cream/90">{currentlyPlayingItem ? getDisplayTitle(currentlyPlayingItem.anime, titleLanguage) : 'Kimi no Shiranai Monogatari'}</p>
+          <p className="truncate text-sm text-cream/90">{displayAnimeTitle}</p>
           {japaneseTitle ? <p className="truncate text-[11px] text-amberline/80">{japaneseTitle}</p> : null}
           <p className="truncate text-xs text-cream/55">{currentlyPlayingItem?.typeLabel ?? 'No media selected'}</p>
         </div>
       </div>
 
-      <div className="flex w-full min-w-0 max-w-none flex-col items-center gap-1.5 justify-self-center">
+      <div className="player-transport-zone flex w-full min-w-0 max-w-none flex-col items-center gap-1.5 justify-self-center">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -621,29 +637,46 @@ export default function BottomPlayer() {
             {repeatMode === 'one' ? <Repeat1 size={14} /> : <Repeat2 size={14} />}
           </button>
         </div>
-        <div className="flex w-full min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-cream/55">
-          <span className="shrink-0">{currentTimeLabel}</span>
-          <input
-            className="player-time-slider"
-            type="range"
-            min={0}
-            max={sliderMax}
-            step={0.25}
-            value={sliderValue}
-            onChange={(event) => requestSeekTo(Number(event.target.value))}
-            disabled={!isSeekAllowed}
-            aria-label="Seek playback"
-            data-tooltip={
-              !hasPlaybackContext
-                ? 'No active playback'
-                : playbackSupportMode !== 'fully-supported'
-                  ? 'Seek unavailable for this source'
-                  : isExternalWindowTransport
-                    ? 'Seek unavailable for player window'
-                    : 'Seek Playback'
-            }
-          />
-          <span className="shrink-0">{endTimeLabel}</span>
+
+        {showControlBarSkipButton && animeSkipButtonSegment ? (
+          <div className={`player-skip-inline-wrap is-${animeSkipButtonSegment.type}`}>
+            <button
+              type="button"
+              className="skip-btn-control is-mini is-inline retro-tooltip"
+              aria-label={`Skip ${ANISKIP_LABELS[animeSkipButtonSegment.type]}`}
+              data-tooltip={`Skip ${ANISKIP_LABELS[animeSkipButtonSegment.type]}`}
+              onClick={handleControlBarSkipClick}
+            >
+              {`Skip ${ANISKIP_LABELS[animeSkipButtonSegment.type]}`}
+            </button>
+          </div>
+        ) : null}
+
+        <div className="flex w-full min-w-0 flex-col gap-1">
+          <div className="flex w-full min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-cream/55">
+            <span className="shrink-0">{currentTimeLabel}</span>
+            <input
+              className="player-time-slider"
+              type="range"
+              min={0}
+              max={sliderMax}
+              step={0.25}
+              value={sliderValue}
+              onChange={(event) => requestSeekTo(Number(event.target.value))}
+              disabled={!isSeekAllowed}
+              aria-label="Seek playback"
+              data-tooltip={
+                !hasPlaybackContext
+                  ? 'No active playback'
+                  : playbackSupportMode !== 'fully-supported'
+                    ? 'Seek unavailable for this source'
+                    : isExternalWindowTransport
+                      ? 'Seek unavailable for player window'
+                      : 'Seek Playback'
+              }
+            />
+            <span className="shrink-0">{endTimeLabel}</span>
+          </div>
         </div>
       </div>
 

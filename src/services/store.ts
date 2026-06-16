@@ -17,6 +17,9 @@ type StoreShape = {
   pluginEnabled: Record<string, boolean>;
   preferredSourcePluginId: string | null;
   preferredAudioLanguage: SourceAudioLanguage;
+  autoSkipOpening: boolean;
+  autoSkipEnding: boolean;
+  autoSkipRecap: boolean;
   isTrailerMuted: boolean;
   currentlyPlayingItem: PlayableItem | null;
   queue: PlayableItem[];
@@ -35,6 +38,7 @@ type StoreShape = {
   animeScheduleApiToken: string;
   animeScheduleCache: Record<string, CachedPayload<unknown>>;
   animeScheduleMeta: Record<string, string | number | boolean>;
+  aniSkipCache: Record<string, CachedPayload<unknown>>;
 };
 
 const STORE_FILE = 'myanime1996.store.json';

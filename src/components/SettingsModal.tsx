@@ -1,4 +1,4 @@
-import { Download, Search, Trash2, X } from 'lucide-react';
+import { Download, Search, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -24,7 +24,7 @@ type SettingAction = {
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-const CACHE_VIEW_KEYS = ['jikanCache', 'animeScheduleCache', 'sourceResolveCache', 'jikanMeta', 'animeScheduleMeta'] as const;
+const CACHE_VIEW_KEYS = ['jikanCache', 'animeScheduleCache', 'sourceResolveCache', 'aniSkipCache', 'jikanMeta', 'animeScheduleMeta'] as const;
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -34,7 +34,7 @@ function renderTreeValue(value: unknown, path: string): JSX.Element {
   if (Array.isArray(value)) {
     if (!value.length) return <span className="text-cream/45">[]</span>;
     return (
-      <details className="ml-4" open>
+      <details className="ml-4">
         <summary className="cursor-pointer text-cream/80">[{value.length}]</summary>
         <div className="mt-1 space-y-1 border-l border-cream/15 pl-3">
           {value.map((item, index) => (
@@ -52,7 +52,7 @@ function renderTreeValue(value: unknown, path: string): JSX.Element {
     const keys = Object.keys(value);
     if (!keys.length) return <span className="text-cream/45">{}</span>;
     return (
-      <details className="ml-4" open>
+      <details className="ml-4">
         <summary className="cursor-pointer text-cream/80">{'{'}{keys.length}{'}'}</summary>
         <div className="mt-1 space-y-1 border-l border-cream/15 pl-3">
           {keys.sort().map((key) => (
@@ -106,6 +106,12 @@ export default function SettingsModal() {
   const factoryReset = useAppStore((state) => state.factoryReset);
   const animeScheduleApiToken = useAppStore((state) => state.animeScheduleApiToken);
   const setAnimeScheduleApiToken = useAppStore((state) => state.setAnimeScheduleApiToken);
+  const autoSkipOpening = useAppStore((state) => state.autoSkipOpening);
+  const autoSkipEnding = useAppStore((state) => state.autoSkipEnding);
+  const autoSkipRecap = useAppStore((state) => state.autoSkipRecap);
+  const setAutoSkipOpening = useAppStore((state) => state.setAutoSkipOpening);
+  const setAutoSkipEnding = useAppStore((state) => state.setAutoSkipEnding);
+  const setAutoSkipRecap = useAppStore((state) => state.setAutoSkipRecap);
 
   const [query, setQuery] = useState('');
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
@@ -148,10 +154,11 @@ export default function SettingsModal() {
   const openCacheViewer = async () => {
     try {
       setCacheViewerLoading(true);
-      const [jikanCache, animeScheduleCache, sourceResolveCache, jikanMeta, animeScheduleMeta] = await Promise.all([
+      const [jikanCache, animeScheduleCache, sourceResolveCache, aniSkipCache, jikanMeta, animeScheduleMeta] = await Promise.all([
         getStoredValue('jikanCache', {}),
         getStoredValue('animeScheduleCache', {}),
         getStoredValue('sourceResolveCache', {}),
+        getStoredValue('aniSkipCache', {}),
         getStoredValue('jikanMeta', {}),
         getStoredValue('animeScheduleMeta', {}),
       ]);
@@ -160,6 +167,7 @@ export default function SettingsModal() {
         jikanCache,
         animeScheduleCache,
         sourceResolveCache,
+        aniSkipCache,
         jikanMeta,
         animeScheduleMeta,
       });
@@ -203,6 +211,15 @@ export default function SettingsModal() {
           setCacheSnapshot({});
           setCacheViewerOpen(false);
           setStatusMessage('Cache cleared.');
+        },
+      },
+      {
+        id: 'anime-skip',
+        title: 'Anime Skip',
+        description: 'Toggle auto-skip for opening, ending, and recap segments during controllable playback.',
+        actionLabel: 'Manage anime skip',
+        onAction: async () => {
+          setStatusMessage('Anime Skip settings are ready below.');
         },
       },
       {
@@ -437,6 +454,51 @@ export default function SettingsModal() {
                       >
                         {cacheViewerLoading ? 'Loading...' : 'Show Cache Data'}
                       </button>
+                    </div>
+                  </article>
+                ) : selectedAction.id === 'anime-skip' ? (
+                  <article className="settings-action-card space-y-4">
+                    <div className="settings-action-copy">
+                      <h3>{highlightText(selectedAction.title, query)}</h3>
+                      <p>{highlightText(selectedAction.description, query)}</p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        onClick={() => void setAutoSkipOpening(!autoSkipOpening)}
+                        aria-label={`${autoSkipOpening ? 'Disable' : 'Enable'} auto-skip opening`}
+                      >
+                        <span className="text-sm text-cream/80">Auto-skip Opening</span>
+                        {autoSkipOpening ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        onClick={() => void setAutoSkipEnding(!autoSkipEnding)}
+                        aria-label={`${autoSkipEnding ? 'Disable' : 'Enable'} auto-skip ending`}
+                      >
+                        <span className="text-sm text-cream/80">Auto-skip Ending</span>
+                        {autoSkipEnding ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        onClick={() => void setAutoSkipRecap(!autoSkipRecap)}
+                        aria-label={`${autoSkipRecap ? 'Disable' : 'Enable'} auto-skip recap`}
+                      >
+                        <span className="text-sm text-cream/80">Auto-skip Recap</span>
+                        {autoSkipRecap ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                      </button>
+                    </div>
+
+                    <div className="space-y-1 text-sm text-cream/75">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Behavior</p>
+                      <p>When disabled, a Skip button appears while the segment is active.</p>
+                      <p>When enabled, playback jumps to the segment end automatically and shows a small toast.</p>
                     </div>
                   </article>
                 ) : (

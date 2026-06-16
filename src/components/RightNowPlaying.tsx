@@ -1,11 +1,13 @@
 import { CalendarDays, Check, ChevronDown, Clock3, EllipsisVertical, List, ListX, Play, RotateCcw, ScrollText, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { getLatestUpdatedAnime, refreshHomeShelvesIfNeeded } from '../services/catalogSource';
+import { ANISKIP_LABELS, fetchAniSkipSegments, voteOnAniSkip } from '../services/aniSkip';
+import { getAnimeDetails, getLatestUpdatedAnime, refreshHomeShelvesIfNeeded } from '../services/catalogSource';
 import { getAnimeDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import { getAnimeEpisodeById } from '../services/jikan';
 import { getAvailableSourcePlugins, resolveSourceForPlayable, resolveSourceForPlayableWithTrace } from '../services/sourceResolver';
 import { useAppStore } from '../state/appStore';
+import type { AniSkipSegmentMap, AniSkipType } from '../services/aniSkip';
 import type { AnimeDetail as AnimeDetailType, AnimeEpisode, AnimeEpisodePagination, PlayableItem } from '../types/anime';
 import type { ResolvedSource, ResolvedSourceOption, SourceResolveAttemptStatus, SourceResolveTrace } from '../types/plugin';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
@@ -18,7 +20,8 @@ import WindowControls from './WindowControls';
 const YOUTUBE_EMBED_HOST = 'www.youtube-nocookie.com';
 const MIN_SOURCE_RESOLVE_VISIBLE_MS = 700;
 const WATCH_PROGRESS_SAVE_INTERVAL_SECONDS = 5;
-const FULLSCREEN_OVERLAY_HIDE_MS = 2200;
+const FULLSCREEN_OVERLAY_HIDE_MS = 2000;
+const ANISKIP_OVERLAY_FADE_MS = 10000;
 const BACKGROUND_LATEST_RESOLVE_LIMIT = 5;
 const HOME_REFRESH_LIMIT = 20;
 
@@ -307,12 +310,18 @@ export default function RightNowPlaying() {
   const preferredAudioLanguage = useAppStore((state) => state.preferredAudioLanguage);
   const baseCatalogSource = useAppStore((state) => state.baseCatalogSource);
   const selectedSourceOptionId = useAppStore((state) => state.selectedSourceOptionId);
+  const autoSkipOpening = useAppStore((state) => state.autoSkipOpening);
+  const autoSkipEnding = useAppStore((state) => state.autoSkipEnding);
+  const autoSkipRecap = useAppStore((state) => state.autoSkipRecap);
   const setActivePlaybackUrl = useAppStore((state) => state.setActivePlaybackUrl);
   const setPlaybackSupportMode = useAppStore((state) => state.setPlaybackSupportMode);
   const setResolvingPlaybackSource = useAppStore((state) => state.setResolvingPlaybackSource);
   const setPreferredSourcePluginId = useAppStore((state) => state.setPreferredSourcePluginId);
   const setPreferredAudioLanguage = useAppStore((state) => state.setPreferredAudioLanguage);
   const setSelectedSourceOptionId = useAppStore((state) => state.setSelectedSourceOptionId);
+  const requestSeekTo = useAppStore((state) => state.requestSeekTo);
+  const setAnimeSkipButtonSegment = useAppStore((state) => state.setAnimeSkipButtonSegment);
+  const setCurrentlyPlayingTypeLabel = useAppStore((state) => state.setCurrentlyPlayingTypeLabel);
 
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const queueDrawerRef = useRef<HTMLDivElement | null>(null);
@@ -329,6 +338,11 @@ export default function RightNowPlaying() {
   const trailerPlayerSessionRef = useRef(0);
   const trailerSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fullscreenOverlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aniSkipFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aniSkipToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoSkippedSegmentRef = useRef<string | null>(null);
+  const latestAniSkipFetchKeyRef = useRef<string | null>(null);
+  const aniSkipMalIdCacheRef = useRef<Map<number, number | null>>(new Map());
   const lastWatchProgressSaveSecondRef = useRef(-1);
   const lastBackgroundResolveKeyRef = useRef<string | null>(null);
   const [openMenuQueueItemId, setOpenMenuQueueItemId] = useState<string | null>(null);
@@ -339,6 +353,10 @@ export default function RightNowPlaying() {
   const [isSourceLogOpen, setIsSourceLogOpen] = useState(false);
   const [sourceResolveRetryToken, setSourceResolveRetryToken] = useState(0);
   const [isFullscreenOverlayVisible, setIsFullscreenOverlayVisible] = useState(true);
+  const [aniSkipSegments, setAniSkipSegments] = useState<AniSkipSegmentMap>({});
+  const [activeAniSkipType, setActiveAniSkipType] = useState<AniSkipType | null>(null);
+  const [isAniSkipOverlayFading, setIsAniSkipOverlayFading] = useState(false);
+  const [autoSkipToastLabel, setAutoSkipToastLabel] = useState<string | null>(null);
   const [detailAnime, setDetailAnime] = useState<AnimeDetailType | null>(null);
   const [detailEpisodes, setDetailEpisodes] = useState<AnimeEpisode[]>([]);
   const [detailEpisodePage, setDetailEpisodePage] = useState(1);
@@ -451,7 +469,7 @@ export default function RightNowPlaying() {
     const items: LogoSelectItem[] = [
       {
         value: 'auto',
-        label: sourcePlugins.length === 0 ? 'No Plugins' : 'Auto (Priority)',
+        label: sourcePlugins.length === 0 ? 'No Plugins' : 'Auto',
         meta: sourcePlugins.length === 0 ? 'Install plugin first' : 'Use plugin order',
       },
     ];
@@ -571,6 +589,83 @@ export default function RightNowPlaying() {
     return isEmbedOnly || isExplicitlyNonControllable ? 'fullscreen-only' : 'fully-supported';
   }, [activeResolvedSource, isNonTrailerPlayback]);
 
+  const getAniSkipMalId = async () => {
+    const raw = currentlyPlayingItem?.anime.jikanId;
+    if (Number.isFinite(raw) && raw && raw > 0) {
+      return Math.floor(raw);
+    }
+
+    const animeId = currentlyPlayingItem?.anime.id;
+    if (!Number.isFinite(animeId) || !animeId || animeId <= 0) {
+      return null;
+    }
+
+    const normalizedAnimeId = Math.floor(animeId);
+    if (aniSkipMalIdCacheRef.current.has(normalizedAnimeId)) {
+      return aniSkipMalIdCacheRef.current.get(normalizedAnimeId) ?? null;
+    }
+
+    try {
+      const detail = await getAnimeDetails(normalizedAnimeId);
+      const fromDetail = detail?.jikanId;
+      const resolved = Number.isFinite(fromDetail) && fromDetail && fromDetail > 0 ? Math.floor(fromDetail) : null;
+      aniSkipMalIdCacheRef.current.set(normalizedAnimeId, resolved);
+      return resolved;
+    } catch {
+      aniSkipMalIdCacheRef.current.set(normalizedAnimeId, null);
+      return null;
+    }
+  };
+
+  const getAniSkipEpisodeNumber = () => {
+    const raw = currentlyPlayingItem?.episodeNumber ?? 1;
+    const safe = Math.max(1, Math.round(raw));
+    return Number.isFinite(safe) ? safe : 1;
+  };
+
+  const getAniSkipEpisodeLength = () => 0;
+
+  const clearAniSkipFadeTimer = () => {
+    if (!aniSkipFadeTimerRef.current) return;
+    clearTimeout(aniSkipFadeTimerRef.current);
+    aniSkipFadeTimerRef.current = null;
+  };
+
+  const restartAniSkipFadeTimer = () => {
+    clearAniSkipFadeTimer();
+    setIsAniSkipOverlayFading(false);
+    aniSkipFadeTimerRef.current = setTimeout(() => {
+      setIsAniSkipOverlayFading(true);
+      aniSkipFadeTimerRef.current = null;
+    }, ANISKIP_OVERLAY_FADE_MS);
+  };
+
+  const showAniSkipToast = (type: AniSkipType) => {
+    if (aniSkipToastTimerRef.current) {
+      clearTimeout(aniSkipToastTimerRef.current);
+      aniSkipToastTimerRef.current = null;
+    }
+    setAutoSkipToastLabel(ANISKIP_LABELS[type]);
+    aniSkipToastTimerRef.current = setTimeout(() => {
+      setAutoSkipToastLabel(null);
+      aniSkipToastTimerRef.current = null;
+    }, 2500);
+  };
+
+  const performAniSkip = (type: AniSkipType, segment: { endTime: number; skipId: string }, shouldVote: boolean) => {
+    requestSeekTo(segment.endTime);
+    setAnimeSkipButtonSegment(null);
+    setActiveAniSkipType(null);
+    setIsAniSkipOverlayFading(false);
+    clearAniSkipFadeTimer();
+    if (shouldVote) {
+      void voteOnAniSkip('upvote', segment.skipId);
+    }
+    if (!shouldVote) {
+      showAniSkipToast(type);
+    }
+  };
+
   // HLS lifecycle — attach/detach hls.js instance when direct source URL changes
   useEffect(() => {
     const video = sourceVideoRef.current;
@@ -675,6 +770,181 @@ export default function RightNowPlaying() {
   useEffect(() => {
     setPlaybackSupportMode(playbackSupportMode);
   }, [playbackSupportMode, setPlaybackSupportMode]);
+
+  useEffect(() => {
+    setAniSkipSegments({});
+    setActiveAniSkipType(null);
+    setAnimeSkipButtonSegment(null);
+    setIsAniSkipOverlayFading(false);
+    clearAniSkipFadeTimer();
+    lastAutoSkippedSegmentRef.current = null;
+    latestAniSkipFetchKeyRef.current = null;
+  }, [currentlyPlayingItem?.id, setAnimeSkipButtonSegment]);
+
+  useEffect(() => {
+    if (!currentlyPlayingItem || currentlyPlayingItem.kind === 'trailer') return;
+    if (playbackSupportMode !== 'fully-supported') return;
+
+    let cancelled = false;
+    const run = async () => {
+      const malId = await getAniSkipMalId();
+      const episodeNumber = getAniSkipEpisodeNumber();
+      const episodeLength = getAniSkipEpisodeLength();
+      if (!malId) return;
+
+      const fetchKey = `${malId}:${episodeNumber}:${episodeLength.toFixed(3)}`;
+      if (latestAniSkipFetchKeyRef.current === fetchKey) {
+        return;
+      }
+
+      latestAniSkipFetchKeyRef.current = fetchKey;
+      const segments = await fetchAniSkipSegments(malId, episodeNumber, episodeLength);
+      if (cancelled) return;
+      setAniSkipSegments(segments);
+      setActiveAniSkipType(null);
+      setAnimeSkipButtonSegment(null);
+      setIsAniSkipOverlayFading(false);
+      clearAniSkipFadeTimer();
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentlyPlayingItem, playbackSupportMode, setAnimeSkipButtonSegment]);
+
+  useEffect(() => {
+    if (!currentlyPlayingItem || currentlyPlayingItem.kind !== 'episode') return;
+    if (playbackSupportMode !== 'fully-supported') return;
+
+    let cancelled = false;
+
+    const prefetchNeighbors = async () => {
+      const malId = await getAniSkipMalId();
+      if (!malId || cancelled) return;
+
+      const episodeLength = getAniSkipEpisodeLength();
+      const currentEpisode = getAniSkipEpisodeNumber();
+      const totalEpisodes = Math.max(0, Math.round(currentlyPlayingItem.anime.episodes ?? 0));
+      const neighbors = [currentEpisode - 1, currentEpisode + 1].filter(
+        (episodeNumber, index, list) =>
+          episodeNumber >= 1 &&
+          (totalEpisodes <= 0 || episodeNumber <= totalEpisodes) &&
+          list.indexOf(episodeNumber) === index,
+      );
+
+      for (const episodeNumber of neighbors) {
+        if (cancelled) return;
+        void fetchAniSkipSegments(malId, episodeNumber, episodeLength).catch(() => {
+          // AniSkip neighbor prefetch should be silent.
+        });
+      }
+    };
+
+    void prefetchNeighbors();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentlyPlayingItem, playbackSupportMode]);
+
+  useEffect(() => {
+    if (!currentlyPlayingItem || currentlyPlayingItem.kind === 'trailer') {
+      setAnimeSkipButtonSegment(null);
+      setActiveAniSkipType(null);
+      return;
+    }
+
+    if (playbackSupportMode !== 'fully-supported') {
+      setAnimeSkipButtonSegment(null);
+      setActiveAniSkipType(null);
+      return;
+    }
+
+    const autoSkipByType: Record<AniSkipType, boolean> = {
+      op: autoSkipOpening,
+      ed: autoSkipEnding,
+      recap: autoSkipRecap,
+    };
+
+    const order: AniSkipType[] = ['op', 'recap', 'ed'];
+    const matchedType = order.find((type) => {
+      const segment = aniSkipSegments[type];
+      if (!segment) return false;
+      return playbackTime >= segment.startTime && playbackTime < segment.endTime;
+    }) ?? null;
+
+    if (!matchedType) {
+      setAnimeSkipButtonSegment(null);
+      setActiveAniSkipType(null);
+      setIsAniSkipOverlayFading(false);
+      clearAniSkipFadeTimer();
+      return;
+    }
+
+    const matchedSegment = aniSkipSegments[matchedType];
+    if (!matchedSegment) return;
+
+    if (autoSkipByType[matchedType]) {
+      const signature = `${currentlyPlayingItem.id}:${matchedType}:${matchedSegment.startTime}:${matchedSegment.endTime}`;
+      if (lastAutoSkippedSegmentRef.current === signature) {
+        return;
+      }
+      lastAutoSkippedSegmentRef.current = signature;
+      performAniSkip(matchedType, matchedSegment, false);
+      return;
+    }
+
+    setAnimeSkipButtonSegment({
+      type: matchedType,
+      startTime: matchedSegment.startTime,
+      endTime: matchedSegment.endTime,
+      skipId: matchedSegment.skipId,
+    });
+
+    if (activeAniSkipType !== matchedType) {
+      setActiveAniSkipType(matchedType);
+      setIsAniSkipOverlayFading(false);
+      if (showVideoOverlayControls) {
+        restartAniSkipFadeTimer();
+      }
+      return;
+    }
+
+    if (showVideoOverlayControls && !aniSkipFadeTimerRef.current && !isAniSkipOverlayFading) {
+      restartAniSkipFadeTimer();
+    }
+  }, [
+    activeAniSkipType,
+    aniSkipSegments,
+    autoSkipEnding,
+    autoSkipOpening,
+    autoSkipRecap,
+    currentlyPlayingItem,
+    playbackSupportMode,
+    playbackTime,
+    isAniSkipOverlayFading,
+    setAnimeSkipButtonSegment,
+    showVideoOverlayControls,
+  ]);
+
+  useEffect(() => {
+    if (showVideoOverlayControls) return;
+    clearAniSkipFadeTimer();
+    setIsAniSkipOverlayFading(false);
+  }, [showVideoOverlayControls]);
+
+  useEffect(() => {
+    return () => {
+      clearAniSkipFadeTimer();
+      if (aniSkipToastTimerRef.current) {
+        clearTimeout(aniSkipToastTimerRef.current);
+        aniSkipToastTimerRef.current = null;
+      }
+      setAnimeSkipButtonSegment(null);
+    };
+  }, [setAnimeSkipButtonSegment]);
 
   const sourceAttemptStatusLabel = (status: SourceResolveAttemptStatus) => {
     if (status === 'cache-hit') return 'Cache Hit';
@@ -1177,7 +1447,8 @@ export default function RightNowPlaying() {
   }, [clearPendingSeekTo, hasTrailerPlayback, isDirectPluginPlayback, pendingSeekTo, playbackSupportMode, setPlaybackTime]);
 
   useEffect(() => {
-    if (!currentlyPlayingItem || currentlyPlayingItem.kind === 'trailer') {
+    const playable = currentlyPlayingItem;
+    if (!playable || playable.kind === 'trailer') {
       setResolvingPlaybackSource(false);
       setResolvedSource(null);
       setIsResolvingSource(false);
@@ -1217,7 +1488,7 @@ export default function RightNowPlaying() {
 
     const runResolve = async () => {
       const { resolved, trace } = await resolveSourceForPlayableWithTrace(
-        currentlyPlayingItem,
+        playable,
         {
           importedPlugins: importedSourcePlugins,
           pluginPriority,
@@ -1247,6 +1518,45 @@ export default function RightNowPlaying() {
       }
 
       if (cancelled) return;
+
+      // Prime AniSkip before starting playback so skip UI can appear immediately in-range.
+      if (resolved && playable.kind === 'episode') {
+        const malId = await getAniSkipMalId();
+        const episodeNumber = getAniSkipEpisodeNumber();
+        const episodeLength = getAniSkipEpisodeLength();
+
+        if (!cancelled && malId) {
+          const fetchKey = `${malId}:${episodeNumber}:${episodeLength.toFixed(3)}`;
+          latestAniSkipFetchKeyRef.current = fetchKey;
+          const segments = await fetchAniSkipSegments(malId, episodeNumber, episodeLength);
+          if (!cancelled) {
+            setAniSkipSegments(segments);
+            setActiveAniSkipType(null);
+            setAnimeSkipButtonSegment(null);
+            setIsAniSkipOverlayFading(false);
+            clearAniSkipFadeTimer();
+          }
+        }
+
+        // Fetch Jikan episode metadata so the typeLabel shows "Episode <num> - <title>".
+        if (!cancelled) {
+          const jikanMalId = await getAniSkipMalId();
+          if (jikanMalId) {
+            getAnimeEpisodeById(jikanMalId, episodeNumber)
+              .then((episodeDetail) => {
+                if (cancelled) return;
+                const title = episodeDetail?.title?.trim();
+                if (title) {
+                  setCurrentlyPlayingTypeLabel(`Episode ${episodeNumber} - ${title}`);
+                }
+              })
+              .catch(() => {
+                // Episode metadata is optional — keep UX unchanged on failure.
+              });
+          }
+        }
+      }
+
       setResolvedSource(resolved);
       if (resolved) {
         setPlaying(true);
@@ -1268,7 +1578,7 @@ export default function RightNowPlaying() {
       cancelled = true;
     };
   }, [
-    currentlyPlayingItem,
+    currentlyPlayingItem?.id,
     importedSourcePlugins,
     pluginEnabled,
     pluginPriority,
@@ -1426,8 +1736,16 @@ export default function RightNowPlaying() {
       return;
     }
 
+    setIsFullscreenOverlayVisible(false);
+
     const revealOverlayControls = () => {
       setIsFullscreenOverlayVisible(true);
+
+      if (activeAniSkipType && aniSkipSegments[activeAniSkipType]) {
+        setIsAniSkipOverlayFading(false);
+        restartAniSkipFadeTimer();
+      }
+
       if (fullscreenOverlayHideTimerRef.current) {
         clearTimeout(fullscreenOverlayHideTimerRef.current);
       }
@@ -1435,8 +1753,6 @@ export default function RightNowPlaying() {
         setIsFullscreenOverlayVisible(false);
       }, FULLSCREEN_OVERLAY_HIDE_MS);
     };
-
-    revealOverlayControls();
     document.addEventListener('mousemove', revealOverlayControls);
     document.addEventListener('mousedown', revealOverlayControls);
     document.addEventListener('touchstart', revealOverlayControls);
@@ -1452,13 +1768,24 @@ export default function RightNowPlaying() {
         fullscreenOverlayHideTimerRef.current = null;
       }
     };
-  }, [showVideoOverlayControls]);
+  }, [activeAniSkipType, aniSkipSegments, showVideoOverlayControls]);
 
   useEffect(() => {
     if (!showVideoOverlayControls) return;
     if (!isFullQueueDrawerOpen && !isSourceLogOpen) return;
     setIsFullscreenOverlayVisible(true);
   }, [isFullQueueDrawerOpen, isSourceLogOpen, showVideoOverlayControls]);
+
+  useEffect(() => {
+    if (!showVideoOverlayControls) {
+      clearAniSkipFadeTimer();
+      setIsAniSkipOverlayFading(false);
+      return;
+    }
+    if (!activeAniSkipType) return;
+    if (!aniSkipSegments[activeAniSkipType]) return;
+    restartAniSkipFadeTimer();
+  }, [activeAniSkipType, aniSkipSegments, showVideoOverlayControls]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1593,6 +1920,36 @@ export default function RightNowPlaying() {
           </button>
         ) : null}
       </div>
+    </div>
+  ) : null;
+
+  const activeAniSkipSegment = activeAniSkipType ? aniSkipSegments[activeAniSkipType] : null;
+  const showFullscreenAniSkipButton =
+    showVideoOverlayControls &&
+    Boolean(activeAniSkipType) &&
+    Boolean(activeAniSkipSegment) &&
+    playbackSupportMode === 'fully-supported';
+
+  const fullscreenAniSkipOverlay = showFullscreenAniSkipButton && activeAniSkipType && activeAniSkipSegment ? (
+    <div className="aniskip-overlay-wrap right-now-static-overlay">
+      <button
+        type="button"
+        className={`aniskip-overlay-btn ${isAniSkipOverlayFading ? 'is-fading' : ''}`}
+        onMouseEnter={() => {
+          setIsAniSkipOverlayFading(false);
+          restartAniSkipFadeTimer();
+        }}
+        onFocus={() => {
+          setIsAniSkipOverlayFading(false);
+          restartAniSkipFadeTimer();
+        }}
+        onClick={() => {
+          performAniSkip(activeAniSkipType, activeAniSkipSegment, true);
+        }}
+        aria-label={`Skip ${ANISKIP_LABELS[activeAniSkipType]}`}
+      >
+        {`Skip ${ANISKIP_LABELS[activeAniSkipType]}`}
+      </button>
     </div>
   ) : null;
 
@@ -1747,6 +2104,8 @@ export default function RightNowPlaying() {
         <div className="right-now-video-wrap relative -mx-4 w-[calc(100%+2rem)] overflow-hidden bg-black/45">
           {fullscreenTopLeftOverlay}
           {fullscreenTopRightOverlay}
+          {fullscreenAniSkipOverlay}
+          {autoSkipToastLabel ? <div className="skip-toast">{`Skipped ${autoSkipToastLabel}`}</div> : null}
           <div className={`right-now-video-frame w-full ${isRightPanelFullpage ? 'right-now-video-frame-full' : 'aspect-video'}`}>
             <div ref={trailerPlayerMountRef} className={`right-now-video-player ${hasTrailerPlayback ? '' : 'hidden'}`} />
             {hasTrailerPlayback ? null : isResolvingSource ? (
