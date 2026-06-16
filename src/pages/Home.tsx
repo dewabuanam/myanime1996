@@ -12,6 +12,7 @@ import {
   getTopAnime,
   getTopUpcomingAnime,
   refreshHomeShelvesIfNeeded,
+  resolveCanonicalDetailRouteId,
 } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
 import type { AnimeSummary } from '../types/anime';
@@ -27,6 +28,8 @@ const SHELF_LIMIT = 20;
 type ContinueWatchingItem = {
   source?: AnimeSummary;
   id: number;
+  jikanId?: number;
+  animeScheduleRoute?: string;
   title: string;
   titleEnglish?: string;
   titleJapanese?: string;
@@ -133,6 +136,8 @@ const toAnimeSummary = (item: ShelfItem): AnimeSummary => {
       : undefined;
   return {
     id: item.id,
+    jikanId: item.jikanId ?? item.source?.jikanId,
+    animeScheduleRoute: item.animeScheduleRoute ?? item.source?.animeScheduleRoute,
     title: item.title,
     titleEnglish: item.titleEnglish ?? item.source?.titleEnglish,
     titleJapanese: item.titleJapanese ?? item.source?.titleJapanese,
@@ -405,7 +410,9 @@ export default function Home() {
 
   const openFeaturedDetails = async () => {
     if (!featured) return;
-    await selectAnime(featured);
+    const canonicalDetailId = await resolveCanonicalDetailRouteId(featured);
+    const selected = canonicalDetailId ? { ...featured, id: canonicalDetailId, jikanId: canonicalDetailId } : featured;
+    await selectAnime(selected);
     await openRightPanelWithView('detail');
   };
 
@@ -427,6 +434,8 @@ export default function Home() {
         return {
           source: matchedSource,
           id: item.animeId,
+          jikanId: item.jikanId ?? matchedSource?.jikanId,
+          animeScheduleRoute: item.animeScheduleRoute ?? matchedSource?.animeScheduleRoute,
           title: item.title,
           titleEnglish: item.titleEnglish,
           titleJapanese: item.titleJapanese,
@@ -527,12 +536,17 @@ export default function Home() {
   }, [rawShelves, sectionFallbackPool]);
 
   const selectFromCard = async (item: ContinueWatchingItem | AnimeSummary) => {
-    await selectAnime(toAnimeSummary(item));
+    const anime = toAnimeSummary(item);
+    const canonicalDetailId = await resolveCanonicalDetailRouteId(anime);
+    const selected = canonicalDetailId ? { ...anime, id: canonicalDetailId, jikanId: canonicalDetailId } : anime;
+    console.log('Selecting anime from card:', { item, selected });
+    await selectAnime(selected);
   };
 
   const playFromCard = async (item: ContinueWatchingItem | AnimeSummary, shelfKey: string) => {
     const anime = toAnimeSummary(item);
-    const resumeEntry = watchProgress[anime.id];
+    const canonicalAnimeId = anime.jikanId ?? anime.id;
+    const resumeEntry = watchProgress[canonicalAnimeId] ?? watchProgress[anime.id];
     const hasResume =
       !!resumeEntry &&
       resumeEntry.progress > 0 &&
@@ -631,8 +645,9 @@ export default function Home() {
     await openRightPanelWithView('detail');
   };
 
-  const getResumeEntry = (animeId: number) => {
-    const entry = watchProgress[animeId];
+  const getResumeEntry = (anime: AnimeSummary) => {
+    const canonicalAnimeId = anime.jikanId ?? anime.id;
+    const entry = watchProgress[canonicalAnimeId] ?? watchProgress[anime.id];
     if (!entry) return null;
     if (entry.progress <= 0 || entry.progress >= 100) return null;
     if (Math.max(0, Math.floor(entry.lastPlaybackSeconds ?? 0)) <= 0 && Math.max(1, entry.episode) <= 1) return null;
@@ -709,8 +724,9 @@ export default function Home() {
               const labelMode = getCardLabelMode(shelf.key);
               const mediaLabel = getMediaLabel(labelMode, previewAnime, isContinueWatchingItem(item) ? item.episode : episodes ?? 1);
               const previewEpisodeLabel = getMetaLabel(item, shelf.key, previewAnime);
-              const resumeEntry = getResumeEntry(previewAnime.id);
-              const watchEntry = watchProgress[previewAnime.id];
+              const resumeEntry = getResumeEntry(previewAnime);
+              const canonicalAnimeId = previewAnime.jikanId ?? previewAnime.id;
+              const watchEntry = watchProgress[canonicalAnimeId] ?? watchProgress[previewAnime.id];
               const isWatchedCompleted = Boolean(watchEntry?.completed || (watchEntry?.progress ?? 0) >= 100);
               const isResumeAction = Boolean(resumeEntry);
               const canPlayAnime = shelf.key !== 'promo' && (isResumeAction || !isNotYetAired(previewAnime));

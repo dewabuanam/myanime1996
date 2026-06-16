@@ -12,7 +12,9 @@ export interface UserSession {
 }
 
 export interface AnimeSummary {
+  // Source-local id. Use jikanId as canonical cross-source identity when present.
   id: number;
+  // Canonical MAL id used for detail, episodes, and cross-source resolution.
   jikanId?: number;
   title: string;
   titleEnglish?: string;
@@ -32,6 +34,7 @@ export interface AnimeSummary {
   genres: string[];
   trailerUrl?: string;
   mediaType?: string;
+  animeScheduleRoute?: string;
 }
 
 export interface PlayableItem {
@@ -95,6 +98,8 @@ export interface Playlist {
 
 export interface WatchProgress {
   animeId: number;
+  jikanId?: number;
+  animeScheduleRoute?: string;
   title: string;
   titleEnglish?: string;
   titleJapanese?: string;

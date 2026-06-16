@@ -242,6 +242,9 @@ function mergeAnimeSummary(existing: AnimeSummary | undefined, incoming: AnimeSu
     genres: incoming.genres.length ? incoming.genres : existing.genres,
     trailerUrl: isFilled(incoming.trailerUrl) ? incoming.trailerUrl : existing.trailerUrl,
     mediaType: isFilled(incoming.mediaType) ? incoming.mediaType : existing.mediaType,
+    animeScheduleRoute: isFilled(incoming.animeScheduleRoute)
+      ? incoming.animeScheduleRoute
+      : existing.animeScheduleRoute,
   };
 }
 

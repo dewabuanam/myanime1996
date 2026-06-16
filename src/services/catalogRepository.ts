@@ -4,11 +4,35 @@ import { getStoredValue } from './store';
 import { animeScheduleCatalogProvider } from './providers/animeScheduleCatalogProvider';
 import type { CacheFetchOptions, HomeRefreshCallbacks } from './providers/catalogProviderTypes';
 import { jikanCatalogProvider } from './providers/jikanCatalogProvider';
+import { resolveAnimeScheduleBridgeJikanId } from './animeSchedule';
 
 export type BaseCatalogSource = 'animeschedule' | 'jikan';
 
 export const DEFAULT_BASE_CATALOG_SOURCE: BaseCatalogSource = 'animeschedule';
 const LATEST_FETCH_MINIMUM = 60;
+const MAX_REASONABLE_MAL_ID = 2_000_000;
+
+function isValidMalId(value?: number): value is number {
+  return Boolean(Number.isFinite(value) && value && value > 0 && value <= MAX_REASONABLE_MAL_ID);
+}
+
+async function getAnimeScheduleDetailWithBridge(id: string | number): Promise<AnimeDetail> {
+  const detail = await animeScheduleCatalogProvider.getAnimeDetails(id);
+  if (isValidMalId(detail.jikanId) && detail.jikanId !== detail.id) {
+    return detail;
+  }
+
+  const bridgeJikanId = await resolveAnimeScheduleBridgeJikanId(id);
+  if (!isValidMalId(bridgeJikanId)) {
+    return detail;
+  }
+
+  return {
+    ...detail,
+    id: Math.floor(bridgeJikanId),
+    jikanId: Math.floor(bridgeJikanId),
+  };
+}
 
 function dedupeAnimeList(list: AnimeSummary[]) {
   const unique = new Map<number, AnimeSummary>();
@@ -175,35 +199,74 @@ export async function searchAnime(query: string): Promise<AnimeSummary[]> {
 export async function getAnimeDetails(id: string | number): Promise<AnimeDetail> {
   const preferred = await getPreferredProvider();
   if (preferred === jikanCatalogProvider) {
+    const jikanFirst = await jikanCatalogProvider.getAnimeDetails(id).catch(() => null);
+    if (jikanFirst) return jikanFirst;
+
+    const animeScheduleDetail = await getAnimeScheduleDetailWithBridge(id);
+    if (isValidMalId(animeScheduleDetail.jikanId)) {
+      const canonicalJikanId = Math.floor(animeScheduleDetail.jikanId);
+      return runWithFallback(
+        () => jikanCatalogProvider.getAnimeDetails(canonicalJikanId),
+        () => Promise.resolve(animeScheduleDetail),
+      );
+    }
+
+    return animeScheduleDetail;
+  }
+
+  const animeScheduleDetail = await getAnimeScheduleDetailWithBridge(id).catch(() => null);
+  if (!animeScheduleDetail) {
     return jikanCatalogProvider.getAnimeDetails(id);
   }
+
+  if (!isValidMalId(animeScheduleDetail.jikanId)) {
+    return animeScheduleDetail;
+  }
+
+  const canonicalJikanId = Math.floor(animeScheduleDetail.jikanId);
+
   return runWithFallback(
-    () => preferred.getAnimeDetails(id),
-    () => jikanCatalogProvider.getAnimeDetails(id),
+    () => jikanCatalogProvider.getAnimeDetails(canonicalJikanId),
+    () => Promise.resolve(animeScheduleDetail),
   );
 }
 
 export async function getAnimeTrailerUrl(id: string | number): Promise<string | undefined> {
-  const preferred = await getPreferredProvider();
+  try {
+    const detail = await getAnimeDetails(id);
+    const trailer = detail.trailerUrl?.trim();
+    return trailer && trailer.length > 0 ? trailer : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
-  const readTrailer = async (read: () => Promise<AnimeDetail>) => {
-    try {
-      const detail = await read();
-      const trailer = detail.trailerUrl?.trim();
-      return trailer && trailer.length > 0 ? trailer : undefined;
-    } catch {
-      return undefined;
-    }
-  };
+export async function resolveCanonicalDetailRouteId(
+  anime: Pick<AnimeSummary, 'id' | 'jikanId' | 'animeScheduleRoute'>,
+): Promise<number | undefined> {
+  const directJikanId = isValidMalId(anime.jikanId) ? Math.floor(anime.jikanId) : undefined;
+  const hasAnimeScheduleRoute = Boolean(anime.animeScheduleRoute?.trim());
 
-  if (preferred === jikanCatalogProvider) {
-    return readTrailer(() => jikanCatalogProvider.getAnimeDetails(id));
+  console.log('Resolving canonical detail route id for anime:', { anime, directJikanId });
+  // If this already looks like a MAL/Jikan id and no route is available, trust it.
+  // This avoids unnecessary bridge requests for rows already keyed by canonical ids.
+  if (!directJikanId && !hasAnimeScheduleRoute && isValidMalId(anime.id)) {
+    return Math.floor(anime.id);
   }
 
-  const preferredTrailer = await readTrailer(() => preferred.getAnimeDetails(id));
-  if (preferredTrailer) return preferredTrailer;
+  // For AnimeSchedule items we can receive source-local ids. Bridge only when
+  // direct canonical id is absent and a route is available.
+  if (!directJikanId && hasAnimeScheduleRoute) {
+    console.log('Attempting to resolve canonical detail route id via AnimeSchedule bridge for anime id:', anime.id);
+    const bridged = await resolveAnimeScheduleBridgeJikanId(anime.id, anime.animeScheduleRoute);
+    console.log('Resolved canonical detail route id via AnimeSchedule bridge:', { animeId: anime.id, bridged });
+    if (isValidMalId(bridged)) {
+      return Math.floor(bridged);
+    }
+  }
 
-  return readTrailer(() => jikanCatalogProvider.getAnimeDetails(id));
+  if (directJikanId) return directJikanId;
+  return undefined;
 }
 
 export async function refreshHomeShelvesIfNeeded(limit = 20, callbacks: HomeRefreshCallbacks = {}) {

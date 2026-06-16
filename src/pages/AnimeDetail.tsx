@@ -77,8 +77,8 @@ export default function AnimeDetail() {
 
     if (!nextExpanded || !anime) return;
 
-    const jikanAnimeId = anime.jikanId ?? anime.id;
-    if (!Number.isFinite(jikanAnimeId) || jikanAnimeId <= 0) return;
+    const jikanAnimeId = anime.jikanId;
+    if (typeof jikanAnimeId !== 'number' || !Number.isFinite(jikanAnimeId) || jikanAnimeId <= 0) return;
 
     setLoadingEpisodeDetail(episodeNumber);
     const detail = await getAnimeEpisodeById(Math.floor(jikanAnimeId), episodeNumber).catch(() => null);

@@ -11,6 +11,7 @@ export {
   getTopAnime,
   getTopUpcomingAnime,
   refreshHomeShelvesIfNeeded,
+  resolveCanonicalDetailRouteId,
   searchAnime,
   type BaseCatalogSource,
 } from './catalogRepository';

@@ -332,9 +332,18 @@ function createPlayableItemId(animeId: number, kind: PlayableKind, marker: strin
   return `${animeId}:${kind}:${marker}:${nonce}`;
 }
 
+function getCanonicalAnimeId(anime: Pick<AnimeSummary, 'id' | 'jikanId'>) {
+  const preferred = Number(anime.jikanId);
+  if (Number.isFinite(preferred) && preferred > 0) {
+    return Math.floor(preferred);
+  }
+  return Math.max(1, Math.floor(Number(anime.id) || 1));
+}
+
 function makeEpisodeItem(anime: AnimeSummary, episodeNumber: number, sourceKind: PlayableItem['sourceKind']): PlayableItem {
+  const canonicalAnimeId = getCanonicalAnimeId(anime);
   return {
-    id: createPlayableItemId(anime.id, 'episode', `ep-${episodeNumber}`),
+    id: createPlayableItemId(canonicalAnimeId, 'episode', `ep-${episodeNumber}`),
     anime,
     kind: 'episode',
     sourceKind,
@@ -348,8 +357,9 @@ function makeEpisodeItem(anime: AnimeSummary, episodeNumber: number, sourceKind:
 }
 
 function makeTrailerItem(anime: AnimeSummary): PlayableItem {
+  const canonicalAnimeId = getCanonicalAnimeId(anime);
   return {
-    id: createPlayableItemId(anime.id, 'trailer', 'trailer'),
+    id: createPlayableItemId(canonicalAnimeId, 'trailer', 'trailer'),
     anime,
     kind: 'trailer',
     sourceKind: 'trailer-card',
@@ -362,8 +372,9 @@ function makeTrailerItem(anime: AnimeSummary): PlayableItem {
 }
 
 function makeSingleMediaItem(anime: AnimeSummary, kind: Exclude<PlayableKind, 'episode' | 'trailer'>): PlayableItem {
+  const canonicalAnimeId = getCanonicalAnimeId(anime);
   return {
-    id: createPlayableItemId(anime.id, kind, 'single'),
+    id: createPlayableItemId(canonicalAnimeId, kind, 'single'),
     anime,
     kind,
     sourceKind: 'anime-card',
@@ -396,6 +407,11 @@ function toSafeNumber(value: unknown) {
 
 function normalizeWatchProgressEntry(entry: WatchProgress) {
   const animeId = Math.max(1, Math.round(toSafeNumber(entry.animeId)));
+  const jikanIdRaw = Math.round(toSafeNumber(entry.jikanId));
+  const jikanId = jikanIdRaw > 0 ? jikanIdRaw : undefined;
+  const animeScheduleRoute = typeof entry.animeScheduleRoute === 'string' && entry.animeScheduleRoute.trim().length > 0
+    ? entry.animeScheduleRoute.trim()
+    : undefined;
   const episode = Math.max(1, Math.round(toSafeNumber(entry.episode || 1)));
   const totalEpisodesRaw = Math.round(toSafeNumber(entry.totalEpisodes));
   const totalEpisodes = totalEpisodesRaw > 0 ? totalEpisodesRaw : undefined;
@@ -415,6 +431,8 @@ function normalizeWatchProgressEntry(entry: WatchProgress) {
 
   return {
     animeId,
+    jikanId,
+    animeScheduleRoute,
     title: String(entry.title || '').trim(),
     titleEnglish: entry.titleEnglish,
     titleJapanese: entry.titleJapanese,
@@ -920,12 +938,36 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     if (currentItem.kind === 'episode' || currentItem.kind === 'movie' || currentItem.kind === 'ova' || currentItem.kind === 'ona' || currentItem.kind === 'special') {
-      const existingProgress = get().watchProgress[currentItem.anime.id]?.progress ?? 12;
+      const animeId = getCanonicalAnimeId(currentItem.anime);
+      const existingProgress = get().watchProgress[animeId]?.progress ?? get().watchProgress[currentItem.anime.id]?.progress ?? 12;
       void get().updateWatchProgress(currentItem.anime, existingProgress, currentItem.episodeNumber);
     }
   },
 
   playAnimeSeries: async (anime) => {
+    const canonicalAnimeId = getCanonicalAnimeId(anime);
+    const resumeEntry = get().watchProgress[canonicalAnimeId] ?? get().watchProgress[anime.id];
+    const hasResume =
+      !!resumeEntry &&
+      resumeEntry.progress > 0 &&
+      resumeEntry.progress < 100 &&
+      (Math.max(0, Math.floor(resumeEntry.lastPlaybackSeconds ?? 0)) > 0 || Math.max(1, resumeEntry.episode) > 1);
+
+    if (hasResume && resumeEntry) {
+      const resumeAt = Math.max(0, Math.floor(resumeEntry.lastPlaybackSeconds ?? 0));
+      const resumeDuration = Math.max(0, Math.floor(resumeEntry.episodeDurationSeconds ?? 0));
+      const resumeEpisode = Math.max(1, Math.floor(resumeEntry.episode || 1));
+      await get().playEpisode(anime, resumeEpisode);
+      if (resumeDuration > 0) {
+        get().setPlaybackDuration(resumeDuration);
+      }
+      if (resumeAt > 0) {
+        get().setPlaybackTime(resumeAt);
+        get().requestSeekTo(resumeAt);
+      }
+      return;
+    }
+
     const items = buildSeriesPlayableItems(anime);
     await get().replaceQueueAndPlay(items, 0);
   },
@@ -940,7 +982,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const hasTrailer = Boolean(anime.trailerUrl?.trim());
 
     if (!hasTrailer) {
-      const resolvedTrailerUrl = await getAnimeTrailerUrl(anime.id);
+      const detailAnimeId = anime.jikanId ?? anime.id;
+      const resolvedTrailerUrl = await getAnimeTrailerUrl(detailAnimeId);
       if (resolvedTrailerUrl?.trim()) {
         trailerAnime = {
           ...anime,
@@ -1122,7 +1165,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       if (nextItem.kind === 'episode' || nextItem.kind === 'movie' || nextItem.kind === 'ova' || nextItem.kind === 'ona' || nextItem.kind === 'special') {
-        const existingProgress = get().watchProgress[nextItem.anime.id]?.progress ?? 12;
+        const animeId = getCanonicalAnimeId(nextItem.anime);
+        const existingProgress = get().watchProgress[animeId]?.progress ?? get().watchProgress[nextItem.anime.id]?.progress ?? 12;
         void get().updateWatchProgress(nextItem.anime, existingProgress, nextItem.episodeNumber);
       }
       return;
@@ -1176,7 +1220,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateWatchProgress: async (anime, progress = 12, episodeNumber, details) => {
     const existing = get().watchProgress;
-    const existingEntry = existing[anime.id];
+    const canonicalAnimeId = getCanonicalAnimeId(anime);
+    const existingEntry = existing[canonicalAnimeId] ?? existing[anime.id];
     const currentEpisode = episodeNumber ?? get().currentlyPlayingItem?.episodeNumber;
     const fallbackDuration = Math.max(0, Math.round((anime.durationMinutes ?? 0) * 60));
     const durationFromDetails = Math.max(0, Math.round(toSafeNumber(details?.durationSeconds)));
@@ -1208,7 +1253,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const normalizedProgress = completed ? 100 : mergedProgress > 0 ? Math.max(1, Math.min(98, mergedProgress)) : 0;
 
     const entry: WatchProgress = {
-      animeId: anime.id,
+      animeId: canonicalAnimeId,
+      jikanId: anime.jikanId,
+      animeScheduleRoute: anime.animeScheduleRoute,
       title: anime.title,
       titleEnglish: anime.titleEnglish,
       titleJapanese: anime.titleJapanese,
@@ -1221,8 +1268,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       completed,
       updatedAt: new Date().toISOString(),
     };
-    const nextProgress = { ...existing, [anime.id]: entry };
-    const nextHistory = sortHistory([entry, ...get().watchHistory.filter((item) => item.animeId !== anime.id)]);
+    const nextProgress = { ...existing, [canonicalAnimeId]: entry };
+    const nextHistory = sortHistory([
+      entry,
+      ...get().watchHistory.filter((item) => item.animeId !== canonicalAnimeId && item.animeId !== anime.id),
+    ]);
     await writeProfilePlayback(get().session, nextHistory, nextProgress);
     set({ watchProgress: nextProgress, watchHistory: nextHistory });
   },
@@ -1252,7 +1302,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!currentItem) return;
 
     if (currentItem.kind === 'episode' || currentItem.kind === 'movie' || currentItem.kind === 'ova' || currentItem.kind === 'ona' || currentItem.kind === 'special') {
-      const existingProgress = get().watchProgress[currentItem.anime.id]?.progress ?? 12;
+      const animeId = getCanonicalAnimeId(currentItem.anime);
+      const existingProgress = get().watchProgress[animeId]?.progress ?? get().watchProgress[currentItem.anime.id]?.progress ?? 12;
       void get().updateWatchProgress(currentItem.anime, existingProgress, currentItem.episodeNumber);
     }
   },

@@ -17,6 +17,7 @@ type TooltipState = {
 const VIEWPORT_MARGIN = 8;
 const OFFSET = 10;
 const EDGE_ARROW_OFFSET = 14;
+const VIEWPORT_SIZE_TEXT_PATTERN = /^\d+\s*px\s*(?:x|×)\s*\d+\s*px$/i;
 
 const initialState: TooltipState = {
   visible: false,
@@ -34,7 +35,8 @@ const getTooltipTarget = (target: EventTarget | null): HTMLElement | null => {
   const match = target.closest<HTMLElement>('[data-tooltip]');
   if (!match) return null;
   const tooltipText = match.getAttribute('data-tooltip')?.trim();
-  return tooltipText ? match : null;
+  if (!tooltipText || VIEWPORT_SIZE_TEXT_PATTERN.test(tooltipText)) return null;
+  return match;
 };
 
 const getTooltipSubText = (target: HTMLElement) => target.getAttribute('data-tooltip-sub')?.trim() ?? '';
@@ -180,6 +182,10 @@ export default function GlobalTooltip() {
 
     const syncTooltipText = () => {
       const nextText = target.getAttribute('data-tooltip')?.trim() ?? '';
+      if (!nextText || VIEWPORT_SIZE_TEXT_PATTERN.test(nextText)) {
+        hideTooltip();
+        return;
+      }
       const nextSubText = getTooltipSubText(target);
       setState((prev) => {
         if (prev.text === nextText && prev.subText === nextSubText) return prev;

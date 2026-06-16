@@ -70,7 +70,8 @@ async function hydratePlayableItemDuration(item: PlayableItem): Promise<Playable
   if (hasDuration) return item;
 
   try {
-    const detail = await getAnimeDetails(item.anime.id);
+    const detailId = Number(item.anime.jikanId) > 0 ? Math.floor(Number(item.anime.jikanId)) : item.anime.id;
+    const detail = await getAnimeDetails(detailId);
     const durationMinutes = detail.durationMinutes;
     const duration = detail.duration;
 
@@ -92,19 +93,19 @@ async function hydratePlayableItemDuration(item: PlayableItem): Promise<Playable
   }
 }
 
-  function toCanonicalAnimeId(item: PlayableItem): number {
-    const preferred = Number(item.anime.jikanId);
-    if (Number.isFinite(preferred) && preferred > 0) {
-      return Math.floor(preferred);
-    }
-
-    const fallback = Number(item.anime.id);
-    if (Number.isFinite(fallback) && fallback > 0) {
-      return Math.floor(fallback);
-    }
-
-    return 1;
+function toCanonicalAnimeId(item: PlayableItem): number {
+  const preferred = Number(item.anime.jikanId);
+  if (Number.isFinite(preferred) && preferred > 0) {
+    return Math.floor(preferred);
   }
+
+  const fallback = Number(item.anime.id);
+  if (Number.isFinite(fallback) && fallback > 0) {
+    return Math.floor(fallback);
+  }
+
+  return 1;
+}
 export async function resolveSourceForPlayableWithTrace(
   item: PlayableItem,
   options: ResolveSourceOptions,

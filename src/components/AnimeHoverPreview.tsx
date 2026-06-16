@@ -133,7 +133,8 @@ export default function AnimeHoverPreview({
     if (resolvedTrailerUrl?.trim()) return;
 
     let alive = true;
-    void getAnimeTrailerUrl(anime.id)
+    const detailAnimeId = anime.jikanId ?? anime.id;
+    void getAnimeTrailerUrl(detailAnimeId)
       .then((nextTrailer) => {
         if (!alive) return;
         if (!nextTrailer?.trim()) return;

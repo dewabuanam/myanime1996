@@ -1,5 +1,6 @@
 import { Info, ListPlus, Play, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
 import type { AnimeSummary } from '../types/anime';
 import { getReleaseBadgeLabel } from '../utils/releaseTime';
@@ -18,10 +19,10 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
   const watchProgress = useAppStore((state) => state.watchProgress);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
   const displayTitle = getDisplayTitle(anime, titleLanguage);
-  const detailAnimeId = anime.jikanId ?? anime.id;
+  const detailAnimeId = anime.jikanId;
   const mediaType = anime.mediaType?.trim().toLowerCase() ?? '';
   const hasTrailer = Boolean(anime.trailerUrl?.trim());
-  const watchEntry = watchProgress[anime.id];
+  const watchEntry = (detailAnimeId ? watchProgress[detailAnimeId] : undefined) ?? watchProgress[anime.id];
   const isWatchedCompleted = Boolean(watchEntry?.completed || (watchEntry?.progress ?? 0) >= 100);
   const posterStatusLabel = getReleaseBadgeLabel(anime.airingDate, anime.mediaType, isWatchedCompleted);
   const mediaLabel =
@@ -38,7 +39,9 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
               : 'TV';
 
   const openDetailPanel = async () => {
-    await selectAnime(anime);
+    const canonicalDetailId = await resolveCanonicalDetailRouteId(anime);
+    const selected = canonicalDetailId ? { ...anime, id: canonicalDetailId, jikanId: canonicalDetailId } : anime;
+    await selectAnime(selected);
     await openRightPanelWithView('detail');
   };
 
@@ -84,9 +87,15 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
         </div>
         {!compact && <p className="line-clamp-3 text-sm leading-5 text-cream/62">{anime.synopsis}</p>}
         <div className="flex items-center justify-between gap-3">
-          <Link to={`/anime/${detailAnimeId}`} className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amberline hover:text-cream">
-            Details
-          </Link>
+          {detailAnimeId ? (
+            <Link to={`/anime/${detailAnimeId}`} className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amberline hover:text-cream">
+              Details
+            </Link>
+          ) : (
+            <button type="button" onClick={() => void openDetailPanel()} className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amberline hover:text-cream">
+              Details
+            </button>
+          )}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => void openDetailPanel()} className="vhs-button-ghost px-2.5 py-1.5 retro-tooltip" aria-label="Open detail panel" data-tooltip="Open Detail Panel">
               <Info size={13} />

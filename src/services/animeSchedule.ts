@@ -31,6 +31,32 @@ type AnimeScheduleNormalizeOptions = {
 const inFlightRequests = new Map<string, Promise<unknown>>();
 const routeByNumericId = new Map<number, string>();
 
+function indexRouteFromCachedSummary(value: unknown) {
+  if (!value || typeof value !== 'object') return;
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'number' && Number.isFinite(record.id) ? Math.floor(record.id) : undefined;
+  if (!id) return;
+
+  const route =
+    (typeof record.animeScheduleRoute === 'string' && record.animeScheduleRoute.trim()) ||
+    (typeof record.route === 'string' && record.route.trim()) ||
+    undefined;
+  if (!route) return;
+
+  routeByNumericId.set(id, route);
+}
+
+function indexRoutesFromCachedValue(value: unknown) {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      indexRouteFromCachedSummary(entry);
+    }
+    return;
+  }
+
+  indexRouteFromCachedSummary(value);
+}
+
 export async function clearAnimeScheduleDataCache() {
   inFlightRequests.clear();
   routeByNumericId.clear();
@@ -161,7 +187,7 @@ function stripHtml(input?: string) {
     .trim();
 }
 
-function parseMalIdFromUrl(value?: string) {
+function parseMalIdFromUrl(value?: string): number | undefined {
   if (!value) return undefined;
   const direct = value.trim();
   if (/^\d+$/.test(direct)) {
@@ -179,6 +205,69 @@ function parseMalIdFromUrl(value?: string) {
   if (queryMatch) {
     const parsed = Number(queryMatch[1]);
     if (Number.isFinite(parsed) && parsed > 0 && parsed <= MAX_REASONABLE_MAL_ID) return parsed;
+  }
+
+  return undefined;
+}
+
+function parseMalIdFromWebsiteEntry(entry: unknown): number | undefined {
+  if (typeof entry === 'string') {
+    return parseMalIdFromUrl(entry);
+  }
+
+  const record = toRecord(entry);
+  if (!record) return undefined;
+
+  const site = getString(record, ['site', 'name', 'platform', 'provider'])?.toLowerCase() ?? '';
+  const directUrl =
+    getString(record, ['mal', 'myanimelist', 'url', 'href', 'link', 'value']) ||
+    getString(toRecord(record.meta), ['mal', 'myanimelist', 'url']);
+  const parsedFromUrl = parseMalIdFromUrl(directUrl);
+  if (parsedFromUrl) return parsedFromUrl;
+
+  const directId = getNumber(record, ['malId', 'mal_id', 'idMal']);
+  if (directId && directId > 0 && directId <= MAX_REASONABLE_MAL_ID) return Math.floor(directId);
+
+  const genericId = getNumber(record, ['id']);
+  if ((site.includes('mal') || site.includes('myanimelist')) && genericId && genericId > 0 && genericId <= MAX_REASONABLE_MAL_ID) {
+    return Math.floor(genericId);
+  }
+
+  return undefined;
+}
+
+function resolveMalIdFromWebsites(value: unknown): number | undefined {
+  const direct = parseMalIdFromWebsiteEntry(value);
+  if (direct) return direct;
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const parsed = parseMalIdFromWebsiteEntry(entry);
+      if (parsed) return parsed;
+    }
+    return undefined;
+  }
+
+  const websites = toRecord(value);
+  if (!websites) return undefined;
+
+  const directMal = parseMalIdFromUrl(getString(websites, ['mal', 'myanimelist']));
+  if (directMal) return directMal;
+
+  for (const [key, entry] of Object.entries(websites)) {
+    const lowered = key.toLowerCase();
+    const parsed = parseMalIdFromWebsiteEntry(entry);
+    if (parsed) {
+      if (lowered.includes('mal') || lowered.includes('myanimelist')) return parsed;
+      if (Array.isArray(entry) || toRecord(entry)) return parsed;
+    }
+
+    if (Array.isArray(entry)) {
+      for (const child of entry) {
+        const nested = parseMalIdFromWebsiteEntry(child);
+        if (nested) return nested;
+      }
+    }
   }
 
   return undefined;
@@ -231,7 +320,7 @@ function normalizeTimestampToUtc(value: string): string {
   return `${isoLike}Z`;
 }
 
-function normalizeAnimeScheduleId(record: Record<string, unknown>, media: Record<string, unknown>, title: string) {
+function normalizeAnimeScheduleId(record: Record<string, unknown>, media: Record<string, unknown>, title: string): number {
   const jikanId = resolveAnimeScheduleJikanId(record, media);
   if (jikanId) return jikanId;
 
@@ -239,16 +328,16 @@ function normalizeAnimeScheduleId(record: Record<string, unknown>, media: Record
   return Math.max(1, Math.floor(hashFromTitle(route || title)));
 }
 
-function resolveAnimeScheduleJikanId(record: Record<string, unknown>, media: Record<string, unknown>) {
-  const websites = toRecord(record.websites);
-  const mediaWebsites = toRecord(media.websites);
-  const malUrl =
-    getString(websites, ['mal']) ||
-    getString(mediaWebsites, ['mal']) ||
-    getString(record, ['mal']) ||
-    getString(media, ['mal']);
-  const malId = parseMalIdFromUrl(malUrl);
-  if (malId) return malId;
+function resolveAnimeScheduleJikanId(record: Record<string, unknown>, media: Record<string, unknown>): number | undefined {
+  console.log('Resolving AnimeSchedule Jikan ID from record and media:', { record, media });
+  const malId =
+    getNumber(record, ['jikanId', 'jikan_id']) ||
+    getNumber(media, ['jikanId', 'jikan_id']) ||
+    resolveMalIdFromWebsites(record.websites) ||
+    resolveMalIdFromWebsites(media.websites) ||
+    parseMalIdFromUrl(getString(record, ['mal'])) ||
+    parseMalIdFromUrl(getString(media, ['mal']));
+  if (malId && malId > 0 && malId <= MAX_REASONABLE_MAL_ID) return Math.floor(malId);
 
   const idFromMedia =
     getNumber(record, ['malId', 'mal_id', 'idMal']) ??
@@ -295,7 +384,10 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
 
   const jikanId = resolveAnimeScheduleJikanId(record, media);
   const id = normalizeAnimeScheduleId(record, media, title);
-  const route = getString(record, ['route']);
+  const route =
+    getString(record, ['route']) ||
+    getString(media, ['route']) ||
+    getString(toRecord(record.anime), ['route']);
   if (route) {
     routeByNumericId.set(id, route);
   }
@@ -367,10 +459,11 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
     genres: getList(media, ['genres']),
     trailerUrl,
     mediaType,
+    animeScheduleRoute: route,
   };
 }
 
-function toAnimeDetail(raw: unknown, preferredId?: number): AnimeDetail | null {
+function toAnimeDetail(raw: unknown): AnimeDetail | null {
   const summary = toAnimeSummary(raw);
   if (!summary) return null;
 
@@ -389,37 +482,22 @@ function toAnimeDetail(raw: unknown, preferredId?: number): AnimeDetail | null {
     aired: seasonTitle || getString(record, ['premier', 'subPremier', 'dubPremier']) || getString(websites, ['official']),
   };
 
-  if (preferredId && preferredId > 0) {
-    detail.id = Math.floor(preferredId);
-    detail.jikanId = Math.floor(preferredId);
-  } else if (summary.jikanId && summary.jikanId > 0) {
+  if (summary.jikanId && summary.jikanId > 0) {
     detail.jikanId = Math.floor(summary.jikanId);
   }
 
   return detail;
 }
 
-function parseRequestedId(input: string | number) {
-  if (typeof input === 'number' && Number.isFinite(input) && input > 0 && input <= MAX_REASONABLE_MAL_ID) {
-    return Math.floor(input);
-  }
-
-  if (typeof input !== 'string') return undefined;
-  const trimmed = input.trim();
-  if (!trimmed) return undefined;
-  if (/^\d+$/.test(trimmed)) {
-    const parsed = Number(trimmed);
-    if (Number.isFinite(parsed) && parsed > 0 && parsed <= MAX_REASONABLE_MAL_ID) return Math.floor(parsed);
-  }
-  return parseMalIdFromUrl(trimmed);
-}
-
-async function resolveAnimeScheduleJikanIdByRoute(route: string) {
+async function resolveAnimeScheduleJikanIdByRoute(route: string): Promise<number | undefined> {
+  console.log('Resolving AnimeSchedule Jikan ID by route:', route);
+  const path = `/anime/${encodeURIComponent(route)}`;
   try {
-    const json = await fetchAnimeScheduleJson(`/anime/${encodeURIComponent(route)}`);
+    const json = await cachedFetch(path, DAY, (raw) => raw);
     const record = toRecord(json);
     if (!record) return undefined;
     const media = toRecord(record.media) ?? toRecord(record.anime) ?? record;
+    console.log('Fetched AnimeSchedule record for route resolution:', { record, media });
     return resolveAnimeScheduleJikanId(record, media);
   } catch {
     return undefined;
@@ -509,6 +587,7 @@ async function cachedFetchByKey<T>(
   const now = Date.now();
 
   if (cached) {
+    indexRoutesFromCachedValue(cached.value);
     const shouldRevalidate = options.forceRefresh || cached.expiresAt <= now;
     if (shouldRevalidate) {
       void fetchAndStore(key, path, ttl, mapper)
@@ -730,24 +809,14 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
     throw new Error('AnimeSchedule detail route unavailable');
   }
 
-  const preferredId = parseRequestedId(idOrRoute);
-
-  const detail = await cachedFetch(`/anime/${encodeURIComponent(route)}`, DAY, (json) => toAnimeDetail(json, preferredId))
+  const detail = await cachedFetch(`/anime/${encodeURIComponent(route)}`, DAY, (json) => toAnimeDetail(json))
     .catch(() => null as AnimeDetail | null);
 
   if (!detail) {
     throw new Error('AnimeSchedule detail unavailable');
   }
 
-  if (isValidMalId(preferredId) && detail.id !== preferredId) {
-    const safePreferredId = Math.floor(preferredId);
-    detail.id = safePreferredId;
-    detail.jikanId = safePreferredId;
-    void patchAnimeScheduleDetailCache(route, detail);
-  } else if (isValidMalId(preferredId) && detail.jikanId !== preferredId) {
-    detail.jikanId = Math.floor(preferredId);
-    void patchAnimeScheduleDetailCache(route, detail);
-  } else if (!isValidMalId(detail.jikanId)) {
+  if (!isValidMalId(detail.jikanId)) {
     const recoveredJikanId = await resolveAnimeScheduleJikanIdByRoute(route);
     if (isValidMalId(recoveredJikanId)) {
       const safeRecoveredId = Math.floor(recoveredJikanId);
@@ -755,21 +824,27 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
       detail.id = safeRecoveredId;
       void patchAnimeScheduleDetailCache(route, detail);
     }
+  } else if (detail.id !== detail.jikanId) {
+    detail.id = Math.floor(detail.jikanId);
+    void patchAnimeScheduleDetailCache(route, detail);
   }
 
   if (
-    !detail.trailerUrl ||
-    !detail.banner ||
-    !detail.titleEnglish ||
-    !detail.titleJapanese ||
-    !detail.rating ||
-    !detail.rank ||
-    !detail.popularity ||
-    !detail.aired ||
-    !detail.source
+    isValidMalId(detail.jikanId) &&
+    (
+      !detail.trailerUrl ||
+      !detail.banner ||
+      !detail.titleEnglish ||
+      !detail.titleJapanese ||
+      !detail.rating ||
+      !detail.rank ||
+      !detail.popularity ||
+      !detail.aired ||
+      !detail.source
+    )
   ) {
     try {
-      const jikanDetail = await getJikanAnimeDetails(detail.id);
+      const jikanDetail = await getJikanAnimeDetails(detail.jikanId!);
       detail.title = detail.title || jikanDetail.title;
       detail.titleEnglish = detail.titleEnglish || jikanDetail.titleEnglish;
       detail.titleJapanese = detail.titleJapanese || jikanDetail.titleJapanese;
@@ -788,6 +863,25 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
 
   routeByNumericId.set(detail.id, route);
   return detail;
+}
+
+export async function resolveAnimeScheduleBridgeJikanId(
+  idOrRoute: string | number,
+  animeScheduleRoute?: string,
+): Promise<number | undefined> {
+  const explicitRoute = animeScheduleRoute?.trim();
+  const route = explicitRoute && explicitRoute.length > 0
+    ? explicitRoute
+    : parseRouteFromInput(idOrRoute);
+  console.log('Resolving AnimeSchedule bridge Jikan ID for input:', {
+    idOrRoute,
+    animeScheduleRoute,
+    parsedRoute: route,
+  });
+  if (!route) return undefined;
+
+  const jikanId = await resolveAnimeScheduleJikanIdByRoute(route);
+  return isValidMalId(jikanId) ? Math.floor(jikanId) : undefined;
 }
 
 /**

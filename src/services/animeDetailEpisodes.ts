@@ -1,5 +1,5 @@
 import { getAnimeDetails } from './catalogSource';
-import { getAnimeEpisodes } from './jikan';
+import { getAnimeDetails as getJikanAnimeDetails, getAnimeEpisodes } from './jikan';
 import type { AnimeDetailEpisodeBundle, AnimeEpisode, AnimeEpisodePagination } from '../types/anime';
 
 const MAX_FALLBACK_EPISODES = 200;
@@ -7,7 +7,7 @@ const FALLBACK_PAGE_SIZE = 25;
 const MAX_REASONABLE_MAL_ID = 2_000_000;
 
 function toJikanAnimeId(detail: { id: number; jikanId?: number }) {
-  const candidates = [detail.jikanId, detail.id];
+  const candidates = [detail.jikanId];
   for (const candidate of candidates) {
     if (!Number.isFinite(candidate) || !candidate || candidate <= 0) continue;
     if (candidate > MAX_REASONABLE_MAL_ID) continue;
@@ -72,28 +72,12 @@ function mergeEpisodeLists(primary: AnimeEpisode[], fallback: AnimeEpisode[]): A
   return Array.from(byEpisode.values()).sort((a, b) => a.episodeNumber - b.episodeNumber);
 }
 
-export async function getAnimeDetailEpisodeBundle(id: string | number, page = 1): Promise<AnimeDetailEpisodeBundle> {
-  const safePage = Math.max(1, Math.floor(page));
-  const detail = await getAnimeDetails(id);
-  const requestedId = typeof id === 'number' ? id : Number(id);
-  const fallbackIds = [toJikanAnimeId(detail), detail.id, Number.isFinite(requestedId) ? requestedId : undefined]
-    .filter(
-      (candidate): candidate is number =>
-        typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0 && candidate <= MAX_REASONABLE_MAL_ID,
-    )
-    .map((candidate) => Math.floor(candidate));
-  const uniqueIds = Array.from(new Set(fallbackIds));
-
-  let effectivePayload: Awaited<ReturnType<typeof getAnimeEpisodes>> | null = null;
-  for (const candidateId of uniqueIds) {
-    const payload = await getAnimeEpisodes(candidateId, safePage).catch(() => null);
-    if (!payload) continue;
-
-    effectivePayload = payload;
-    if (payload.data.length > 0) break;
-  }
-
-  const jikanEpisodes = effectivePayload?.data ?? [];
+function toBundleFromDetail(
+  detail: Awaited<ReturnType<typeof getAnimeDetails>>,
+  jikanPayload: Awaited<ReturnType<typeof getAnimeEpisodes>> | null,
+  safePage: number,
+): AnimeDetailEpisodeBundle {
+  const jikanEpisodes = jikanPayload?.data ?? [];
 
   if (!jikanEpisodes.length) {
     const fallback = buildFallbackEpisodesPage(detail.episodes, safePage);
@@ -109,8 +93,8 @@ export async function getAnimeDetailEpisodeBundle(id: string | number, page = 1)
   const episodes = mergeEpisodeLists(jikanEpisodes, fallback.episodes);
   const pagination: AnimeEpisodePagination = {
     page: safePage,
-    lastVisiblePage: Math.max(safePage, effectivePayload?.pagination.lastVisiblePage ?? safePage),
-    hasNextPage: effectivePayload?.pagination.hasNextPage === true,
+    lastVisiblePage: Math.max(safePage, jikanPayload?.pagination.lastVisiblePage ?? safePage),
+    hasNextPage: jikanPayload?.pagination.hasNextPage === true,
     hasPrevPage: safePage > 1,
   };
 
@@ -120,4 +104,30 @@ export async function getAnimeDetailEpisodeBundle(id: string | number, page = 1)
     hasEpisodeData: true,
     pagination,
   };
+}
+
+export async function getJikanDetailEpisodeBundle(jikanId: number, page = 1): Promise<AnimeDetailEpisodeBundle> {
+  const safeJikanId = Math.floor(jikanId);
+  const safePage = Math.max(1, Math.floor(page));
+  const detail = await getJikanAnimeDetails(safeJikanId);
+  const payload = await getAnimeEpisodes(safeJikanId, safePage).catch(() => null);
+  return toBundleFromDetail(detail, payload, safePage);
+}
+
+export async function getAnimeDetailEpisodeBundle(id: string | number, page = 1): Promise<AnimeDetailEpisodeBundle> {
+  const safePage = Math.max(1, Math.floor(page));
+  const detail = await getAnimeDetails(id);
+  const canonicalId = toJikanAnimeId(detail);
+  const uniqueIds = canonicalId ? [canonicalId] : [];
+
+  let effectivePayload: Awaited<ReturnType<typeof getAnimeEpisodes>> | null = null;
+  for (const candidateId of uniqueIds) {
+    const payload = await getAnimeEpisodes(candidateId, safePage).catch(() => null);
+    if (!payload) continue;
+
+    effectivePayload = payload;
+    if (payload.data.length > 0) break;
+  }
+
+  return toBundleFromDetail(detail, effectivePayload, safePage);
 }
