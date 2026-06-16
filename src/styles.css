@@ -3745,6 +3745,15 @@ button {
   to { left: 110%; }
 }
 
+@keyframes splash-slide {
+  0% { transform: translateX(-130%); }
+  100% { transform: translateX(330%); }
+}
+
+.splash-scanline {
+  animation: splash-slide 1.35s linear infinite;
+}
+
 @keyframes now-playing-bars {
   0%, 100% { transform: scaleY(0.45); opacity: 0.55; }
   50% { transform: scaleY(1); opacity: 1; }

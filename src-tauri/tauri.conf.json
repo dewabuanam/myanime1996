@@ -12,7 +12,22 @@
   "app": {
     "windows": [
       {
+        "label": "splashscreen",
+        "title": "My Anime 1996",
+        "url": "/splash.html",
+        "width": 520,
+        "height": 320,
+        "center": true,
+        "backgroundColor": "#0f0b09",
+        "decorations": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "fullscreen": false
+      },
+      {
         "label": "main",
+        "visible": false,
         "title": "My Anime 1996",
         "width": 1280,
         "height": 820,
@@ -30,6 +45,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "category": "Entertainment",
     "shortDescription": "Retro anime metadata desktop app",
     "longDescription": "A Tauri desktop anime metadata browser with local sessions, playlists, watch history, and VHS-inspired UI."

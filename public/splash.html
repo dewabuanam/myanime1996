@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Anime 1996</title>
+    <style>
+      :root {
+        color: #f5ead2;
+        background: #0f0b09;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        font-family: 'Oswald', 'Segoe UI', sans-serif;
+        color: #f5ead2;
+        background:
+          radial-gradient(circle at 14% 12%, rgba(240, 182, 96, 0.18), transparent 35rem),
+          radial-gradient(circle at 86% 88%, rgba(186, 83, 44, 0.16), transparent 32rem),
+          #0f0b09;
+      }
+
+      .wrap {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+        padding: 1rem;
+      }
+
+      .panel {
+        width: min(22rem, calc(100vw - 2rem));
+        border: 1px solid rgba(236, 183, 104, 0.35);
+        background: rgba(18, 13, 10, 0.88);
+        padding: 1.8rem 1.6rem;
+        text-align: center;
+        box-shadow: 0 22px 45px rgba(0, 0, 0, 0.45);
+      }
+
+      .tag {
+        margin: 0;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 0.64rem;
+        letter-spacing: 0.42em;
+        text-transform: uppercase;
+        color: rgba(236, 183, 104, 0.75);
+      }
+
+      .title {
+        margin: 0.9rem 0 0;
+        font-size: 1.8rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .desc {
+        margin: 0.8rem 0 0;
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 0.7rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: rgba(245, 234, 210, 0.78);
+      }
+
+      .rail {
+        position: relative;
+        margin: 1.3rem 0 0;
+        width: 100%;
+        height: 2px;
+        overflow: hidden;
+        background: rgba(245, 234, 210, 0.16);
+      }
+
+      .rail::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 45%;
+        background: rgba(236, 183, 104, 0.9);
+        animation: scan 1.35s linear infinite;
+      }
+
+      @keyframes scan {
+        from {
+          transform: translateX(-130%);
+        }
+        to {
+          transform: translateX(330%);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="panel">
+        <p class="tag">My Anime 1996</p>
+        <h1 class="title">Booting Archive</h1>
+        <p class="desc">Loading library, playback queue, and plugins</p>
+        <div class="rail" aria-hidden="true"></div>
+      </section>
+    </main>
+  </body>
+</html>

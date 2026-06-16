@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AppShell from './components/AppShell';
 import AnimeDetail from './pages/AnimeDetail';
@@ -20,10 +21,39 @@ function ProtectedShell() {
 export default function App() {
   const hydrated = useAppStore((state) => state.hydrated);
   const initialize = useAppStore((state) => state.initialize);
+  const startupHandoffDoneRef = useRef(false);
+
+  const completeStartupHandoff = async () => {
+    if (startupHandoffDoneRef.current) return;
+
+    try {
+      await invoke('complete_startup_handoff');
+      startupHandoffDoneRef.current = true;
+    } catch (error) {
+      console.warn('Failed to complete splashscreen handoff.', error);
+    }
+  };
 
   useEffect(() => {
     void initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void completeStartupHandoff();
+
+    const retryId = window.setInterval(() => {
+      if (startupHandoffDoneRef.current) {
+        window.clearInterval(retryId);
+        return;
+      }
+      void completeStartupHandoff();
+    }, 800);
+
+    return () => {
+      window.clearInterval(retryId);
+    };
+  }, [hydrated]);
 
   if (!hydrated) {
     return (
