@@ -40,6 +40,7 @@ declare global {
 
 type UseYouTubeTrailerPlayerArgs = {
   currentlyPlayingKind: string | undefined;
+  playbackSessionKey: string | undefined;
   hasTrailerPlayback: boolean;
   trailerVideoId: string;
   trailerVolume: number;
@@ -62,6 +63,7 @@ type UseYouTubeTrailerPlayerResult = {
 
 export function useYouTubeTrailerPlayer({
   currentlyPlayingKind,
+  playbackSessionKey,
   hasTrailerPlayback,
   trailerVideoId,
   trailerVolume,
@@ -81,6 +83,7 @@ export function useYouTubeTrailerPlayer({
   const trailerSyncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const latestPlaybackTimeRef = useRef(playbackTime);
   const latestIsPlayingRef = useRef(isPlaying);
+  const latestTrailerVolumeRef = useRef(trailerVolume);
 
   useEffect(() => {
     latestPlaybackTimeRef.current = playbackTime;
@@ -89,6 +92,10 @@ export function useYouTubeTrailerPlayer({
   useEffect(() => {
     latestIsPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    latestTrailerVolumeRef.current = trailerVolume;
+  }, [trailerVolume]);
 
   const destroyTrailerPlayer = useCallback(() => {
     trailerPlayerSessionRef.current += 1;
@@ -177,7 +184,7 @@ export function useYouTubeTrailerPlayer({
             if (cancelled || trailerPlayerDestroyedRef.current || trailerPlayerSessionRef.current !== session) return;
             trailerPlayerRef.current = event.target;
             setTrailerPlayerReady(true);
-            event.target.setVolume(trailerVolume);
+            event.target.setVolume(latestTrailerVolumeRef.current);
             setPlaybackDuration(event.target.getDuration() || 0);
             const resumeAt = Math.max(0, latestPlaybackTimeRef.current);
             if (resumeAt > 0.25) {
@@ -252,6 +259,7 @@ export function useYouTubeTrailerPlayer({
     };
   }, [
     currentlyPlayingKind,
+    playbackSessionKey,
     destroyTrailerPlayer,
     hasTrailerPlayback,
     playNextInQueue,
@@ -261,7 +269,6 @@ export function useYouTubeTrailerPlayer({
     setPlaying,
     setTrailerPlayerReady,
     trailerVideoId,
-    trailerVolume,
   ]);
 
   const syncTrailerPlaybackState = useCallback(

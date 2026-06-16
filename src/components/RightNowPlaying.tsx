@@ -309,6 +309,7 @@ export default function RightNowPlaying() {
 
   const { trailerPlayerMountRef, syncTrailerPlaybackState, syncTrailerVolume, seekTrailer } = useYouTubeTrailerPlayer({
     currentlyPlayingKind: currentlyPlayingItem?.kind,
+    playbackSessionKey: currentlyPlayingItem?.createdAt,
     hasTrailerPlayback,
     trailerVideoId,
     trailerVolume,

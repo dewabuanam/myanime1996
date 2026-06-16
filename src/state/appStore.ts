@@ -1055,8 +1055,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   playTrailer: async (anime) => {
     let trailerAnime = anime;
     const hasTrailer = Boolean(anime.trailerUrl?.trim());
+    const currentItem = get().currentlyPlayingItem;
+    const currentTrailerUrl = get().activePlaybackUrl?.trim() ?? '';
+    const sameAnimeAsCurrent =
+      currentItem?.kind === 'trailer' &&
+      getCanonicalAnimeId(currentItem.anime) === getCanonicalAnimeId(anime);
 
-    if (!hasTrailer) {
+    if (!hasTrailer && sameAnimeAsCurrent && currentTrailerUrl) {
+      trailerAnime = {
+        ...anime,
+        trailerUrl: currentTrailerUrl,
+      };
+    }
+
+    if (!trailerAnime.trailerUrl?.trim()) {
       const detailAnimeId = anime.jikanId ?? anime.id;
       const resolvedTrailerUrl = await getAnimeTrailerUrl(detailAnimeId);
       if (resolvedTrailerUrl?.trim()) {
