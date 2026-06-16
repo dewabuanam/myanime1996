@@ -51,7 +51,12 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
 
   return (
     <article className="group app-card overflow-hidden transition hover:-translate-y-0.5 hover:bg-carbon/78">
-      <button type="button" onClick={() => void selectAnime(anime)} className="block w-full text-left retro-tooltip" data-tooltip="Open Anime">
+      <button
+        type="button"
+        onClick={() => void selectAnime(anime)}
+        className="block w-full text-left retro-tooltip"
+        data-tooltip="Open Anime"
+      >
         <div className="relative aspect-[3/4] overflow-hidden bg-black/40">
           <img src={anime.image} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" loading="lazy" />
           <div className="absolute inset-0 bg-gradient-to-t from-ink via-transparent to-transparent" />

@@ -1,7 +1,10 @@
 import { History, Play } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { AnimeSummary, WatchProgress } from '../types/anime';
+import { getAvailableSourcePlugins } from '../services/sourceResolver';
 import { useAppStore } from '../state/appStore';
+import { buildActiveOrderedPluginIds, collectResolvedPluginsForAnime, pickPriorityPluginId, readResolvedSourceCache } from '../utils/resolvedSourceBadge';
 import { getDisplayTitle } from '../utils/title';
 import AnimeCard from './AnimeCard';
 
@@ -18,6 +21,72 @@ export default function AnimeRow({ title, anime = [], progress = [] }: AnimeRowP
   const requestSeekTo = useAppStore((state) => state.requestSeekTo);
   const setPlaybackTime = useAppStore((state) => state.setPlaybackTime);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
+  const importedSourcePlugins = useAppStore((state) => state.importedSourcePlugins);
+  const pluginPriority = useAppStore((state) => state.pluginPriority);
+  const pluginEnabled = useAppStore((state) => state.pluginEnabled);
+  const [episodeBadgeByKey, setEpisodeBadgeByKey] = useState<Record<string, { iconDataUri: string; pluginName: string }>>({});
+  const [sourceCacheVersion, setSourceCacheVersion] = useState(0);
+
+  const sourcePlugins = useMemo(() => getAvailableSourcePlugins(importedSourcePlugins), [importedSourcePlugins]);
+  const pluginById = useMemo(() => new Map(sourcePlugins.map((plugin) => [plugin.id, plugin])), [sourcePlugins]);
+  const activeOrderedPluginIds = useMemo(
+    () => buildActiveOrderedPluginIds(sourcePlugins, pluginPriority, pluginEnabled),
+    [pluginEnabled, pluginPriority, sourcePlugins],
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onSourceCacheUpdated = () => {
+      setSourceCacheVersion((value) => value + 1);
+    };
+
+    window.addEventListener('myanime1996:source-cache-updated', onSourceCacheUpdated as EventListener);
+    return () => {
+      window.removeEventListener('myanime1996:source-cache-updated', onSourceCacheUpdated as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadEpisodeBadges = async () => {
+      if (!progress.length || activeOrderedPluginIds.length === 0) {
+        if (!cancelled) setEpisodeBadgeByKey({});
+        return;
+      }
+
+      const cache = await readResolvedSourceCache();
+      const next: Record<string, { iconDataUri: string; pluginName: string }> = {};
+
+      for (const item of progress) {
+        const episodeNumber = Math.max(1, Math.floor(Number(item.episode || 1)));
+        const snapshot = collectResolvedPluginsForAnime(cache, {
+          animeIds: [item.animeId],
+          titles: [item.title, item.titleEnglish ?? '', item.titleJapanese ?? ''],
+        });
+        const resolvedPluginIds = snapshot.episodePluginIds.get(episodeNumber);
+        if (!resolvedPluginIds) continue;
+        const pluginId = pickPriorityPluginId(resolvedPluginIds, activeOrderedPluginIds);
+        if (!pluginId) continue;
+        const plugin = pluginById.get(pluginId);
+        if (!plugin?.iconDataUri) continue;
+        next[`${item.animeId}:${episodeNumber}`] = {
+          iconDataUri: plugin.iconDataUri,
+          pluginName: plugin.name,
+        };
+      }
+
+      if (!cancelled) {
+        setEpisodeBadgeByKey(next);
+      }
+    };
+
+    void loadEpisodeBadges();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrderedPluginIds, pluginById, progress, sourceCacheVersion]);
 
   const formatElapsed = (seconds: number) => {
     const safe = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
@@ -94,6 +163,19 @@ export default function AnimeRow({ title, anime = [], progress = [] }: AnimeRowP
           <div key={item.animeId} className="app-card min-w-72 p-3">
             <button type="button" onClick={() => openEpisodeDetail(item)} className="relative block w-full overflow-hidden rounded-xl text-left retro-tooltip" data-tooltip="Open Anime Detail">
               <img src={item.image} alt="" className="h-32 w-full object-cover" />
+              {episodeBadgeByKey[`${item.animeId}:${Math.max(1, item.episode)}`] ? (
+                <div
+                  className="absolute right-2.5 top-2.5 z-[1] rounded-md bg-black/62 p-1.5 shadow-[0_4px_14px_rgba(0,0,0,0.45)] retro-tooltip"
+                  data-tooltip={`${episodeBadgeByKey[`${item.animeId}:${Math.max(1, item.episode)}`].pluginName} Available`}
+                >
+                  <img
+                    src={episodeBadgeByKey[`${item.animeId}:${Math.max(1, item.episode)}`].iconDataUri}
+                    alt="Resolved source"
+                    className="h-4 w-4 rounded-sm object-contain"
+                    loading="lazy"
+                  />
+                </div>
+              ) : null}
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
                 <p className="line-clamp-1 font-display text-base font-semibold uppercase leading-tight text-cream">{getDisplayTitle(item, titleLanguage)}</p>
                 <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-cream/75">

@@ -9,6 +9,7 @@ import { useAppStore } from '../state/appStore';
 import type { AnimeDetail as AnimeDetailType, AnimeEpisode, AnimeEpisodePagination, PlayableItem } from '../types/anime';
 import type { ResolvedSource, ResolvedSourceOption, SourceResolveAttemptStatus, SourceResolveTrace } from '../types/plugin';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
+import { buildActiveOrderedPluginIds, collectResolvedPluginsForAnime, pickPriorityPluginId, readResolvedSourceCache } from '../utils/resolvedSourceBadge';
 import { getDisplayTitle } from '../utils/title';
 import { extractYouTubeVideoId } from '../utils/youtubeUrl';
 import PluginsPanel from './PluginsPanel';
@@ -351,10 +352,14 @@ export default function RightNowPlaying() {
   const [detailLoadingEpisode, setDetailLoadingEpisode] = useState<number | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailEpisodeSearchQuery, setDetailEpisodeSearchQuery] = useState('');
+  const [detailEpisodeResolvedIconByEpisode, setDetailEpisodeResolvedIconByEpisode] = useState<
+    Record<number, { iconDataUri: string; pluginName: string }>
+  >({});
   const [isPaneLayoutMenuOpen, setIsPaneLayoutMenuOpen] = useState(false);
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(() =>
     typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false,
   );
+  const [sourceCacheVersion, setSourceCacheVersion] = useState(0);
 
   const trailerVideoId = useMemo(
     () => (currentlyPlayingItem?.kind === 'trailer' ? extractYouTubeVideoId(currentlyPlayingItem.anime.trailerUrl) : ''),
@@ -403,6 +408,10 @@ export default function RightNowPlaying() {
   }, [detailAnimeView?.id]);
 
   const sourcePlugins = useMemo(() => getAvailableSourcePlugins(importedSourcePlugins), [importedSourcePlugins]);
+  const activeOrderedPluginIds = useMemo(
+    () => buildActiveOrderedPluginIds(sourcePlugins, pluginPriority, pluginEnabled),
+    [pluginEnabled, pluginPriority, sourcePlugins],
+  );
   const sourcePluginById = useMemo(
     () => new Map(sourcePlugins.map((plugin) => [plugin.id, plugin])),
     [sourcePlugins],
@@ -484,6 +493,57 @@ export default function RightNowPlaying() {
 
     return items;
   }, [activeResolvedSource?.pluginId, resolvedSource?.pluginId, sourceOptions, sourcePluginById]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onSourceCacheUpdated = () => {
+      setSourceCacheVersion((value) => value + 1);
+    };
+
+    window.addEventListener('myanime1996:source-cache-updated', onSourceCacheUpdated as EventListener);
+    return () => {
+      window.removeEventListener('myanime1996:source-cache-updated', onSourceCacheUpdated as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDetailEpisodeBadges = async () => {
+      if (!detailAnimeView || activeOrderedPluginIds.length === 0 || sourcePlugins.length === 0) {
+        if (!cancelled) setDetailEpisodeResolvedIconByEpisode({});
+        return;
+      }
+
+      const cache = await readResolvedSourceCache();
+      const snapshot = collectResolvedPluginsForAnime(cache, {
+        animeIds: [detailAnimeView.id, detailAnimeView.jikanId ?? -1],
+        titles: [detailAnimeView.title, detailAnimeView.titleEnglish ?? '', detailAnimeView.titleJapanese ?? ''],
+      });
+      const next: Record<number, { iconDataUri: string; pluginName: string }> = {};
+
+      for (const [episodeNumber, resolvedPluginIds] of snapshot.episodePluginIds.entries()) {
+        const pluginId = pickPriorityPluginId(resolvedPluginIds, activeOrderedPluginIds);
+        if (!pluginId) continue;
+        const plugin = sourcePluginById.get(pluginId);
+        if (!plugin?.iconDataUri) continue;
+        next[episodeNumber] = {
+          iconDataUri: plugin.iconDataUri,
+          pluginName: plugin.name,
+        };
+      }
+
+      if (!cancelled) {
+        setDetailEpisodeResolvedIconByEpisode(next);
+      }
+    };
+
+    void loadDetailEpisodeBadges();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOrderedPluginIds, detailAnimeView, sourceCacheVersion, sourcePluginById, sourcePlugins.length]);
 
   const audioSelectorItems = useMemo<LogoSelectItem[]>(() => {
     return [
@@ -1856,7 +1916,22 @@ export default function RightNowPlaying() {
                             <Play size={11} /> {String(episode.episodeNumber).padStart(2, '0')}
                           </button>
                           <div className="min-w-0 flex-1">
-                            <p className="line-clamp-1 font-display text-sm uppercase text-cream">{labels.primary}</p>
+                            <div className="flex min-w-0 items-start justify-between gap-2">
+                              <p className="line-clamp-1 font-display text-sm uppercase text-cream">{labels.primary}</p>
+                              {detailEpisodeResolvedIconByEpisode[episode.episodeNumber] ? (
+                                <div
+                                  className="shrink-0 rounded-md bg-black/62 p-1 shadow-[0_4px_14px_rgba(0,0,0,0.45)] retro-tooltip"
+                                  data-tooltip={`${detailEpisodeResolvedIconByEpisode[episode.episodeNumber].pluginName} Available`}
+                                >
+                                  <img
+                                    src={detailEpisodeResolvedIconByEpisode[episode.episodeNumber].iconDataUri}
+                                    alt="Resolved source"
+                                    className="h-4 w-4 rounded-sm object-contain"
+                                    loading="lazy"
+                                  />
+                                </div>
+                              ) : null}
+                            </div>
                             {labels.secondary ? <p className="anime-card-jp line-clamp-1">{labels.secondary}</p> : null}
                             <div className="mt-1 flex flex-wrap gap-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/55">
                               <span className="inline-flex items-center gap-1"><CalendarDays size={10} className="text-amberline" /> {episode.aired?.slice(0, 10) || 'TBA'}</span>
@@ -1866,11 +1941,16 @@ export default function RightNowPlaying() {
                           </div>
                           <button
                             type="button"
-                            className="vhs-button-ghost px-2 py-1 text-[10px] retro-tooltip"
+                            className="vhs-button-ghost p-1.5 text-[10px] retro-tooltip"
                             onClick={() => void handleDetailEpisodeToggle(detailAnimeView.id, episode.episodeNumber)}
                             data-tooltip={isExpanded ? 'Collapse Episode' : 'Expand Episode'}
+                            aria-label={isExpanded ? 'Collapse Episode' : 'Expand Episode'}
                           >
-                            {detailLoadingEpisode === episode.episodeNumber ? 'Loading...' : isExpanded ? 'Hide' : 'More'}
+                            {detailLoadingEpisode === episode.episodeNumber ? (
+                              <RotateCcw size={12} className="animate-spin" />
+                            ) : (
+                              <ChevronDown size={12} className={isExpanded ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                            )}
                           </button>
                         </div>
                         {isExpanded ? (

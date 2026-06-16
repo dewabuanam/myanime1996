@@ -92,6 +92,19 @@ async function hydratePlayableItemDuration(item: PlayableItem): Promise<Playable
   }
 }
 
+  function toCanonicalAnimeId(item: PlayableItem): number {
+    const preferred = Number(item.anime.jikanId);
+    if (Number.isFinite(preferred) && preferred > 0) {
+      return Math.floor(preferred);
+    }
+
+    const fallback = Number(item.anime.id);
+    if (Number.isFinite(fallback) && fallback > 0) {
+      return Math.floor(fallback);
+    }
+
+    return 1;
+  }
 export async function resolveSourceForPlayableWithTrace(
   item: PlayableItem,
   options: ResolveSourceOptions,
@@ -162,7 +175,7 @@ export async function resolveSourceForPlayableWithTrace(
       const identity = {
         pluginId,
         provider: options.baseCatalogSource,
-        animeId: resolverItem.anime.id,
+        animeId: toCanonicalAnimeId(resolverItem),
         title: resolverItem.title,
         episodeNumber: resolverItem.episodeNumber ?? 1,
         language: options.preferredAudioLanguage,

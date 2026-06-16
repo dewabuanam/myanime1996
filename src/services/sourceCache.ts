@@ -3,6 +3,12 @@ import type { ResolvedSource } from '../types/plugin';
 import { getStoredValue, setStoredValue } from './store';
 
 const SOURCE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const SOURCE_CACHE_UPDATED_EVENT = 'myanime1996:source-cache-updated';
+
+function emitSourceCacheUpdated() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(SOURCE_CACHE_UPDATED_EVENT));
+}
 
 export type SourceCacheIdentity = {
   pluginId: string;
@@ -53,11 +59,13 @@ export async function setCachedResolvedSource(identity: SourceCacheIdentity, sou
       expiresAt: now + SOURCE_CACHE_TTL_MS,
     },
   });
+  emitSourceCacheUpdated();
 }
 
 export async function clearSourceResolveCache() {
   inFlightResolves.clear();
   await setStoredValue('sourceResolveCache', {} as Record<string, CachedPayload<ResolvedSource>>);
+  emitSourceCacheUpdated();
 }
 
 const inFlightResolves = new Map<string, Promise<ResolvedSource | null>>();

@@ -416,6 +416,7 @@ export default function BottomPlayer() {
   const canUsePrimaryWindowAction = isWindowToggleMode && canOpenPlaybackAction;
   const canUsePrimaryPlayPause = !isWindowToggleMode && hasPlaybackContext && !disablePauseControl;
   const playButtonEnabled = canUsePrimaryWindowAction || canUsePrimaryPlayPause;
+  const hasNoSignalPlayback = !isWindowToggleMode && !hasPlaybackContext;
   const playButtonTooltip = isWindowToggleMode
     ? canOpenPlaybackAction
       ? isWindowOpen
@@ -571,7 +572,7 @@ export default function BottomPlayer() {
           ><SkipBack size={15} /></button>
           <button
             type="button"
-            className="retro-tooltip inline-flex h-10 w-10 items-center justify-center rounded-full bg-amberline text-ink transition hover:brightness-95"
+            className={`retro-tooltip inline-flex h-10 w-10 items-center justify-center rounded-full transition ${playButtonEnabled ? 'bg-amberline text-ink hover:brightness-95' : 'bg-slate-500/45 text-cream/52 cursor-not-allowed'}`}
             onClick={() => {
               if (isWindowToggleMode) {
                 if (!canOpenPlaybackAction) return;
@@ -589,7 +590,9 @@ export default function BottomPlayer() {
             data-tooltip={playButtonTooltip}
             disabled={!playButtonEnabled}
           >
-            {isWindowToggleMode ? (
+            {hasNoSignalPlayback ? (
+              <Play size={18} className="ml-0.5" />
+            ) : isWindowToggleMode ? (
               isWindowOpen ? <X size={18} /> : <Expand size={17} />
             ) : disablePauseControl ? (
               <Play size={18} className="ml-0.5" />
