@@ -539,7 +539,6 @@ export default function Home() {
     const anime = toAnimeSummary(item);
     const canonicalDetailId = await resolveCanonicalDetailRouteId(anime);
     const selected = canonicalDetailId ? { ...anime, id: canonicalDetailId, jikanId: canonicalDetailId } : anime;
-    console.log('Selecting anime from card:', { item, selected });
     await selectAnime(selected);
   };
 

@@ -17,7 +17,6 @@ type UsePlaybackSourceResolverArgs = {
   baseCatalogSource: BaseCatalogSource;
   preferredSourcePluginId: string | null;
   preferredAudioLanguage: SourceAudioLanguage;
-  setPlaying: (playing: boolean) => void;
   setResolvingPlaybackSource: (resolving: boolean) => void;
   setSelectedSourceOptionId: (optionId: string | null) => void;
   onPrimeResolvedEpisode: (playable: PlayableItem, isCancelled: () => boolean) => Promise<void>;
@@ -39,7 +38,6 @@ export function usePlaybackSourceResolver({
   baseCatalogSource,
   preferredSourcePluginId,
   preferredAudioLanguage,
-  setPlaying,
   setResolvingPlaybackSource,
   setSelectedSourceOptionId,
   onPrimeResolvedEpisode,
@@ -145,9 +143,6 @@ export function usePlaybackSourceResolver({
       }
 
       setResolvedSource(resolved);
-      if (resolved) {
-        setPlaying(true);
-      }
       setSourceResolveTrace((current) => {
         if (!current) return trace;
         return {
@@ -172,7 +167,6 @@ export function usePlaybackSourceResolver({
     pluginPriority,
     preferredAudioLanguage,
     preferredSourcePluginId,
-    setPlaying,
     setResolvingPlaybackSource,
     setSelectedSourceOptionId,
     sourceResolveRetryToken,

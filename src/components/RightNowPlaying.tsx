@@ -1,5 +1,5 @@
 import { Clock3, Play } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAniSkipSegments } from '../services/aniSkip';
 import { getAnimeDetails } from '../services/catalogSource';
 import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
@@ -88,6 +88,7 @@ export default function RightNowPlaying() {
   const paneLayoutMenuRef = useRef<HTMLDivElement | null>(null);
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
   const pendingAutoPlayAfterResolveRef = useRef(false);
+  const autoAdvanceHandledItemIdRef = useRef<string | null>(null);
   const fullscreenOverlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAutoSkippedSegmentRef = useRef<string | null>(null);
   const latestAniSkipFetchKeyRef = useRef<string | null>(null);
@@ -208,7 +209,6 @@ export default function RightNowPlaying() {
     baseCatalogSource,
     preferredSourcePluginId,
     preferredAudioLanguage,
-    setPlaying,
     setResolvingPlaybackSource,
     setSelectedSourceOptionId,
     onPrimeResolvedEpisode: async (playable, isCancelled) => {
@@ -484,13 +484,16 @@ export default function RightNowPlaying() {
     sourceVideoRef,
     activeResolvedSource,
     isPlaying,
+    playbackTime,
     pendingAutoPlayAfterResolveRef,
     setPlaying,
   });
 
   useEffect(() => {
-    pendingAutoPlayAfterResolveRef.current = Boolean(currentlyPlayingItem && currentlyPlayingItem.kind !== 'trailer');
-  }, [currentlyPlayingItem?.id, currentlyPlayingItem?.kind]);
+    pendingAutoPlayAfterResolveRef.current = Boolean(
+      isPlaying && currentlyPlayingItem && currentlyPlayingItem.kind !== 'trailer',
+    );
+  }, [currentlyPlayingItem?.id, currentlyPlayingItem?.kind, isPlaying]);
 
   useEffect(() => {
     if (!currentlyPlayingItem) {
@@ -838,6 +841,20 @@ export default function RightNowPlaying() {
   }, [currentlyPlayingItem?.id]);
 
   useEffect(() => {
+    autoAdvanceHandledItemIdRef.current = null;
+  }, [currentlyPlayingItem?.id]);
+
+  const advanceQueueAfterPlaybackComplete = useCallback(() => {
+    const currentItemId = currentlyPlayingItem?.id;
+    if (!currentItemId) return;
+    if (autoAdvanceHandledItemIdRef.current === currentItemId) return;
+    if (playbackSupportMode !== 'fully-supported') return;
+
+    autoAdvanceHandledItemIdRef.current = currentItemId;
+    void playNextInQueue(true);
+  }, [currentlyPlayingItem?.id, playbackSupportMode, playNextInQueue]);
+
+  useEffect(() => {
     if (!currentlyPlayingItem) return;
     if (currentlyPlayingItem.kind === 'trailer') return;
     if (!isPlaying) return;
@@ -945,8 +962,28 @@ export default function RightNowPlaying() {
     if (!isDirectPluginPlayback) return;
     const video = sourceVideoRef.current;
     if (!video) return;
-    video.currentTime = Math.max(0, pendingSeekTo);
-    clearPendingSeekTo();
+
+    const targetTime = Math.max(0, pendingSeekTo);
+
+    const applySeek = () => {
+      video.currentTime = targetTime;
+      setPlaybackTime(targetTime);
+      clearPendingSeekTo();
+    };
+
+    if (video.readyState >= 1) {
+      applySeek();
+      return;
+    }
+
+    const onLoadedMetadata = () => {
+      applySeek();
+    };
+
+    video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
+    return () => {
+      video.removeEventListener('loadedmetadata', onLoadedMetadata);
+    };
   }, [clearPendingSeekTo, hasTrailerPlayback, isDirectPluginPlayback, pendingSeekTo, playbackSupportMode, seekTrailer, setPlaybackTime]);
 
   useEffect(() => {
@@ -1194,14 +1231,16 @@ export default function RightNowPlaying() {
                 <video
                   ref={sourceVideoRef}
                   className="right-now-video-native"
-                  autoPlay
                   playsInline
                   disablePictureInPicture
                   controlsList="nodownload noplaybackrate noremoteplayback"
                   onLoadedMetadata={(event) => {
                     const video = event.currentTarget;
                     setPlaybackDuration(Number.isFinite(video.duration) ? video.duration : 0);
-                    setPlaybackTime(Number.isFinite(video.currentTime) ? video.currentTime : 0);
+                    const nextCurrentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+                    if (nextCurrentTime > 0 || playbackTime <= 0) {
+                      setPlaybackTime(nextCurrentTime);
+                    }
                     setTrailerPlayerReady(true);
                     video.volume = Math.max(0, Math.min(1, trailerVolume / 100));
                     if (isPlaying || pendingAutoPlayAfterResolveRef.current) {
@@ -1223,19 +1262,28 @@ export default function RightNowPlaying() {
                   }}
                   onTimeUpdate={(event) => {
                     const video = event.currentTarget;
-                    setPlaybackTime(Number.isFinite(video.currentTime) ? video.currentTime : 0);
+                    const nextTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+                    const nextDuration = Number.isFinite(video.duration) ? video.duration : 0;
+                    setPlaybackTime(nextTime);
+
+                    if (nextDuration > 0) {
+                      const remaining = nextDuration - nextTime;
+                      if (remaining <= 0.35 || nextTime / nextDuration >= 0.998) {
+                        advanceQueueAfterPlaybackComplete();
+                      }
+                    }
                   }}
                   onDurationChange={(event) => {
                     const video = event.currentTarget;
                     setPlaybackDuration(Number.isFinite(video.duration) ? video.duration : 0);
                   }}
                   onPlay={() => setPlaying(true)}
-                  onPause={() => setPlaying(false)}
-                  onEnded={() => {
+                  onPause={(event) => {
+                    if (event.currentTarget.ended) return;
                     setPlaying(false);
-                    if (playbackSupportMode === 'fully-supported') {
-                      void playNextInQueue(true);
-                    }
+                  }}
+                  onEnded={() => {
+                    advanceQueueAfterPlaybackComplete();
                   }}
                 />
               ) : (

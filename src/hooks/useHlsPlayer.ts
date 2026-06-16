@@ -1,11 +1,12 @@
 import Hls from 'hls.js';
-import { useEffect, type MutableRefObject, type RefObject } from 'react';
+import { useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
 import type { ResolvedSource } from '../types/plugin';
 
 type UseHlsPlayerOptions = {
   sourceVideoRef: RefObject<HTMLVideoElement>;
   activeResolvedSource: ResolvedSource | null;
   isPlaying: boolean;
+  playbackTime: number;
   pendingAutoPlayAfterResolveRef: MutableRefObject<boolean>;
   setPlaying: (playing: boolean) => void;
 };
@@ -14,9 +15,16 @@ export function useHlsPlayer({
   sourceVideoRef,
   activeResolvedSource,
   isPlaying,
+  playbackTime,
   pendingAutoPlayAfterResolveRef,
   setPlaying,
 }: UseHlsPlayerOptions) {
+  const latestPlaybackTimeRef = useRef(playbackTime);
+
+  useEffect(() => {
+    latestPlaybackTimeRef.current = Math.max(0, playbackTime);
+  }, [playbackTime]);
+
   useEffect(() => {
     const video = sourceVideoRef.current;
     if (!video) return;
@@ -62,6 +70,15 @@ export function useHlsPlayer({
       });
 
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        const resumeTime = Math.max(0, latestPlaybackTimeRef.current);
+        if (resumeTime > 0.25) {
+          try {
+            video.currentTime = resumeTime;
+          } catch {
+            // Ignore seek timing failures while metadata is stabilizing.
+          }
+        }
+
         // Manifest loaded; attempt autoplay if player is in playing state.
         if (isPlaying || pendingAutoPlayAfterResolveRef.current) {
           void video
@@ -83,7 +100,18 @@ export function useHlsPlayer({
 
     // HLS unsupported; fall back to native video src.
     if (!video.src || video.src !== url) {
+      const resumeTime = Math.max(0, latestPlaybackTimeRef.current);
       video.src = url;
+      if (resumeTime > 0.25) {
+        const onLoadedMetadata = () => {
+          try {
+            video.currentTime = resumeTime;
+          } catch {
+            // Ignore if the browser blocks this seek moment.
+          }
+        };
+        video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
+      }
     }
-  }, [activeResolvedSource?.type, activeResolvedSource?.url, isPlaying, pendingAutoPlayAfterResolveRef, setPlaying, sourceVideoRef]);
+  }, [activeResolvedSource?.type, activeResolvedSource?.url, pendingAutoPlayAfterResolveRef, setPlaying, sourceVideoRef]);
 }

@@ -340,6 +340,66 @@ function getCanonicalAnimeId(anime: Pick<AnimeSummary, 'id' | 'jikanId'>) {
   return Math.max(1, Math.floor(Number(anime.id) || 1));
 }
 
+function normalizeTitleKey(value: string | undefined) {
+  return (value ?? '').trim().toLowerCase();
+}
+
+function findWatchProgressEntryForAnime(
+  anime: AnimeSummary,
+  watchProgress: Record<number, WatchProgress>,
+) {
+  const canonicalId = getCanonicalAnimeId(anime);
+  const candidateIds = new Set<number>([
+    canonicalId,
+    Math.max(1, Math.floor(Number(anime.id) || 1)),
+  ]);
+
+  const jikanId = Number(anime.jikanId);
+  if (Number.isFinite(jikanId) && jikanId > 0) {
+    candidateIds.add(Math.floor(jikanId));
+  }
+
+  for (const id of candidateIds) {
+    const match = watchProgress[id];
+    if (match) {
+      return match;
+    }
+  }
+
+  const routeKey = anime.animeScheduleRoute?.trim().toLowerCase();
+  if (routeKey) {
+    const byRoute = Object.values(watchProgress).find(
+      (entry) => entry.animeScheduleRoute?.trim().toLowerCase() === routeKey,
+    );
+    if (byRoute) {
+      return byRoute;
+    }
+  }
+
+  const titleKeys = new Set(
+    [
+      normalizeTitleKey(anime.title),
+      normalizeTitleKey(anime.titleEnglish),
+      normalizeTitleKey(anime.titleJapanese),
+    ].filter((value) => value.length > 0),
+  );
+
+  if (titleKeys.size === 0) {
+    return null;
+  }
+
+  return (
+    Object.values(watchProgress).find((entry) => {
+      const entryTitleKeys = [
+        normalizeTitleKey(entry.title),
+        normalizeTitleKey(entry.titleEnglish),
+        normalizeTitleKey(entry.titleJapanese),
+      ];
+      return entryTitleKeys.some((key) => key.length > 0 && titleKeys.has(key));
+    }) ?? null
+  );
+}
+
 function makeEpisodeItem(anime: AnimeSummary, episodeNumber: number, sourceKind: PlayableItem['sourceKind']): PlayableItem {
   const canonicalAnimeId = getCanonicalAnimeId(anime);
   return {
@@ -737,6 +797,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         await setStoredValue('queueCursor', queueCursor);
       }
 
+      const restoredProgressEntry = currentlyPlayingItem
+        ? findWatchProgressEntryForAnime(currentlyPlayingItem.anime, watchProgress)
+        : null;
+      const restoredEpisodeNumber = Math.max(1, Math.round(currentlyPlayingItem?.episodeNumber ?? 1));
+      const canResumeRestoredItem =
+        Boolean(currentlyPlayingItem) &&
+        currentlyPlayingItem?.kind === 'episode' &&
+        Boolean(restoredProgressEntry) &&
+        Math.max(1, Math.round(restoredProgressEntry?.episode ?? 1)) === restoredEpisodeNumber;
+      const restoredPlaybackTime = canResumeRestoredItem
+        ? Math.max(0, Math.floor(restoredProgressEntry?.lastPlaybackSeconds ?? 0))
+        : 0;
+      const restoredPlaybackDuration = canResumeRestoredItem
+        ? Math.max(0, Math.floor(restoredProgressEntry?.episodeDurationSeconds ?? 0))
+        : 0;
+
       set({
         hydrated: true,
         session,
@@ -773,10 +849,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         favorites,
         watchProgress,
         homeRefreshVersion: 0,
-        playbackTime: 0,
-        playbackDuration: 0,
+        playbackTime: restoredPlaybackTime,
+        playbackDuration: restoredPlaybackDuration,
         activePlaybackUrl: null,
-        pendingSeekTo: null,
+        pendingSeekTo: restoredPlaybackTime > 0 ? restoredPlaybackTime : null,
         isTrailerPlayerReady: false,
       });
     } catch (error) {
@@ -945,8 +1021,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   playAnimeSeries: async (anime) => {
-    const canonicalAnimeId = getCanonicalAnimeId(anime);
-    const resumeEntry = get().watchProgress[canonicalAnimeId] ?? get().watchProgress[anime.id];
+    const resumeEntry = findWatchProgressEntryForAnime(anime, get().watchProgress);
     const hasResume =
       !!resumeEntry &&
       resumeEntry.progress > 0 &&
@@ -1125,11 +1200,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const currentCursor = get().queueCursor;
-    const currentIndex = currentCursor < 0 ? 0 : currentCursor;
+    const currentIndexFromCursor = currentCursor >= 0 && currentCursor < queue.length ? currentCursor : -1;
+    const currentIndexFromItem = currentItem ? queue.findIndex((item) => item.id === currentItem.id) : -1;
+    const currentIndex = currentIndexFromItem >= 0 ? currentIndexFromItem : currentIndexFromCursor;
     const { shuffleEnabled, repeatMode } = get();
 
     if (fromEnded && repeatMode === 'one' && currentItem) {
-      await get().replaceQueueAndPlay(queue, currentIndex);
+      const repeatIndex = currentIndex >= 0 ? currentIndex : 0;
+      await get().replaceQueueAndPlay(queue, repeatIndex);
       return;
     }
 
@@ -1172,7 +1250,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    let nextIndex = currentCursor < 0 ? 0 : currentIndex + 1;
+    const nextIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
 
     if (nextIndex < 0 || nextIndex >= queue.length) {
       if (currentItem?.kind === 'episode') {

@@ -247,7 +247,6 @@ export async function resolveCanonicalDetailRouteId(
   const directJikanId = isValidMalId(anime.jikanId) ? Math.floor(anime.jikanId) : undefined;
   const hasAnimeScheduleRoute = Boolean(anime.animeScheduleRoute?.trim());
 
-  console.log('Resolving canonical detail route id for anime:', { anime, directJikanId });
   // If this already looks like a MAL/Jikan id and no route is available, trust it.
   // This avoids unnecessary bridge requests for rows already keyed by canonical ids.
   if (!directJikanId && !hasAnimeScheduleRoute && isValidMalId(anime.id)) {
@@ -257,9 +256,7 @@ export async function resolveCanonicalDetailRouteId(
   // For AnimeSchedule items we can receive source-local ids. Bridge only when
   // direct canonical id is absent and a route is available.
   if (!directJikanId && hasAnimeScheduleRoute) {
-    console.log('Attempting to resolve canonical detail route id via AnimeSchedule bridge for anime id:', anime.id);
     const bridged = await resolveAnimeScheduleBridgeJikanId(anime.id, anime.animeScheduleRoute);
-    console.log('Resolved canonical detail route id via AnimeSchedule bridge:', { animeId: anime.id, bridged });
     if (isValidMalId(bridged)) {
       return Math.floor(bridged);
     }
