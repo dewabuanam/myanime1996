@@ -30,6 +30,31 @@ export function clearPluginResolverCaches(): void {
   }
 }
 
+/**
+ * Clear only the rate-limit cooldown flag from all imported plugin global caches.
+ * This allows the user to manually unblock a plugin that was rate-limited (HTTP 429)
+ * without wiping the full resolve cache.
+ */
+export function clearPluginRateLimit(): void {
+  const cacheKeyPattern = /^__myanime1996.*cache$/i;
+  for (const key of Reflect.ownKeys(globalThis)) {
+    if (typeof key !== 'string') continue;
+    if (!cacheKeyPattern.test(key)) continue;
+    try {
+      const cache = (globalThis as Record<string, unknown>)[key];
+      if (cache && typeof cache === 'object' && 'rateLimit' in cache) {
+        const rateLimit = (cache as Record<string, unknown>).rateLimit;
+        if (rateLimit && typeof rateLimit === 'object') {
+          (rateLimit as Record<string, number | string>).blockedUntil = 0;
+          (rateLimit as Record<string, number | string>).reason = '';
+        }
+      }
+    } catch {
+      // Silently skip inaccessible or frozen caches.
+    }
+  }
+}
+
 export type PluginResolverExecution = {
   resolved: ResolvedSource | null;
   message: string;

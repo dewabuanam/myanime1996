@@ -1,10 +1,11 @@
-import { CalendarDays, Check, ChevronDown, Clock3, EllipsisVertical, List, ListX, Play, RotateCcw, ScrollText, Trash2 } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Clock3, EllipsisVertical, List, ListX, Play, RotateCcw, ScrollText, Trash2, Unlock } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { ANISKIP_LABELS, fetchAniSkipSegments, voteOnAniSkip } from '../services/aniSkip';
 import { getAnimeDetails, getLatestUpdatedAnime, refreshHomeShelvesIfNeeded } from '../services/catalogSource';
 import { getAnimeDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import { getAnimeEpisodeById } from '../services/jikan';
+import { clearPluginRateLimit } from '../services/pluginExecutor';
 import { getAvailableSourcePlugins, resolveSourceForPlayable, resolveSourceForPlayableWithTrace } from '../services/sourceResolver';
 import { useAppStore } from '../state/appStore';
 import type { AniSkipSegmentMap, AniSkipType } from '../services/aniSkip';
@@ -952,6 +953,17 @@ export default function RightNowPlaying() {
     if (status === 'no-match') return 'No Match';
     if (status === 'error') return 'Error';
     return 'Skipped';
+  };
+
+  const isRateLimitError = (message: string) => {
+    const lower = message.toLowerCase();
+    return lower.includes('429') || lower.includes('rate limit') || lower.includes('cooldown');
+  };
+
+  const handleClearRateLimit = (pluginId: string) => {
+    clearPluginRateLimit();
+    // Trigger a re-resolve so the unblocked plugin can be tried again immediately.
+    setSourceResolveRetryToken((value) => value + 1);
   };
 
   const handleDetailEpisodeToggle = async (_animeId: number, episodeNumber: number) => {
@@ -2066,6 +2078,18 @@ export default function RightNowPlaying() {
                           <span className={`source-trace-item-status is-${attempt.status}`}>{sourceAttemptStatusLabel(attempt.status)}</span>
                         </div>
                         <p className="source-trace-item-message">{attempt.message}</p>
+                        {attempt.status === 'error' && isRateLimitError(attempt.message) ? (
+                          <button
+                            type="button"
+                            className="source-trace-rate-limit-clear-btn retro-tooltip"
+                            onClick={() => handleClearRateLimit(attempt.pluginId)}
+                            aria-label={`Clear rate limit cooldown for ${attempt.pluginName}`}
+                            data-tooltip={`Clear Rate Limit for ${attempt.pluginName}`}
+                          >
+                            <Unlock size={10} />
+                            <span>Clear Rate Limit</span>
+                          </button>
+                        ) : null}
                         {attempt.steps?.length ? (
                           <div className="source-trace-item-steps" aria-label="Resolve steps">
                             {attempt.steps.map((step, stepIndex) => (
@@ -2399,6 +2423,18 @@ export default function RightNowPlaying() {
                         <span className={`source-trace-item-status is-${attempt.status}`}>{sourceAttemptStatusLabel(attempt.status)}</span>
                       </div>
                       <p className="source-trace-item-message">{attempt.message}</p>
+                      {attempt.status === 'error' && isRateLimitError(attempt.message) ? (
+                        <button
+                          type="button"
+                          className="source-trace-rate-limit-clear-btn retro-tooltip"
+                          onClick={() => handleClearRateLimit(attempt.pluginId)}
+                          aria-label={`Clear rate limit cooldown for ${attempt.pluginName}`}
+                          data-tooltip={`Clear Rate Limit for ${attempt.pluginName}`}
+                        >
+                          <Unlock size={10} />
+                          <span>Clear Rate Limit</span>
+                        </button>
+                      ) : null}
                       {attempt.steps?.length ? (
                         <div className="source-trace-item-steps" aria-label="Resolve steps">
                           {attempt.steps.map((step, stepIndex) => (

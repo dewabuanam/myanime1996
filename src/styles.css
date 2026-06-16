@@ -1285,6 +1285,35 @@ button {
   color: rgba(245, 234, 210, 0.55);
 }
 
+.source-trace-rate-limit-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  margin-top: 0.18rem;
+  padding: 0.1rem 0.26rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 184, 77, 0.92);
+  background: rgba(255, 159, 142, 0.08);
+  border: 1px solid rgba(255, 159, 142, 0.32);
+  border-radius: 0.12rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.source-trace-rate-limit-clear-btn:hover,
+.source-trace-rate-limit-clear-btn:focus-visible {
+  color: rgba(255, 205, 128, 1);
+  background: rgba(255, 159, 142, 0.18);
+  border-color: rgba(255, 159, 142, 0.65);
+}
+
+.source-trace-rate-limit-clear-btn:active {
+  background: rgba(255, 159, 142, 0.26);
+}
+
 .source-trace-empty {
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.56rem;
