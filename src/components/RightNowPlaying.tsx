@@ -31,6 +31,12 @@ import SourceResolveLogPanel from './SourceResolveLogPanel';
 const WATCH_PROGRESS_SAVE_INTERVAL_SECONDS = 5;
 const FULLSCREEN_OVERLAY_HIDE_MS = 2000;
 const MAX_REASONABLE_MAL_ID = 2_000_000;
+const VOLUME_STEP = 5;
+
+function isEditableKeyboardTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'));
+}
 
 export default function RightNowPlaying() {
   const selectedAnime = useAppStore((state) => state.selectedAnime);
@@ -50,6 +56,7 @@ export default function RightNowPlaying() {
   const playbackTime = useAppStore((state) => state.playbackTime);
   const playbackDuration = useAppStore((state) => state.playbackDuration);
   const trailerVolume = useAppStore((state) => state.trailerVolume);
+  const setTrailerVolume = useAppStore((state) => state.setTrailerVolume);
   const episodeMetadata = useAppStore((state) => state.episodeMetadata);
   const pendingSeekTo = useAppStore((state) => state.pendingSeekTo);
   const setPlaying = useAppStore((state) => state.setPlaying);
@@ -94,6 +101,7 @@ export default function RightNowPlaying() {
   const latestAniSkipFetchKeyRef = useRef<string | null>(null);
   const aniSkipMalIdCacheRef = useRef<Map<number, number | null>>(new Map());
   const lastWatchProgressSaveSecondRef = useRef(-1);
+  const lastNonZeroVolumeRef = useRef(72);
   const [openMenuQueueItemId, setOpenMenuQueueItemId] = useState<string | null>(null);
   const [isFullQueueDrawerOpen, setIsFullQueueDrawerOpen] = useState(false);
   const [isSourceLogOpen, setIsSourceLogOpen] = useState(false);
@@ -1062,15 +1070,88 @@ export default function RightNowPlaying() {
   }, [activeAniSkipType, aniSkipSegments, showVideoOverlayControls]);
 
   useEffect(() => {
+    if (trailerVolume > 0) {
+      lastNonZeroVolumeRef.current = trailerVolume;
+    }
+  }, [trailerVolume]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsPaneLayoutMenuOpen(false);
+        return;
+      }
+
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      const isShortcutScopeActive = isNowPlayingView && (isFullNowPlayingView || isDocumentFullscreen);
+      if (!isShortcutScopeActive || !currentlyPlayingItem) {
+        return;
+      }
+
+      const seekBySeconds = (deltaSeconds: number) => {
+        if (playbackSupportMode !== 'fully-supported') return;
+        const unclamped = playbackTime + deltaSeconds;
+        const nextTime = playbackDuration > 0
+          ? Math.min(Math.max(0, unclamped), playbackDuration)
+          : Math.max(0, unclamped);
+        requestSeekTo(nextTime);
+      };
+
+      switch (event.key) {
+        case ' ':
+        case 'Spacebar':
+          event.preventDefault();
+          setPlaying(!isPlaying);
+          return;
+        case 'ArrowLeft':
+          event.preventDefault();
+          seekBySeconds(-10);
+          return;
+        case 'ArrowRight':
+          event.preventDefault();
+          seekBySeconds(10);
+          return;
+        case 'm':
+        case 'M':
+          event.preventDefault();
+          if (trailerVolume <= 0) {
+            setTrailerVolume(lastNonZeroVolumeRef.current > 0 ? lastNonZeroVolumeRef.current : 72);
+          } else {
+            setTrailerVolume(0);
+          }
+          return;
+        case 'ArrowUp':
+          event.preventDefault();
+          setTrailerVolume(Math.min(100, trailerVolume + VOLUME_STEP));
+          return;
+        case 'ArrowDown':
+          event.preventDefault();
+          setTrailerVolume(Math.max(0, trailerVolume - VOLUME_STEP));
+          return;
+        default:
+          return;
       }
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [
+    currentlyPlayingItem,
+    isDocumentFullscreen,
+    isFullNowPlayingView,
+    isNowPlayingView,
+    isPlaying,
+    playbackDuration,
+    playbackSupportMode,
+    playbackTime,
+    requestSeekTo,
+    setPlaying,
+    setTrailerVolume,
+    trailerVolume,
+  ]);
 
   useEffect(() => {
     const onDocumentMouseDown = (event: MouseEvent) => {

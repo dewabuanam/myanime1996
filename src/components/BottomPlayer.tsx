@@ -1,4 +1,4 @@
-import { Expand, Maximize, Minimize, Pause, Play, Repeat1, Repeat2, Shuffle, SkipBack, SkipForward, SquareArrowOutUpRight, Volume2, VolumeX, X } from 'lucide-react';
+import { Expand, FastForward, Maximize, Minimize, Pause, Play, Rewind, SkipBack, SkipForward, SquareArrowOutUpRight, Volume2, VolumeX, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -44,10 +44,6 @@ export default function BottomPlayer() {
   const setTrailerVolume = useAppStore((state) => state.setTrailerVolume);
   const playNextInQueue = useAppStore((state) => state.playNextInQueue);
   const playPreviousInQueue = useAppStore((state) => state.playPreviousInQueue);
-  const shuffleEnabled = useAppStore((state) => state.shuffleEnabled);
-  const repeatMode = useAppStore((state) => state.repeatMode);
-  const toggleShuffle = useAppStore((state) => state.toggleShuffle);
-  const cycleRepeatMode = useAppStore((state) => state.cycleRepeatMode);
   const lastNonZeroVolumeRef = useRef(72);
   const externalPlaybackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const externalElapsedRef = useRef(0);
@@ -76,8 +72,6 @@ export default function BottomPlayer() {
   const safeDuration = playbackDuration > 0 ? playbackDuration : 0;
   const safeTime = Math.min(Math.max(0, playbackTime), safeDuration || Number.MAX_SAFE_INTEGER);
 
-  const repeatTooltip = repeatMode === 'off' ? 'Repeat: Off' : 'Repeat: One';
-  const shuffleTooltip = shuffleEnabled ? 'Shuffle: On' : 'Shuffle: Off';
   const japaneseTitle = currentlyPlayingItem?.titleJapanese?.trim() || currentlyPlayingItem?.anime.titleJapanese?.trim() || '';
   const displayAnimeTitle = currentlyPlayingItem ? getDisplayTitle(currentlyPlayingItem.anime, titleLanguage) : 'Kimi no Shiranai Monogatari';
   const episodeDisplayTitle =
@@ -428,6 +422,12 @@ export default function BottomPlayer() {
   const isWindowToggleMode = isFullscreenOnly;
   const isWindowOpen = isExternalWindowOpen;
   const isSeekAllowed = hasPlaybackContext && !isExternalWindowTransport && playbackSupportMode === 'fully-supported';
+  const seekBySeconds = (deltaSeconds: number) => {
+    if (!isSeekAllowed) return;
+    const unclamped = playbackTime + deltaSeconds;
+    const targetTime = playbackDuration > 0 ? Math.min(Math.max(0, unclamped), playbackDuration) : Math.max(0, unclamped);
+    requestSeekTo(targetTime);
+  };
   const canUsePrimaryWindowAction = isWindowToggleMode && canOpenPlaybackAction;
   const canUsePrimaryPlayPause = !isWindowToggleMode && hasPlaybackContext && !disablePauseControl;
   const playButtonEnabled = canUsePrimaryWindowAction || canUsePrimaryPlayPause;
@@ -592,13 +592,13 @@ export default function BottomPlayer() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className={`top-icon-btn h-8 w-8 retro-tooltip ${shuffleEnabled ? 'is-active' : ''}`}
-            aria-label="Shuffle"
-            data-tooltip={shuffleTooltip}
-            onClick={() => void toggleShuffle()}
-            disabled={false}
+            className="top-icon-btn h-8 w-8 retro-tooltip"
+            aria-label="Backward 10 seconds"
+            data-tooltip="Backward 10s"
+            onClick={() => seekBySeconds(-10)}
+            disabled={!isSeekAllowed}
           >
-            <Shuffle size={14} />
+            <Rewind size={14} />
           </button>
           <button
             type="button"
@@ -650,13 +650,13 @@ export default function BottomPlayer() {
           ><SkipForward size={15} /></button>
           <button
             type="button"
-            className={`top-icon-btn h-8 w-8 retro-tooltip ${repeatMode !== 'off' ? 'is-active' : ''}`}
-            aria-label="Repeat"
-            data-tooltip={repeatTooltip}
-            onClick={() => void cycleRepeatMode()}
-            disabled={false}
+            className="top-icon-btn h-8 w-8 retro-tooltip"
+            aria-label="Forward 10 seconds"
+            data-tooltip="Forward 10s"
+            onClick={() => seekBySeconds(10)}
+            disabled={!isSeekAllowed}
           >
-            {repeatMode === 'one' ? <Repeat1 size={14} /> : <Repeat2 size={14} />}
+            <FastForward size={14} />
           </button>
         </div>
 
