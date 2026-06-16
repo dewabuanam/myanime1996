@@ -369,7 +369,7 @@ export default function RightNowPlaying() {
   const isSplitPaneMode = false;
   const showNowPlayingPane = isNowPlayingView;
   const isFullNowPlayingView = isRightPanelFullpage && isNowPlayingView;
-  const showVideoOverlayControls = isNowPlayingView && isDocumentFullscreen;
+  const showVideoOverlayControls = isDocumentFullscreen;
   const fallbackDisplayTitle = currentlyPlayingItem?.title ?? (selectedAnime ? getDisplayTitle(selectedAnime, titleLanguage) : 'Nothing Playing');
   const fallbackDisplayJapanese = currentlyPlayingItem?.titleJapanese ?? selectedAnime?.titleJapanese ?? 'No Japanese title available';
   const fallbackTypeLabel = currentlyPlayingItem?.typeLabel ?? (selectedAnime?.mediaType?.toUpperCase() ?? 'No Media');
@@ -1538,7 +1538,6 @@ export default function RightNowPlaying() {
 
   return (
     <aside className={`right-now-panel vhs-panel relative flex h-full min-h-0 flex-col gap-3 bg-carbon/45 p-4 ${isFullNowPlayingView ? 'right-now-panel-full' : ''}`}>
-      <div className="right-now-pane-top min-h-0 shrink-0">
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-2">
           <div className="inline-flex items-center gap-2">
@@ -1684,7 +1683,7 @@ export default function RightNowPlaying() {
         )}
       </div>
 
-      <div className={`right-now-video-section ${showNowPlayingPane ? '' : 'is-collapsed'}`} aria-hidden={!showNowPlayingPane}>
+      <div className={`right-now-video-section ${isDocumentFullscreen || isNowPlayingView ? '' : 'is-collapsed'}`} aria-hidden={!showNowPlayingPane}>
         <div className="right-now-video-wrap relative -mx-4 w-[calc(100%+2rem)] overflow-hidden bg-black/45">
           {fullscreenTopLeftOverlay}
           {fullscreenTopRightOverlay}
@@ -1782,7 +1781,6 @@ export default function RightNowPlaying() {
             )}
           </div>
         </div>
-      </div>
       </div>
 
       <div className="right-now-pane-bottom min-h-0 flex-1">
