@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getLatestUpdatedAnime, refreshHomeShelvesIfNeeded } from '../services/catalogSource';
 import { resolveSourceForPlayable, resolveSourceForPlayableWithTrace } from '../services/sourceResolver';
+import { clearCachedResolvedSourceForEpisode } from '../services/sourceCache';
 import type { BaseCatalogSource } from '../services/catalogSource';
 import type { PlayableItem } from '../types/anime';
 import type { ImportedSourcePluginDefinition, ResolvedSource, SourceAudioLanguage, SourceResolveTrace } from '../types/plugin';
@@ -8,6 +9,20 @@ import type { ImportedSourcePluginDefinition, ResolvedSource, SourceAudioLanguag
 const MIN_SOURCE_RESOLVE_VISIBLE_MS = 700;
 const BACKGROUND_LATEST_RESOLVE_LIMIT = 5;
 const HOME_REFRESH_LIMIT = 20;
+
+function toCanonicalAnimeId(playable: PlayableItem) {
+  const preferred = Number(playable.anime.jikanId);
+  if (Number.isFinite(preferred) && preferred > 0) {
+    return Math.floor(preferred);
+  }
+
+  const fallback = Number(playable.anime.id);
+  if (Number.isFinite(fallback) && fallback > 0) {
+    return Math.floor(fallback);
+  }
+
+  return 1;
+}
 
 type UsePlaybackSourceResolverArgs = {
   currentlyPlayingItem: PlayableItem | null;
@@ -109,6 +124,15 @@ export function usePlaybackSourceResolver({
     }
 
     const runResolve = async () => {
+      if (forceRefresh) {
+        await clearCachedResolvedSourceForEpisode({
+          provider: baseCatalogSource,
+          animeId: toCanonicalAnimeId(playable),
+          title: playable.title,
+          episodeNumber: playable.episodeNumber ?? 1,
+        });
+      }
+
       const { resolved, trace } = await resolveSourceForPlayableWithTrace(
         playable,
         {

@@ -20,6 +20,13 @@ export type SourceCacheIdentity = {
   sourceOptionId?: string;
 };
 
+export type SourceCacheEpisodeIdentity = {
+  provider: 'jikan' | 'animeschedule';
+  animeId: number;
+  title: string;
+  episodeNumber: number;
+};
+
 function normalizeTitle(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -28,6 +35,12 @@ function makeSourceCacheKey(identity: SourceCacheIdentity) {
   const normalizedLanguage = normalizeTitle(identity.language ?? 'auto');
   const normalizedSourceOptionId = normalizeTitle(identity.sourceOptionId ?? 'auto');
   return `${identity.provider}::${identity.pluginId}::${identity.animeId}::${normalizeTitle(identity.title)}::${identity.episodeNumber}::${normalizedLanguage}::${normalizedSourceOptionId}`;
+}
+
+function isSameEpisodeIdentity(key: string, identity: SourceCacheEpisodeIdentity) {
+  const providerPrefix = `${identity.provider}::`;
+  const episodeFragment = `::${identity.animeId}::${normalizeTitle(identity.title)}::${identity.episodeNumber}::`;
+  return key.startsWith(providerPrefix) && key.includes(episodeFragment);
 }
 
 export async function getCachedResolvedSource(identity: SourceCacheIdentity): Promise<ResolvedSource | null> {
@@ -65,6 +78,29 @@ export async function setCachedResolvedSource(identity: SourceCacheIdentity, sou
 export async function clearSourceResolveCache() {
   inFlightResolves.clear();
   await setStoredValue('sourceResolveCache', {} as Record<string, CachedPayload<ResolvedSource>>);
+  emitSourceCacheUpdated();
+}
+
+export async function clearCachedResolvedSourceForEpisode(identity: SourceCacheEpisodeIdentity): Promise<void> {
+  const cache = await getStoredValue('sourceResolveCache', {} as Record<string, CachedPayload<ResolvedSource>>);
+  const nextCache = { ...cache };
+  let changed = false;
+
+  for (const key of Object.keys(nextCache)) {
+    if (!isSameEpisodeIdentity(key, identity)) continue;
+    delete nextCache[key];
+    changed = true;
+  }
+
+  for (const key of Array.from(inFlightResolves.keys())) {
+    if (!isSameEpisodeIdentity(key, identity)) continue;
+    inFlightResolves.delete(key);
+    changed = true;
+  }
+
+  if (!changed) return;
+
+  await setStoredValue('sourceResolveCache', nextCache);
   emitSourceCacheUpdated();
 }
 
