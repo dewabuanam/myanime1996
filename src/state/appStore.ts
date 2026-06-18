@@ -3,7 +3,7 @@ import type { AnimeSummary, PlayableItem, PlayableKind, Playlist, RightPanelView
 import type { ImportedSourcePluginDefinition, SourceAudioLanguage } from '../types/plugin';
 import type { BaseCatalogSource } from '../services/catalogSource';
 import { DEFAULT_BASE_CATALOG_SOURCE, getAnimeTrailerUrl } from '../services/catalogSource';
-import { clearAnimeScheduleDataCache, DEFAULT_ANIMESCHEDULE_TOKEN } from '../services/animeSchedule';
+import { clearAnimeScheduleDataCache, DEFAULT_ANIMESCHEDULE_TOKEN, onAnimeScheduleRateLimit } from '../services/animeSchedule';
 import { clearJikanDataCache } from '../services/jikan';
 import { getStoredValue, removeStoredValue, setStoredValue } from '../services/store';
 import { importSourcePluginFromPicker } from '../services/pluginImport';
@@ -16,6 +16,7 @@ const WATCH_HISTORY_PROFILE_KEY = 'watchHistoryByProfile';
 const WATCH_PROGRESS_PROFILE_KEY = 'watchProgressByProfile';
 const LEGACY_PLAYBACK_MIGRATED_KEY = 'legacyPlaybackMigrated';
 const WATCH_COMPLETE_THRESHOLD_PERCENT = 90;
+let animeScheduleRateLimitListenerBound = false;
 
 export type PlaybackSupportMode = 'fully-supported' | 'fullscreen-only' | 'fully-unsupported';
 export type AnimeSkipType = 'op' | 'ed' | 'recap';
@@ -26,6 +27,13 @@ export type AnimeSkipButtonSegment = {
   endTime: number;
   skipId: string;
 };
+
+function getLocalDateStamp(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function hashString(input: string) {
   let hash = 0;
@@ -53,6 +61,9 @@ interface AppState {
   isTrailerMuted: boolean;
   isProfilePopupOpen: boolean;
   isSettingsOpen: boolean;
+  isAnimeScheduleRateLimitGuideOpen: boolean;
+  animeScheduleRateLimitGuideDismissedDate: string | null;
+  animeScheduleRateLimitGuideLastTriggeredAt: number | null;
   selectedAnime: AnimeSummary | null;
   currentlyPlayingItem: PlayableItem | null;
   queue: PlayableItem[];
@@ -167,6 +178,9 @@ interface AppState {
   setTrailerMuted: (muted: boolean) => Promise<void>;
   setProfilePopupOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+  openAnimeScheduleRateLimitGuide: () => void;
+  closeAnimeScheduleRateLimitGuide: () => void;
+  dismissAnimeScheduleRateLimitGuideForToday: () => Promise<void>;
   removeHistoryItem: (animeId: number) => Promise<void>;
   clearHistory: () => Promise<void>;
   clearJikanCache: () => Promise<void>;
@@ -676,6 +690,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   isTrailerMuted: false,
   isProfilePopupOpen: false,
   isSettingsOpen: false,
+  isAnimeScheduleRateLimitGuideOpen: false,
+  animeScheduleRateLimitGuideDismissedDate: null,
+  animeScheduleRateLimitGuideLastTriggeredAt: null,
   selectedAnime: null,
   currentlyPlayingItem: null,
   queue: [],
@@ -740,6 +757,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawAutoSkipRecap,
         rawBaseCatalogSource,
         rawAnimeScheduleApiToken,
+        animeScheduleRateLimitGuideDismissedDate,
         rawSubtitleFontColor,
         rawLegacySubtitleFontSize,
         rawSubtitleFontSizeDocked,
@@ -780,6 +798,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('autoSkipRecap', false),
         getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
         getStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
+        getStoredValue('animeScheduleRateLimitGuideDismissedDate', null),
         getStoredValue('subtitleFontColor', '#ffffff'),
         getStoredValue('subtitleFontSize', 22),
         getStoredValue('subtitleFontSizeDocked', 19),
@@ -996,6 +1015,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         isTrailerMuted,
         isProfilePopupOpen: false,
         isSettingsOpen: false,
+        isAnimeScheduleRateLimitGuideOpen: false,
+        animeScheduleRateLimitGuideDismissedDate,
+        animeScheduleRateLimitGuideLastTriggeredAt: null,
         currentlyPlayingItem,
         queue,
         queueCursor,
@@ -1012,6 +1034,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         pendingSeekTo: restoredPlaybackTime > 0 ? restoredPlaybackTime : null,
         isTrailerPlayerReady: false,
       });
+
+      if (!animeScheduleRateLimitListenerBound) {
+        onAnimeScheduleRateLimit((event) => {
+          const current = get();
+          const today = getLocalDateStamp();
+          if (current.isAnimeScheduleRateLimitGuideOpen) return;
+          if (current.animeScheduleRateLimitGuideDismissedDate === today) return;
+
+          set({
+            isAnimeScheduleRateLimitGuideOpen: true,
+            animeScheduleRateLimitGuideLastTriggeredAt: event.occurredAt,
+          });
+        });
+        animeScheduleRateLimitListenerBound = true;
+      }
     } catch (error) {
       console.warn('Initialization failed; starting with defaults.', error);
       set({
@@ -1050,6 +1087,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         isTrailerMuted: false,
         isProfilePopupOpen: false,
         isSettingsOpen: false,
+        isAnimeScheduleRateLimitGuideOpen: false,
+        animeScheduleRateLimitGuideDismissedDate: null,
+        animeScheduleRateLimitGuideLastTriggeredAt: null,
         currentlyPlayingItem: null,
         queue: [],
         queueCursor: -1,
@@ -1066,6 +1106,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         pendingSeekTo: null,
         isTrailerPlayerReady: false,
       });
+
+      if (!animeScheduleRateLimitListenerBound) {
+        onAnimeScheduleRateLimit((event) => {
+          const current = get();
+          const today = getLocalDateStamp();
+          if (current.isAnimeScheduleRateLimitGuideOpen) return;
+          if (current.animeScheduleRateLimitGuideDismissedDate === today) return;
+
+          set({
+            isAnimeScheduleRateLimitGuideOpen: true,
+            animeScheduleRateLimitGuideLastTriggeredAt: event.occurredAt,
+          });
+        });
+        animeScheduleRateLimitListenerBound = true;
+      }
     }
   },
 
@@ -1913,6 +1968,31 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
 
+  openAnimeScheduleRateLimitGuide: () => {
+    const current = get();
+    const today = getLocalDateStamp();
+    if (current.isAnimeScheduleRateLimitGuideOpen) return;
+    if (current.animeScheduleRateLimitGuideDismissedDate === today) return;
+
+    set({
+      isAnimeScheduleRateLimitGuideOpen: true,
+      animeScheduleRateLimitGuideLastTriggeredAt: Date.now(),
+    });
+  },
+
+  closeAnimeScheduleRateLimitGuide: () => {
+    set({ isAnimeScheduleRateLimitGuideOpen: false });
+  },
+
+  dismissAnimeScheduleRateLimitGuideForToday: async () => {
+    const today = getLocalDateStamp();
+    await setStoredValue('animeScheduleRateLimitGuideDismissedDate', today);
+    set({
+      animeScheduleRateLimitGuideDismissedDate: today,
+      isAnimeScheduleRateLimitGuideOpen: false,
+    });
+  },
+
   removeHistoryItem: async (animeId) => {
     const nextHistory = get().watchHistory.filter((item) => item.animeId !== animeId);
     const nextProgress = { ...get().watchProgress };
@@ -2044,6 +2124,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('autoSkipRecap', false),
       setStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
       setStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
+      setStoredValue('animeScheduleRateLimitGuideDismissedDate', null),
       setStoredValue('subtitleFontColor', '#ffffff'),
       setStoredValue('subtitleFontSizeDocked', 19),
       setStoredValue('subtitleFontSizeExpanded', 38),
@@ -2105,6 +2186,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       trailerLastNonZeroVolume: 72,
       isProfilePopupOpen: false,
       isSettingsOpen: false,
+      isAnimeScheduleRateLimitGuideOpen: false,
+      animeScheduleRateLimitGuideDismissedDate: null,
+      animeScheduleRateLimitGuideLastTriggeredAt: null,
       selectedAnime: null,
       currentlyPlayingItem: null,
       queue: [],

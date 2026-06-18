@@ -47,6 +47,7 @@ type StoreShape = {
   jikanMeta: Record<string, string | number | boolean>;
   baseCatalogSource: 'animeschedule' | 'jikan';
   animeScheduleApiToken: string;
+  animeScheduleRateLimitGuideDismissedDate: string | null;
   animeScheduleCache: Record<string, CachedPayload<unknown>>;
   animeScheduleMeta: Record<string, string | number | boolean>;
   aniSkipCache: Record<string, CachedPayload<unknown>>;

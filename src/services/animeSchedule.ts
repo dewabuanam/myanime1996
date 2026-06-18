@@ -19,6 +19,15 @@ const MAX_REASONABLE_MAL_ID = 2_000_000;
 
 export const DEFAULT_ANIMESCHEDULE_TOKEN = 'kBPuq6vdcUS3pXtzzhtbrjItLZ3U4y';
 
+export type AnimeScheduleRateLimitEvent = {
+  status: 429;
+  path: string;
+  occurredAt: number;
+  message: string;
+};
+
+type AnimeScheduleRateLimitListener = (event: AnimeScheduleRateLimitEvent) => void;
+
 type CacheFetchOptions<T> = {
   onUpdate?: (value: T) => void;
   forceRefresh?: boolean;
@@ -30,6 +39,34 @@ type AnimeScheduleNormalizeOptions = {
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
 const routeByNumericId = new Map<number, string>();
+const animeScheduleRateLimitListeners = new Set<AnimeScheduleRateLimitListener>();
+
+function notifyAnimeScheduleRateLimit(path: string) {
+  if (!animeScheduleRateLimitListeners.size) return;
+
+  const event: AnimeScheduleRateLimitEvent = {
+    status: 429,
+    path,
+    occurredAt: Date.now(),
+    message: 'AnimeSchedule request failed: 429',
+  };
+
+  for (const listener of animeScheduleRateLimitListeners) {
+    listener(event);
+  }
+}
+
+export function onAnimeScheduleRateLimit(listener: AnimeScheduleRateLimitListener) {
+  animeScheduleRateLimitListeners.add(listener);
+  return () => {
+    animeScheduleRateLimitListeners.delete(listener);
+  };
+}
+
+export function isAnimeScheduleRateLimitError(error: unknown) {
+  if (!error || typeof error !== 'object' || !(error instanceof Error)) return false;
+  return /AnimeSchedule request failed:\s*429\b/i.test(error.message);
+}
 
 function indexRouteFromCachedSummary(value: unknown) {
   if (!value || typeof value !== 'object') return;
@@ -81,7 +118,7 @@ const toRequestHeaders = (token: string) => ({
   'X-Token': token,
 });
 
-async function fetchAnimeScheduleNative(url: string, token: string) {
+async function fetchAnimeScheduleNative(url: string, token: string, path: string) {
   const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
   const response = await tauriFetch(url, {
     method: 'GET',
@@ -89,6 +126,9 @@ async function fetchAnimeScheduleNative(url: string, token: string) {
   });
 
   if (!response.ok) {
+    if (response.status === 429) {
+      notifyAnimeScheduleRateLimit(path);
+    }
     throw new Error(`AnimeSchedule request failed: ${response.status}`);
   }
 
@@ -527,7 +567,7 @@ async function fetchAnimeScheduleJson(path: string) {
 
   if (isTauriRuntime()) {
     try {
-      return await fetchAnimeScheduleNative(url, token);
+      return await fetchAnimeScheduleNative(url, token, path);
     } catch {
       // Fall through to web fetch for environments where plugin-http is unavailable.
     }
@@ -538,6 +578,9 @@ async function fetchAnimeScheduleJson(path: string) {
   });
 
   if (!response.ok) {
+    if (response.status === 429) {
+      notifyAnimeScheduleRateLimit(path);
+    }
     throw new Error(`AnimeSchedule request failed: ${response.status}`);
   }
 

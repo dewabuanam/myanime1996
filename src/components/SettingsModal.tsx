@@ -189,6 +189,7 @@ export default function SettingsModal() {
   const factoryReset = useAppStore((state) => state.factoryReset);
   const animeScheduleApiToken = useAppStore((state) => state.animeScheduleApiToken);
   const setAnimeScheduleApiToken = useAppStore((state) => state.setAnimeScheduleApiToken);
+  const openAnimeScheduleRateLimitGuide = useAppStore((state) => state.openAnimeScheduleRateLimitGuide);
   const autoSkipOpening = useAppStore((state) => state.autoSkipOpening);
   const autoSkipEnding = useAppStore((state) => state.autoSkipEnding);
   const autoSkipRecap = useAppStore((state) => state.autoSkipRecap);
@@ -218,6 +219,7 @@ export default function SettingsModal() {
   const [cacheViewerLoading, setCacheViewerLoading] = useState(false);
   const [busyCacheCardId, setBusyCacheCardId] = useState<string | null>(null);
   const [cacheSnapshot, setCacheSnapshot] = useState<Record<string, unknown>>({});
+  const isDevMode = (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
 
   const cacheCards = useMemo(() => buildCacheCards(cacheSnapshot), [cacheSnapshot]);
 
@@ -564,6 +566,18 @@ export default function SettingsModal() {
                         >
                           Reset to Default
                         </button>
+                        {isDevMode ? (
+                          <button
+                            type="button"
+                            className="settings-action-btn"
+                            onClick={() => {
+                              openAnimeScheduleRateLimitGuide();
+                              setStatusMessage('Rate-limit guide opened (dev trigger).');
+                            }}
+                          >
+                            Trigger Rate-Limit Guide (Dev)
+                          </button>
+                        ) : null}
                       </div>
                     </div>
 

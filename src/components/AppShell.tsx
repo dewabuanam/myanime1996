@@ -7,6 +7,7 @@ import BottomPlayer from './BottomPlayer';
 import GlobalTooltip from './GlobalTooltip';
 import RightPanelNav from './RightPanelNav';
 import RightNowPlaying from './RightNowPlaying';
+import AnimeScheduleRateLimitGuideModal from './AnimeScheduleRateLimitGuideModal';
 import SettingsModal from './SettingsModal';
 import Sidebar from './Sidebar';
 import TopNavigation from './TopNavigation';
@@ -202,6 +203,7 @@ export default function AppShell() {
         </div>
         <GlobalTooltip />
         <SettingsModal />
+        <AnimeScheduleRateLimitGuideModal />
       </div>
     </div>
   );
