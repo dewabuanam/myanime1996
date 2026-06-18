@@ -30,6 +30,8 @@ export default function BottomPlayer() {
   const playbackTime = useAppStore((state) => state.playbackTime);
   const playbackDuration = useAppStore((state) => state.playbackDuration);
   const trailerVolume = useAppStore((state) => state.trailerVolume);
+  const trailerLastNonZeroVolume = useAppStore((state) => state.trailerLastNonZeroVolume);
+  const isTrailerMuted = useAppStore((state) => state.isTrailerMuted);
   const activePlaybackUrl = useAppStore((state) => state.activePlaybackUrl);
   const playbackSupportMode = useAppStore((state) => state.playbackSupportMode);
   const isResolvingPlaybackSource = useAppStore((state) => state.isResolvingPlaybackSource);
@@ -42,9 +44,9 @@ export default function BottomPlayer() {
   const animeSkipButtonSegment = useAppStore((state) => state.animeSkipButtonSegment);
   const setAnimeSkipButtonSegment = useAppStore((state) => state.setAnimeSkipButtonSegment);
   const setTrailerVolume = useAppStore((state) => state.setTrailerVolume);
+  const setTrailerMuted = useAppStore((state) => state.setTrailerMuted);
   const playNextInQueue = useAppStore((state) => state.playNextInQueue);
   const playPreviousInQueue = useAppStore((state) => state.playPreviousInQueue);
-  const lastNonZeroVolumeRef = useRef(72);
   const externalPlaybackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const externalElapsedRef = useRef(0);
   const externalWindowTargetRef = useRef<string | null>(null);
@@ -96,12 +98,6 @@ export default function BottomPlayer() {
     await invoke('navigate_external_playback_window', { url: targetUrl });
     externalWindowTargetRef.current = targetUrl;
   };
-
-  useEffect(() => {
-    if (trailerVolume > 0) {
-      lastNonZeroVolumeRef.current = trailerVolume;
-    }
-  }, [trailerVolume]);
 
   useEffect(() => {
     if (!isExternalWindowPlaybackActive) {
@@ -185,11 +181,13 @@ export default function BottomPlayer() {
   };
 
   const toggleGlobalMute = () => {
-    if (trailerVolume <= 0) {
-      setTrailerVolume(lastNonZeroVolumeRef.current > 0 ? lastNonZeroVolumeRef.current : 72);
+    if (isTrailerMuted || trailerVolume <= 0) {
+      setTrailerVolume(trailerLastNonZeroVolume > 0 ? trailerLastNonZeroVolume : 72);
+      void setTrailerMuted(false);
       return;
     }
     setTrailerVolume(0);
+    void setTrailerMuted(true);
   };
 
   const openInBrowser = () => {
@@ -728,10 +726,10 @@ export default function BottomPlayer() {
             type="button"
             className="top-icon-btn h-7 w-7 shrink-0 aspect-square rounded-full retro-tooltip tooltip-left"
             onClick={toggleGlobalMute}
-            aria-label={trailerVolume <= 0 ? 'Unmute global volume' : 'Mute global volume'}
-            data-tooltip={trailerVolume <= 0 ? 'Unmute' : 'Mute'}
+            aria-label={isTrailerMuted || trailerVolume <= 0 ? 'Unmute global volume' : 'Mute global volume'}
+            data-tooltip={isTrailerMuted || trailerVolume <= 0 ? 'Unmute' : 'Mute'}
           >
-            {trailerVolume <= 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            {isTrailerMuted || trailerVolume <= 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
           </button>
           <input
             className="accent-amberline flex-1 min-w-0 retro-tooltip tooltip-left"
@@ -739,7 +737,11 @@ export default function BottomPlayer() {
             min="0"
             max="100"
             value={trailerVolume}
-            onChange={(event) => setTrailerVolume(Number(event.target.value))}
+            onChange={(event) => {
+              const next = Number(event.target.value);
+              setTrailerVolume(next);
+              void setTrailerMuted(next <= 0);
+            }}
             aria-label="Volume"
             data-tooltip={`Volume: ${Math.max(0, Math.min(100, Math.round(trailerVolume)))}%`}
           />

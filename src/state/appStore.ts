@@ -66,6 +66,7 @@ interface AppState {
   playbackTime: number;
   playbackDuration: number;
   trailerVolume: number;
+  trailerLastNonZeroVolume: number;
   activePlaybackUrl: string | null;
   shuffleEnabled: boolean;
   repeatMode: 'off' | 'one';
@@ -83,6 +84,13 @@ interface AppState {
   playbackSupportMode: PlaybackSupportMode;
   isResolvingPlaybackSource: boolean;
   selectedSourceOptionId: string | null;
+  selectedSubtitleId: string | null;
+  subtitleFontColor: string;
+  subtitleFontSizeDocked: number;
+  subtitleFontSizeExpanded: number;
+  subtitleFontSizeFullscreen: number;
+  subtitleDropShadow: boolean;
+  subtitleBackgroundHighlight: boolean;
   pendingSeekTo: number | null;
   isTrailerPlayerReady: boolean;
   episodeMetadata: { title?: string; titleJapanese?: string; titleRomanji?: string; episodeNumber: number } | null;
@@ -134,6 +142,13 @@ interface AppState {
   setPlaybackSupportMode: (mode: PlaybackSupportMode) => void;
   setResolvingPlaybackSource: (resolving: boolean) => void;
   setSelectedSourceOptionId: (optionId: string | null) => void;
+  setSelectedSubtitleId: (subtitleId: string | null) => void;
+  setSubtitleFontColor: (color: string) => Promise<void>;
+  setSubtitleFontSizeDocked: (size: number) => Promise<void>;
+  setSubtitleFontSizeExpanded: (size: number) => Promise<void>;
+  setSubtitleFontSizeFullscreen: (size: number) => Promise<void>;
+  setSubtitleDropShadow: (enabled: boolean) => Promise<void>;
+  setSubtitleBackgroundHighlight: (enabled: boolean) => Promise<void>;
   requestSeekTo: (seconds: number) => void;
   clearPendingSeekTo: () => void;
   setTrailerPlayerReady: (ready: boolean) => void;
@@ -195,6 +210,33 @@ function normalizeOptionalText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeSubtitleColor(value: unknown): string {
+  if (typeof value !== 'string') return '#ffffff';
+  const trimmed = value.trim();
+  if (!/^#[0-9a-fA-F]{6}$/.test(trimmed)) return '#ffffff';
+  return trimmed.toLowerCase();
+}
+
+function normalizeSubtitleFontSize(value: unknown): number {
+  const size = Number(value);
+  if (!Number.isFinite(size)) return 22;
+  return Math.max(12, Math.min(48, Math.round(size)));
+}
+
+function normalizeTrailerVolume(value: unknown): number {
+  const volume = Number(value);
+  if (!Number.isFinite(volume)) return 72;
+  return Math.max(0, Math.min(100, Math.round(volume)));
+}
+
+function normalizeTrailerLastNonZeroVolume(value: unknown, fallback = 72): number {
+  const volume = Number(value);
+  if (!Number.isFinite(volume) || volume <= 0) {
+    return Math.max(1, Math.min(100, Math.round(fallback)));
+  }
+  return Math.max(1, Math.min(100, Math.round(volume)));
 }
 
 function normalizePluginPriority(value: unknown, defaults: string[]) {
@@ -294,6 +336,15 @@ function normalizeImportedSourcePlugins(value: unknown): ImportedSourcePluginDef
               dataBase64: plugin.iconPng.dataBase64,
               width: plugin.iconPng.width,
               height: plugin.iconPng.height,
+            }
+          : undefined,
+      iconSvg:
+        plugin.iconSvg && plugin.iconSvg.mimeType === 'image/svg+xml' && typeof plugin.iconSvg.dataBase64 === 'string'
+          ? {
+              mimeType: 'image/svg+xml',
+              dataBase64: plugin.iconSvg.dataBase64,
+              width: plugin.iconSvg.width,
+              height: plugin.iconSvg.height,
             }
           : undefined,
     });
@@ -638,6 +689,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   playbackTime: 0,
   playbackDuration: 0,
   trailerVolume: 72,
+  trailerLastNonZeroVolume: 72,
   activePlaybackUrl: null,
   shuffleEnabled: false,
   repeatMode: 'off',
@@ -655,6 +707,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   playbackSupportMode: 'fully-supported',
   isResolvingPlaybackSource: false,
   selectedSourceOptionId: null,
+  selectedSubtitleId: null,
+  subtitleFontColor: '#ffffff',
+  subtitleFontSizeDocked: 19,
+  subtitleFontSizeExpanded: 38,
+  subtitleFontSizeFullscreen: 45,
+  subtitleDropShadow: true,
+  subtitleBackgroundHighlight: false,
   pendingSeekTo: null,
   isTrailerPlayerReady: false,
   episodeMetadata: null,
@@ -681,7 +740,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawAutoSkipRecap,
         rawBaseCatalogSource,
         rawAnimeScheduleApiToken,
+        rawSubtitleFontColor,
+        rawLegacySubtitleFontSize,
+        rawSubtitleFontSizeDocked,
+        rawSubtitleFontSizeExpanded,
+        rawSubtitleFontSizeFullscreen,
+        rawSubtitleDropShadow,
+        rawSubtitleBackgroundHighlight,
         isTrailerMuted,
+        rawTrailerVolume,
+        rawTrailerLastNonZeroVolume,
+        rawSelectedSourceOptionId,
+        rawSelectedSubtitleId,
         rawCurrentlyPlayingItem,
         rawQueue,
         rawQueueCursor,
@@ -710,7 +780,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('autoSkipRecap', false),
         getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
         getStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
+        getStoredValue('subtitleFontColor', '#ffffff'),
+        getStoredValue('subtitleFontSize', 22),
+        getStoredValue('subtitleFontSizeDocked', 19),
+        getStoredValue('subtitleFontSizeExpanded', 38),
+        getStoredValue('subtitleFontSizeFullscreen', 45),
+        getStoredValue('subtitleDropShadow', true),
+        getStoredValue('subtitleBackgroundHighlight', false),
         getStoredValue('isTrailerMuted', false),
+        getStoredValue('trailerVolume', 72),
+        getStoredValue('trailerLastNonZeroVolume', 72),
+        getStoredValue('selectedSourceOptionId', null),
+        getStoredValue('selectedSubtitleId', null),
         getStoredValue('currentlyPlayingItem', null),
         getStoredValue('queue', []),
         getStoredValue('queueCursor', -1),
@@ -778,6 +859,73 @@ export const useAppStore = create<AppState>((set, get) => ({
         await setStoredValue('animeScheduleApiToken', animeScheduleApiToken);
       }
 
+      const subtitleFontColor = normalizeSubtitleColor(rawSubtitleFontColor);
+      if (rawSubtitleFontColor !== subtitleFontColor) {
+        await setStoredValue('subtitleFontColor', subtitleFontColor);
+      }
+
+      let subtitleFontSizeDocked = normalizeSubtitleFontSize(rawSubtitleFontSizeDocked);
+      let subtitleFontSizeExpanded = normalizeSubtitleFontSize(rawSubtitleFontSizeExpanded);
+      let subtitleFontSizeFullscreen = normalizeSubtitleFontSize(rawSubtitleFontSizeFullscreen);
+
+      const legacySubtitleFontSize = normalizeSubtitleFontSize(rawLegacySubtitleFontSize);
+      const looksLikeLegacyUniformMigration =
+        subtitleFontSizeDocked === subtitleFontSizeExpanded &&
+        subtitleFontSizeExpanded === subtitleFontSizeFullscreen &&
+        subtitleFontSizeDocked === legacySubtitleFontSize &&
+        legacySubtitleFontSize !== 22;
+
+      if (looksLikeLegacyUniformMigration) {
+        subtitleFontSizeDocked = 19;
+        subtitleFontSizeExpanded = 38;
+        subtitleFontSizeFullscreen = 45;
+      }
+
+      if (rawSubtitleFontSizeDocked !== subtitleFontSizeDocked) {
+        await setStoredValue('subtitleFontSizeDocked', subtitleFontSizeDocked);
+      }
+
+      if (rawSubtitleFontSizeExpanded !== subtitleFontSizeExpanded) {
+        await setStoredValue('subtitleFontSizeExpanded', subtitleFontSizeExpanded);
+      }
+
+      if (rawSubtitleFontSizeFullscreen !== subtitleFontSizeFullscreen) {
+        await setStoredValue('subtitleFontSizeFullscreen', subtitleFontSizeFullscreen);
+      }
+
+      const subtitleDropShadow = Boolean(rawSubtitleDropShadow);
+      if (rawSubtitleDropShadow !== subtitleDropShadow) {
+        await setStoredValue('subtitleDropShadow', subtitleDropShadow);
+      }
+
+      const subtitleBackgroundHighlight = Boolean(rawSubtitleBackgroundHighlight);
+      if (rawSubtitleBackgroundHighlight !== subtitleBackgroundHighlight) {
+        await setStoredValue('subtitleBackgroundHighlight', subtitleBackgroundHighlight);
+      }
+
+      const trailerVolume = normalizeTrailerVolume(rawTrailerVolume);
+      if (rawTrailerVolume !== trailerVolume) {
+        await setStoredValue('trailerVolume', trailerVolume);
+      }
+
+      const trailerLastNonZeroVolume = normalizeTrailerLastNonZeroVolume(
+        rawTrailerLastNonZeroVolume,
+        trailerVolume > 0 ? trailerVolume : 72,
+      );
+      if (rawTrailerLastNonZeroVolume !== trailerLastNonZeroVolume) {
+        await setStoredValue('trailerLastNonZeroVolume', trailerLastNonZeroVolume);
+      }
+
+      const selectedSourceOptionId = normalizeOptionalText(rawSelectedSourceOptionId);
+      if (rawSelectedSourceOptionId !== selectedSourceOptionId) {
+        await setStoredValue('selectedSourceOptionId', selectedSourceOptionId);
+      }
+
+      const selectedSubtitleId = normalizeOptionalText(rawSelectedSubtitleId);
+      if (rawSelectedSubtitleId !== selectedSubtitleId) {
+        await setStoredValue('selectedSubtitleId', selectedSubtitleId);
+      }
+
       const queue = (Array.isArray(rawQueue) ? rawQueue : [])
         .map((item) => normalizePlayableItemFromUnknown(item))
         .filter((item): item is PlayableItem => Boolean(item));
@@ -835,9 +983,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         animeSkipButtonSegment: null,
         baseCatalogSource,
         animeScheduleApiToken,
+        subtitleFontColor,
+        subtitleFontSizeDocked,
+        subtitleFontSizeExpanded,
+        subtitleFontSizeFullscreen,
+        subtitleDropShadow,
+        subtitleBackgroundHighlight,
         playbackSupportMode: 'fully-supported',
         isResolvingPlaybackSource: false,
-        selectedSourceOptionId: null,
+        selectedSourceOptionId,
+        selectedSubtitleId,
         isTrailerMuted,
         isProfilePopupOpen: false,
         isSettingsOpen: false,
@@ -851,6 +1006,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         homeRefreshVersion: 0,
         playbackTime: restoredPlaybackTime,
         playbackDuration: restoredPlaybackDuration,
+        trailerVolume,
+        trailerLastNonZeroVolume,
         activePlaybackUrl: null,
         pendingSeekTo: restoredPlaybackTime > 0 ? restoredPlaybackTime : null,
         isTrailerPlayerReady: false,
@@ -880,9 +1037,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         animeSkipButtonSegment: null,
         baseCatalogSource: DEFAULT_BASE_CATALOG_SOURCE,
         animeScheduleApiToken: DEFAULT_ANIMESCHEDULE_TOKEN,
+        subtitleFontColor: '#ffffff',
+        subtitleFontSizeDocked: 19,
+        subtitleFontSizeExpanded: 38,
+        subtitleFontSizeFullscreen: 45,
+        subtitleDropShadow: true,
+        subtitleBackgroundHighlight: false,
         playbackSupportMode: 'fully-supported',
         isResolvingPlaybackSource: false,
         selectedSourceOptionId: null,
+        selectedSubtitleId: null,
         isTrailerMuted: false,
         isProfilePopupOpen: false,
         isSettingsOpen: false,
@@ -897,6 +1061,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         playbackTime: 0,
         playbackDuration: 0,
         trailerVolume: 72,
+        trailerLastNonZeroVolume: 72,
         activePlaybackUrl: null,
         pendingSeekTo: null,
         isTrailerPlayerReady: false,
@@ -954,6 +1119,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isTrailerPlayerReady: false,
       animeSkipButtonSegment: null,
       selectedSourceOptionId: null,
+      selectedSubtitleId: null,
     });
   },
 
@@ -975,12 +1141,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         isPlaying: false,
         playbackTime: 0,
         playbackDuration: 0,
+        trailerVolume: 72,
         activePlaybackUrl: null,
         episodeMetadata: null,
         pendingSeekTo: null,
         isTrailerPlayerReady: false,
         animeSkipButtonSegment: null,
         selectedSourceOptionId: null,
+        selectedSubtitleId: null,
       });
       return;
     }
@@ -1011,6 +1179,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isTrailerPlayerReady: false,
       animeSkipButtonSegment: null,
       selectedSourceOptionId: null,
+      selectedSubtitleId: null,
     });
 
     if (currentItem.kind === 'episode' || currentItem.kind === 'movie' || currentItem.kind === 'ova' || currentItem.kind === 'ona' || currentItem.kind === 'special') {
@@ -1187,6 +1356,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isTrailerPlayerReady: false,
       animeSkipButtonSegment: null,
       selectedSourceOptionId: null,
+      selectedSubtitleId: null,
     });
   },
 
@@ -1252,6 +1422,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         pendingSeekTo: null,
         isTrailerPlayerReady: false,
         selectedSourceOptionId: null,
+        selectedSubtitleId: null,
       });
 
       if (nextItem.kind === 'episode' || nextItem.kind === 'movie' || nextItem.kind === 'ova' || nextItem.kind === 'ona' || nextItem.kind === 'special') {
@@ -1410,6 +1581,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setTrailerVolume: (volume) => {
     const safe = Math.max(0, Math.min(100, Math.round(volume)));
+    if (safe > 0) {
+      void Promise.all([
+        setStoredValue('trailerVolume', safe),
+        setStoredValue('trailerLastNonZeroVolume', safe),
+      ]);
+      set({ trailerVolume: safe, trailerLastNonZeroVolume: safe });
+      return;
+    }
+    void setStoredValue('trailerVolume', safe);
     set({ trailerVolume: safe });
   },
 
@@ -1457,7 +1637,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('preferredSourcePluginId', preferredSourcePluginId),
     ]);
 
-    set({ importedSourcePlugins, pluginPriority, pluginEnabled, preferredSourcePluginId, selectedSourceOptionId: null });
+    set({ importedSourcePlugins, pluginPriority, pluginEnabled, preferredSourcePluginId, selectedSourceOptionId: null, selectedSubtitleId: null });
   },
 
   removeSourcePlugin: async (pluginId) => {
@@ -1501,7 +1681,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('pluginEnabled', nextEnabled),
       setStoredValue('preferredSourcePluginId', nextPreferred),
     ]);
-    set({ pluginEnabled: nextEnabled, preferredSourcePluginId: nextPreferred, selectedSourceOptionId: null });
+    set({ pluginEnabled: nextEnabled, preferredSourcePluginId: nextPreferred, selectedSourceOptionId: null, selectedSubtitleId: null });
   },
 
   setPreferredSourcePluginId: async (pluginId) => {
@@ -1514,13 +1694,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? pluginId
         : null;
     await setStoredValue('preferredSourcePluginId', next);
-    set({ preferredSourcePluginId: next, selectedSourceOptionId: null });
+    set({ preferredSourcePluginId: next, selectedSourceOptionId: null, selectedSubtitleId: null });
   },
 
   setPreferredAudioLanguage: async (language) => {
     const next = language === 'dub' ? 'dub' : 'sub';
     await setStoredValue('preferredAudioLanguage', next);
-    set({ preferredAudioLanguage: next, selectedSourceOptionId: null });
+    set({ preferredAudioLanguage: next, selectedSourceOptionId: null, selectedSubtitleId: null });
   },
 
   setAutoSkipOpening: async (enabled) => {
@@ -1567,7 +1747,53 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedSourceOptionId: (optionId) => {
     const next = normalizeOptionalText(optionId);
-    set({ selectedSourceOptionId: next });
+    void Promise.all([
+      setStoredValue('selectedSourceOptionId', next),
+      setStoredValue('selectedSubtitleId', null),
+    ]);
+    set({ selectedSourceOptionId: next, selectedSubtitleId: null });
+  },
+
+  setSelectedSubtitleId: (subtitleId) => {
+    const next = normalizeOptionalText(subtitleId);
+    void setStoredValue('selectedSubtitleId', next);
+    set({ selectedSubtitleId: next });
+  },
+
+  setSubtitleFontColor: async (color) => {
+    const next = normalizeSubtitleColor(color);
+    await setStoredValue('subtitleFontColor', next);
+    set({ subtitleFontColor: next });
+  },
+
+  setSubtitleFontSizeDocked: async (size) => {
+    const next = normalizeSubtitleFontSize(size);
+    await setStoredValue('subtitleFontSizeDocked', next);
+    set({ subtitleFontSizeDocked: next });
+  },
+
+  setSubtitleFontSizeExpanded: async (size) => {
+    const next = normalizeSubtitleFontSize(size);
+    await setStoredValue('subtitleFontSizeExpanded', next);
+    set({ subtitleFontSizeExpanded: next });
+  },
+
+  setSubtitleFontSizeFullscreen: async (size) => {
+    const next = normalizeSubtitleFontSize(size);
+    await setStoredValue('subtitleFontSizeFullscreen', next);
+    set({ subtitleFontSizeFullscreen: next });
+  },
+
+  setSubtitleDropShadow: async (enabled) => {
+    const next = Boolean(enabled);
+    await setStoredValue('subtitleDropShadow', next);
+    set({ subtitleDropShadow: next });
+  },
+
+  setSubtitleBackgroundHighlight: async (enabled) => {
+    const next = Boolean(enabled);
+    await setStoredValue('subtitleBackgroundHighlight', next);
+    set({ subtitleBackgroundHighlight: next });
   },
 
   requestSeekTo: (seconds) => {
@@ -1757,7 +1983,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipRecap: current.autoSkipRecap,
         baseCatalogSource: current.baseCatalogSource,
         animeScheduleApiToken: current.animeScheduleApiToken,
+        subtitleFontColor: current.subtitleFontColor,
+        subtitleFontSizeDocked: current.subtitleFontSizeDocked,
+        subtitleFontSizeExpanded: current.subtitleFontSizeExpanded,
+        subtitleFontSizeFullscreen: current.subtitleFontSizeFullscreen,
+        subtitleDropShadow: current.subtitleDropShadow,
+        subtitleBackgroundHighlight: current.subtitleBackgroundHighlight,
         isTrailerMuted,
+        trailerVolume: current.trailerVolume,
+        trailerLastNonZeroVolume: current.trailerLastNonZeroVolume,
       },
       userData: {
         currentlyPlayingItem: current.currentlyPlayingItem,
@@ -1810,10 +2044,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('autoSkipRecap', false),
       setStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
       setStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
+      setStoredValue('subtitleFontColor', '#ffffff'),
+      setStoredValue('subtitleFontSizeDocked', 19),
+      setStoredValue('subtitleFontSizeExpanded', 38),
+      setStoredValue('subtitleFontSizeFullscreen', 45),
+      setStoredValue('subtitleDropShadow', true),
+      setStoredValue('subtitleBackgroundHighlight', false),
       setStoredValue('isTrailerMuted', false),
+      setStoredValue('trailerVolume', 72),
+      setStoredValue('trailerLastNonZeroVolume', 72),
       setStoredValue('currentlyPlayingItem', null),
       setStoredValue('queue', []),
       setStoredValue('queueCursor', -1),
+      setStoredValue('selectedSourceOptionId', null),
+      setStoredValue('selectedSubtitleId', null),
       setStoredValue('playlists', []),
       setStoredValue('watchHistory', []),
       setStoredValue('favorites', []),
@@ -1848,9 +2092,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       animeSkipButtonSegment: null,
       baseCatalogSource: DEFAULT_BASE_CATALOG_SOURCE,
       animeScheduleApiToken: DEFAULT_ANIMESCHEDULE_TOKEN,
+      subtitleFontColor: '#ffffff',
+      subtitleFontSizeDocked: 19,
+      subtitleFontSizeExpanded: 38,
+      subtitleFontSizeFullscreen: 45,
+      subtitleDropShadow: true,
+      subtitleBackgroundHighlight: false,
       playbackSupportMode: 'fully-supported',
       selectedSourceOptionId: null,
+      selectedSubtitleId: null,
       isTrailerMuted: false,
+      trailerLastNonZeroVolume: 72,
       isProfilePopupOpen: false,
       isSettingsOpen: false,
       selectedAnime: null,

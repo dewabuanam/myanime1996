@@ -32,6 +32,7 @@ const WATCH_PROGRESS_SAVE_INTERVAL_SECONDS = 5;
 const FULLSCREEN_OVERLAY_HIDE_MS = 2000;
 const MAX_REASONABLE_MAL_ID = 2_000_000;
 const VOLUME_STEP = 5;
+const SUBTITLE_OFF_ID = '__off__';
 
 function isEditableKeyboardTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -74,6 +75,13 @@ export default function RightNowPlaying() {
   const preferredAudioLanguage = useAppStore((state) => state.preferredAudioLanguage);
   const baseCatalogSource = useAppStore((state) => state.baseCatalogSource);
   const selectedSourceOptionId = useAppStore((state) => state.selectedSourceOptionId);
+  const selectedSubtitleId = useAppStore((state) => state.selectedSubtitleId);
+  const subtitleFontColor = useAppStore((state) => state.subtitleFontColor);
+  const subtitleFontSizeDocked = useAppStore((state) => state.subtitleFontSizeDocked);
+  const subtitleFontSizeExpanded = useAppStore((state) => state.subtitleFontSizeExpanded);
+  const subtitleFontSizeFullscreen = useAppStore((state) => state.subtitleFontSizeFullscreen);
+  const subtitleDropShadow = useAppStore((state) => state.subtitleDropShadow);
+  const subtitleBackgroundHighlight = useAppStore((state) => state.subtitleBackgroundHighlight);
   const autoSkipOpening = useAppStore((state) => state.autoSkipOpening);
   const autoSkipEnding = useAppStore((state) => state.autoSkipEnding);
   const autoSkipRecap = useAppStore((state) => state.autoSkipRecap);
@@ -83,6 +91,7 @@ export default function RightNowPlaying() {
   const setPreferredSourcePluginId = useAppStore((state) => state.setPreferredSourcePluginId);
   const setPreferredAudioLanguage = useAppStore((state) => state.setPreferredAudioLanguage);
   const setSelectedSourceOptionId = useAppStore((state) => state.setSelectedSourceOptionId);
+  const setSelectedSubtitleId = useAppStore((state) => state.setSelectedSubtitleId);
   const requestSeekTo = useAppStore((state) => state.requestSeekTo);
   const setAnimeSkipButtonSegment = useAppStore((state) => state.setAnimeSkipButtonSegment);
   const setEpisodeMetadata = useAppStore((state) => state.setEpisodeMetadata);
@@ -143,6 +152,11 @@ export default function RightNowPlaying() {
   const showNowPlayingPane = isNowPlayingView;
   const isFullNowPlayingView = isRightPanelFullpage && isNowPlayingView;
   const showVideoOverlayControls = isDocumentFullscreen;
+  const activeSubtitleFontSize = isDocumentFullscreen
+    ? subtitleFontSizeFullscreen
+    : isRightPanelFullpage
+      ? subtitleFontSizeExpanded
+      : subtitleFontSizeDocked;
   const fallbackDisplayTitle = currentlyPlayingItem
     ? getDisplayTitle(currentlyPlayingItem.anime, titleLanguage)
     : selectedAnime
@@ -289,8 +303,17 @@ export default function RightNowPlaying() {
       server: selected.server,
       controllable: selected.controllable,
       selectedOptionId: selected.id,
+      subtitles: selected.subtitles,
     };
   }, [preferredAudioLanguage, resolvedSource, selectedSourceOptionId, sourceOptions]);
+
+  const activeSourceOption = useMemo(() => {
+    const selectedId = activeResolvedSource?.selectedOptionId;
+    if (!selectedId) return null;
+    return sourceOptions.find((option) => option.id === selectedId) ?? null;
+  }, [activeResolvedSource?.selectedOptionId, sourceOptions]);
+
+  const activeSubtitleTracks = useMemo(() => activeSourceOption?.subtitles ?? [], [activeSourceOption]);
 
   const shouldBlockPlaybackSurface = hasTrailerPlayback || Boolean(activeResolvedSource) || isResolvingSource;
   const {
@@ -369,6 +392,31 @@ export default function RightNowPlaying() {
 
     return items;
   }, [activeResolvedSource?.pluginId, resolvedSource?.pluginId, sourceOptions, sourcePluginById]);
+
+  const subtitleSelectorItems = useMemo<LogoSelectItem[]>(() => {
+    const items: LogoSelectItem[] = [
+      {
+        value: 'auto',
+        label: 'Auto',
+        meta: 'Use default track',
+      },
+      {
+        value: SUBTITLE_OFF_ID,
+        label: 'Off',
+        meta: '',
+      },
+    ];
+
+    for (const track of activeSubtitleTracks) {
+      items.push({
+        value: track.id,
+        label: track.label,
+        meta: track.language,
+      });
+    }
+
+    return items;
+  }, [activeSubtitleTracks]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -492,6 +540,12 @@ export default function RightNowPlaying() {
   useHlsPlayer({
     sourceVideoRef,
     activeResolvedSource,
+    subtitleTracks: activeSubtitleTracks,
+    selectedSubtitleId,
+    subtitleFontColor,
+    subtitleFontSize: activeSubtitleFontSize,
+    subtitleDropShadow,
+    subtitleBackgroundHighlight,
     isPlaying,
     playbackTime,
     pendingAutoPlayAfterResolveRef,
@@ -811,6 +865,22 @@ export default function RightNowPlaying() {
       setSelectedSourceOptionId(activeResolvedSource.selectedOptionId);
     }
   }, [activeResolvedSource?.selectedOptionId, selectedSourceOptionId, setSelectedSourceOptionId]);
+
+  useEffect(() => {
+    if (!activeSubtitleTracks.length) {
+      if (selectedSubtitleId) {
+        setSelectedSubtitleId(null);
+      }
+      return;
+    }
+
+    if (!selectedSubtitleId) return;
+    if (selectedSubtitleId === SUBTITLE_OFF_ID) return;
+    const hasSelected = activeSubtitleTracks.some((track) => track.id === selectedSubtitleId);
+    if (!hasSelected) {
+      setSelectedSubtitleId(null);
+    }
+  }, [activeSubtitleTracks, selectedSubtitleId, setSelectedSubtitleId]);
 
   useEffect(() => {
     if (!isNonTrailerPlayback) return;
@@ -1208,6 +1278,10 @@ export default function RightNowPlaying() {
       activeResolvedSourceOptionId={activeResolvedSource?.selectedOptionId ?? null}
       onSelectedSourceOptionChange={setSelectedSourceOptionId}
       optionSelectorItems={optionSelectorItems}
+      subtitleTracksCount={activeSubtitleTracks.length}
+      selectedSubtitleId={selectedSubtitleId}
+      onSelectedSubtitleChange={setSelectedSubtitleId}
+      subtitleSelectorItems={subtitleSelectorItems}
       onRetrySourceResolve={retrySourceResolve}
       isResolvingSource={isResolvingSource}
     />

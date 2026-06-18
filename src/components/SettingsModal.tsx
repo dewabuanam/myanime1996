@@ -3,8 +3,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { clearAniSkipDataCache } from '../services/aniSkip';
 import { DEFAULT_ANIMESCHEDULE_TOKEN } from '../services/animeSchedule';
-import { getStoredValue } from '../services/store';
+import { clearPluginResolverCacheByKey, getPluginResolverCacheSnapshot } from '../services/pluginExecutor';
+import { clearSourceResolveCache } from '../services/sourceCache';
+import { getStoredValue, setStoredValue } from '../services/store';
 import { useAppStore } from '../state/appStore';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -25,6 +28,15 @@ type SettingAction = {
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 const CACHE_VIEW_KEYS = ['jikanCache', 'animeScheduleCache', 'sourceResolveCache', 'aniSkipCache', 'jikanMeta', 'animeScheduleMeta'] as const;
+type CacheViewKey = (typeof CACHE_VIEW_KEYS)[number];
+
+type CacheCard = {
+  id: string;
+  key: string;
+  title: string;
+  description: string;
+  kind: 'stored' | 'runtime';
+};
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -97,6 +109,77 @@ function highlightText(text: string, query: string) {
   });
 }
 
+function isPluginRuntimeCacheKey(key: string) {
+  return /^__myanime1996.*cache$/i.test(key);
+}
+
+function buildCacheCards(snapshot: Record<string, unknown>): CacheCard[] {
+  const storedCards: CacheCard[] = [
+    {
+      id: 'stored:jikanCache',
+      key: 'jikanCache',
+      title: 'Jikan Cache',
+      description: 'Cached Jikan API payloads.',
+      kind: 'stored',
+    },
+    {
+      id: 'stored:animeScheduleCache',
+      key: 'animeScheduleCache',
+      title: 'AnimeSchedule Cache',
+      description: 'Cached AnimeSchedule API payloads.',
+      kind: 'stored',
+    },
+    {
+      id: 'stored:sourceResolveCache',
+      key: 'sourceResolveCache',
+      title: 'Source Resolve Cache',
+      description: 'Resolved source results by provider/title/episode.',
+      kind: 'stored',
+    },
+    {
+      id: 'stored:aniSkipCache',
+      key: 'aniSkipCache',
+      title: 'AniSkip Cache',
+      description: 'Cached opening/ending/recap segment data.',
+      kind: 'stored',
+    },
+    {
+      id: 'stored:jikanMeta',
+      key: 'jikanMeta',
+      title: 'Jikan Meta',
+      description: 'Jikan metadata and refresh timestamps.',
+      kind: 'stored',
+    },
+    {
+      id: 'stored:animeScheduleMeta',
+      key: 'animeScheduleMeta',
+      title: 'AnimeSchedule Meta',
+      description: 'AnimeSchedule metadata and refresh timestamps.',
+      kind: 'stored',
+    },
+  ];
+
+  const runtimeKeys = Object.keys(snapshot)
+    .filter((key) => isPluginRuntimeCacheKey(key))
+    .sort((left, right) => left.localeCompare(right));
+
+  const runtimeCards: CacheCard[] = runtimeKeys.map((key) => ({
+    id: `runtime:${key}`,
+    key,
+    title: key,
+    description: 'Runtime plugin resolver cache (includes plugin token/rate-limit state if present).',
+    kind: 'runtime',
+  }));
+
+  return [...storedCards, ...runtimeCards];
+}
+
+function findVideoToken(value: unknown) {
+  if (!isJsonRecord(value)) return '';
+  const token = value.videoBearerToken;
+  return typeof token === 'string' ? token.trim() : '';
+}
+
 export default function SettingsModal() {
   const isSettingsOpen = useAppStore((state) => state.isSettingsOpen);
   const setSettingsOpen = useAppStore((state) => state.setSettingsOpen);
@@ -112,6 +195,18 @@ export default function SettingsModal() {
   const setAutoSkipOpening = useAppStore((state) => state.setAutoSkipOpening);
   const setAutoSkipEnding = useAppStore((state) => state.setAutoSkipEnding);
   const setAutoSkipRecap = useAppStore((state) => state.setAutoSkipRecap);
+  const subtitleFontColor = useAppStore((state) => state.subtitleFontColor);
+  const subtitleFontSizeDocked = useAppStore((state) => state.subtitleFontSizeDocked);
+  const subtitleFontSizeExpanded = useAppStore((state) => state.subtitleFontSizeExpanded);
+  const subtitleFontSizeFullscreen = useAppStore((state) => state.subtitleFontSizeFullscreen);
+  const subtitleDropShadow = useAppStore((state) => state.subtitleDropShadow);
+  const subtitleBackgroundHighlight = useAppStore((state) => state.subtitleBackgroundHighlight);
+  const setSubtitleFontColor = useAppStore((state) => state.setSubtitleFontColor);
+  const setSubtitleFontSizeDocked = useAppStore((state) => state.setSubtitleFontSizeDocked);
+  const setSubtitleFontSizeExpanded = useAppStore((state) => state.setSubtitleFontSizeExpanded);
+  const setSubtitleFontSizeFullscreen = useAppStore((state) => state.setSubtitleFontSizeFullscreen);
+  const setSubtitleDropShadow = useAppStore((state) => state.setSubtitleDropShadow);
+  const setSubtitleBackgroundHighlight = useAppStore((state) => state.setSubtitleBackgroundHighlight);
 
   const [query, setQuery] = useState('');
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
@@ -121,7 +216,10 @@ export default function SettingsModal() {
   const [tokenDraft, setTokenDraft] = useState('');
   const [isCacheViewerOpen, setCacheViewerOpen] = useState(false);
   const [cacheViewerLoading, setCacheViewerLoading] = useState(false);
+  const [busyCacheCardId, setBusyCacheCardId] = useState<string | null>(null);
   const [cacheSnapshot, setCacheSnapshot] = useState<Record<string, unknown>>({});
+
+  const cacheCards = useMemo(() => buildCacheCards(cacheSnapshot), [cacheSnapshot]);
 
   useEffect(() => {
     if (!isSettingsOpen) return;
@@ -147,36 +245,76 @@ export default function SettingsModal() {
       setTokenDraft(animeScheduleApiToken);
       setCacheViewerOpen(false);
       setCacheViewerLoading(false);
+      setBusyCacheCardId(null);
       setCacheSnapshot({});
     }
   }, [animeScheduleApiToken, isSettingsOpen]);
 
+  const loadCacheSnapshot = async () => {
+    const [jikanCache, animeScheduleCache, sourceResolveCache, aniSkipCache, jikanMeta, animeScheduleMeta] = await Promise.all([
+      getStoredValue('jikanCache', {}),
+      getStoredValue('animeScheduleCache', {}),
+      getStoredValue('sourceResolveCache', {}),
+      getStoredValue('aniSkipCache', {}),
+      getStoredValue('jikanMeta', {}),
+      getStoredValue('animeScheduleMeta', {}),
+    ]);
+
+    return {
+      jikanCache,
+      animeScheduleCache,
+      sourceResolveCache,
+      aniSkipCache,
+      jikanMeta,
+      animeScheduleMeta,
+      ...getPluginResolverCacheSnapshot(),
+    } as Record<string, unknown>;
+  };
+
   const openCacheViewer = async () => {
     try {
       setCacheViewerLoading(true);
-      const [jikanCache, animeScheduleCache, sourceResolveCache, aniSkipCache, jikanMeta, animeScheduleMeta] = await Promise.all([
-        getStoredValue('jikanCache', {}),
-        getStoredValue('animeScheduleCache', {}),
-        getStoredValue('sourceResolveCache', {}),
-        getStoredValue('aniSkipCache', {}),
-        getStoredValue('jikanMeta', {}),
-        getStoredValue('animeScheduleMeta', {}),
-      ]);
-
-      setCacheSnapshot({
-        jikanCache,
-        animeScheduleCache,
-        sourceResolveCache,
-        aniSkipCache,
-        jikanMeta,
-        animeScheduleMeta,
-      });
+      const snapshot = await loadCacheSnapshot();
+      setCacheSnapshot(snapshot);
       setCacheViewerOpen(true);
       setStatusMessage('Cache data loaded.');
     } catch {
       setStatusMessage('Unable to load cache data.');
     } finally {
       setCacheViewerLoading(false);
+    }
+  };
+
+  const clearCacheCard = async (card: CacheCard) => {
+    try {
+      setBusyCacheCardId(card.id);
+
+      if (card.kind === 'runtime') {
+        clearPluginResolverCacheByKey(card.key);
+      } else {
+        const key = card.key as CacheViewKey;
+        if (key === 'jikanCache') {
+          await setStoredValue('jikanCache', {});
+        } else if (key === 'animeScheduleCache') {
+          await setStoredValue('animeScheduleCache', {});
+        } else if (key === 'sourceResolveCache') {
+          await clearSourceResolveCache();
+        } else if (key === 'aniSkipCache') {
+          await clearAniSkipDataCache();
+        } else if (key === 'jikanMeta') {
+          await setStoredValue('jikanMeta', {});
+        } else if (key === 'animeScheduleMeta') {
+          await setStoredValue('animeScheduleMeta', {});
+        }
+      }
+
+      const snapshot = await loadCacheSnapshot();
+      setCacheSnapshot(snapshot);
+      setStatusMessage(`${card.title} cleared.`);
+    } catch {
+      setStatusMessage(`Unable to clear ${card.title}.`);
+    } finally {
+      setBusyCacheCardId(null);
     }
   };
 
@@ -220,6 +358,15 @@ export default function SettingsModal() {
         actionLabel: 'Manage anime skip',
         onAction: async () => {
           setStatusMessage('Anime Skip settings are ready below.');
+        },
+      },
+      {
+        id: 'subtitle-style',
+        title: 'Subtitle Style',
+        description: 'Adjust subtitle font color, docked/expanded/fullscreen size, drop shadow, and background highlight.',
+        actionLabel: 'Manage subtitle style',
+        onAction: async () => {
+          setStatusMessage('Subtitle style settings are ready below.');
         },
       },
       {
@@ -501,6 +648,137 @@ export default function SettingsModal() {
                       <p>When enabled, playback jumps to the segment end automatically and shows a small toast.</p>
                     </div>
                   </article>
+                ) : selectedAction.id === 'subtitle-style' ? (
+                  <article className="settings-action-card space-y-4">
+                    <div className="settings-action-copy">
+                      <h3>{highlightText(selectedAction.title, query)}</h3>
+                      <p>{highlightText(selectedAction.description, query)}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Font Color</p>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          className="h-10 w-16 rounded-lg border border-cream/20 bg-black/25 p-1"
+                          value={subtitleFontColor}
+                          onChange={(event) => void setSubtitleFontColor(event.target.value)}
+                          aria-label="Subtitle font color"
+                        />
+                        <span className="rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream/80">{subtitleFontColor}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Docked Size</p>
+                      <input
+                        type="range"
+                        min={12}
+                        max={64}
+                        step={1}
+                        value={subtitleFontSizeDocked}
+                        onChange={(event) => void setSubtitleFontSizeDocked(Number(event.target.value))}
+                        aria-label="Subtitle docked size"
+                        className="w-full"
+                      />
+                      <p className="text-sm text-cream/80">{subtitleFontSizeDocked}px</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Expanded Size</p>
+                      <input
+                        type="range"
+                        min={12}
+                        max={64}
+                        step={1}
+                        value={subtitleFontSizeExpanded}
+                        onChange={(event) => void setSubtitleFontSizeExpanded(Number(event.target.value))}
+                        aria-label="Subtitle expanded size"
+                        className="w-full"
+                      />
+                      <p className="text-sm text-cream/80">{subtitleFontSizeExpanded}px</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Fullscreen Size</p>
+                      <input
+                        type="range"
+                        min={12}
+                        max={72}
+                        step={1}
+                        value={subtitleFontSizeFullscreen}
+                        onChange={(event) => void setSubtitleFontSizeFullscreen(Number(event.target.value))}
+                        aria-label="Subtitle fullscreen size"
+                        className="w-full"
+                      />
+                      <p className="text-sm text-cream/80">{subtitleFontSizeFullscreen}px</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                      onClick={() => void setSubtitleDropShadow(!subtitleDropShadow)}
+                      aria-label={`${subtitleDropShadow ? 'Disable' : 'Enable'} subtitle drop shadow`}
+                    >
+                      <span className="text-sm text-cream/80">Drop Shadow</span>
+                      {subtitleDropShadow ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                      onClick={() => void setSubtitleBackgroundHighlight(!subtitleBackgroundHighlight)}
+                      aria-label={`${subtitleBackgroundHighlight ? 'Disable' : 'Enable'} subtitle background highlight`}
+                    >
+                      <span className="text-sm text-cream/80">Background Highlight</span>
+                      {subtitleBackgroundHighlight ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                    </button>
+
+                    <div className="space-y-1 text-sm text-cream/75">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Preview</p>
+                      <div className="space-y-2">
+                        <p
+                          style={{
+                            color: subtitleFontColor,
+                            fontSize: `${subtitleFontSizeDocked}px`,
+                            textShadow: subtitleDropShadow ? '0 1px 2px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.75)' : 'none',
+                            backgroundColor: subtitleBackgroundHighlight ? 'rgba(0,0,0,0.72)' : 'transparent',
+                            display: 'inline-block',
+                            padding: subtitleBackgroundHighlight ? '2px 6px' : 0,
+                            borderRadius: subtitleBackgroundHighlight ? '4px' : 0,
+                          }}
+                        >
+                          Docked preview
+                        </p>
+                        <p
+                          style={{
+                            color: subtitleFontColor,
+                            fontSize: `${subtitleFontSizeExpanded}px`,
+                            textShadow: subtitleDropShadow ? '0 1px 2px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.75)' : 'none',
+                            backgroundColor: subtitleBackgroundHighlight ? 'rgba(0,0,0,0.72)' : 'transparent',
+                            display: 'inline-block',
+                            padding: subtitleBackgroundHighlight ? '2px 6px' : 0,
+                            borderRadius: subtitleBackgroundHighlight ? '4px' : 0,
+                          }}
+                        >
+                          Expanded preview
+                        </p>
+                        <p
+                          style={{
+                            color: subtitleFontColor,
+                            fontSize: `${subtitleFontSizeFullscreen}px`,
+                            textShadow: subtitleDropShadow ? '0 1px 2px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.75)' : 'none',
+                            backgroundColor: subtitleBackgroundHighlight ? 'rgba(0,0,0,0.72)' : 'transparent',
+                            display: 'inline-block',
+                            padding: subtitleBackgroundHighlight ? '2px 6px' : 0,
+                            borderRadius: subtitleBackgroundHighlight ? '4px' : 0,
+                          }}
+                        >
+                          Fullscreen preview
+                        </p>
+                      </div>
+                    </div>
+                  </article>
                 ) : (
                   <article className="settings-action-card">
                     <div className="settings-action-copy">
@@ -558,10 +836,31 @@ export default function SettingsModal() {
               </button>
             </header>
             <div className="max-h-[70vh] overflow-auto rounded-2xl border border-cream/15 bg-black/25 p-4">
-              {CACHE_VIEW_KEYS.map((key) => (
-                <div key={key} className="mb-3 rounded-xl border border-cream/10 bg-black/20 p-3 last:mb-0">
-                  <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">{key}</p>
-                  <div className="mt-2 text-sm">{renderTreeValue(cacheSnapshot[key], key)}</div>
+              {cacheCards.map((card) => (
+                <div key={card.id} className="mb-3 rounded-xl border border-cream/10 bg-black/20 p-3 last:mb-0">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">{card.title}</p>
+                      <p className="text-xs text-cream/60">{card.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="settings-action-btn retro-tooltip"
+                      onClick={() => void clearCacheCard(card)}
+                      disabled={busyCacheCardId === card.id}
+                      data-tooltip={busyCacheCardId === card.id ? 'Clearing cache' : `Clear ${card.title}`}
+                    >
+                      <Trash2 size={14} />
+                      {busyCacheCardId === card.id ? 'Clearing...' : 'Clear'}
+                    </button>
+                  </div>
+                  {findVideoToken(cacheSnapshot[card.key]) && (
+                    <div className="mt-2 rounded-lg border border-cream/10 bg-black/20 px-2 py-1 text-[11px] text-cream/70">
+                      <span className="font-mono text-amberline/80">videoBearerToken</span>
+                      <span className="ml-2 break-all">{findVideoToken(cacheSnapshot[card.key])}</span>
+                    </div>
+                  )}
+                  <div className="mt-2 text-sm">{renderTreeValue(cacheSnapshot[card.key], card.key)}</div>
                 </div>
               ))}
             </div>

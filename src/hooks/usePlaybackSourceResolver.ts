@@ -47,6 +47,7 @@ export function usePlaybackSourceResolver({
   const [isResolvingSource, setIsResolvingSource] = useState(false);
   const [sourceResolveTrace, setSourceResolveTrace] = useState<SourceResolveTrace | null>(null);
   const [sourceResolveRetryToken, setSourceResolveRetryToken] = useState(0);
+  const lastHandledRetryTokenRef = useRef(0);
   const lastBackgroundResolveKeyRef = useRef<string | null>(null);
   const onPrimeResolvedEpisodeRef = useRef(onPrimeResolvedEpisode);
   const onClearEpisodeMetadataRef = useRef(onClearEpisodeMetadata);
@@ -102,6 +103,10 @@ export function usePlaybackSourceResolver({
     setSourceResolveTrace(initialTrace);
     setSelectedSourceOptionId(null);
     const resolveStartedAt = Date.now();
+    const forceRefresh = sourceResolveRetryToken > lastHandledRetryTokenRef.current;
+    if (forceRefresh) {
+      lastHandledRetryTokenRef.current = sourceResolveRetryToken;
+    }
 
     const runResolve = async () => {
       const { resolved, trace } = await resolveSourceForPlayableWithTrace(
@@ -113,6 +118,7 @@ export function usePlaybackSourceResolver({
           baseCatalogSource,
           preferredSourcePluginId: preferredSourcePluginId ?? undefined,
           preferredAudioLanguage,
+          forceRefresh,
         },
         (attempt) => {
           if (cancelled) return;

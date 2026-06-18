@@ -16,6 +16,10 @@ type RightNowSourceResolveControlsProps = {
   activeResolvedSourceOptionId: string | null;
   onSelectedSourceOptionChange: (optionId: string | null) => void;
   optionSelectorItems: LogoSelectItem[];
+  subtitleTracksCount: number;
+  selectedSubtitleId: string | null;
+  onSelectedSubtitleChange: (subtitleId: string | null) => void;
+  subtitleSelectorItems: LogoSelectItem[];
   onRetrySourceResolve: () => void;
   isResolvingSource: boolean;
 };
@@ -34,6 +38,10 @@ export default function RightNowSourceResolveControls({
   activeResolvedSourceOptionId,
   onSelectedSourceOptionChange,
   optionSelectorItems,
+  subtitleTracksCount,
+  selectedSubtitleId,
+  onSelectedSubtitleChange,
+  subtitleSelectorItems,
   onRetrySourceResolve,
   isResolvingSource,
 }: RightNowSourceResolveControlsProps) {
@@ -67,13 +75,24 @@ export default function RightNowSourceResolveControls({
       />
       {sourceOptionsCount > 0 ? (
         <SourceSelectorField
-          label="Option"
-          ariaLabel="Choose active source option"
+          label="Server"
+          ariaLabel="Choose active source server"
           value={activeResolvedSourceOptionId ?? 'auto'}
           onChange={(value) => {
             onSelectedSourceOptionChange(value === 'auto' ? null : value);
           }}
           items={optionSelectorItems}
+        />
+      ) : null}
+      {subtitleTracksCount > 0 ? (
+        <SourceSelectorField
+          label="Subtitles"
+          ariaLabel="Choose subtitle track"
+          value={selectedSubtitleId ?? 'auto'}
+          onChange={(value) => {
+            onSelectedSubtitleChange(value === 'auto' ? null : value);
+          }}
+          items={subtitleSelectorItems}
         />
       ) : null}
       <button

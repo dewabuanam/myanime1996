@@ -156,7 +156,11 @@ export default function RightNowHeaderSection({
           <p className="anime-card-jp mt-0.5 line-clamp-1">{fallbackDisplayJapanese}</p>
           {currentlyPlayingKind === 'episode' ? (
             <>
-              <p className="anime-card-video-badge mt-1 block max-w-full line-clamp-1" data-tooltip={fallbackTypeLabel} data-tooltip-sub={episodeDisplayJapanese || undefined}>
+              <p
+                className="anime-card-video-badge mt-1 inline-flex max-w-full whitespace-nowrap overflow-hidden text-ellipsis"
+                data-tooltip={fallbackTypeLabel}
+                data-tooltip-sub={episodeDisplayJapanese || undefined}
+              >
                 {fallbackTypeLabel}
               </p>
               {episodeDisplayJapanese ? <p className="anime-card-jp mt-0.5 line-clamp-1 text-amberline/80">{episodeDisplayJapanese}</p> : null}

@@ -1,10 +1,19 @@
+import * as dashjs from 'dashjs';
 import Hls from 'hls.js';
 import { useEffect, useRef, type MutableRefObject, type RefObject } from 'react';
-import type { ResolvedSource } from '../types/plugin';
+import type { ResolvedSource, ResolvedSubtitleTrack } from '../types/plugin';
+
+const SUBTITLE_OFF_ID = '__off__';
 
 type UseHlsPlayerOptions = {
   sourceVideoRef: RefObject<HTMLVideoElement>;
   activeResolvedSource: ResolvedSource | null;
+  subtitleTracks: ResolvedSubtitleTrack[];
+  selectedSubtitleId: string | null;
+  subtitleFontColor: string;
+  subtitleFontSize: number;
+  subtitleDropShadow: boolean;
+  subtitleBackgroundHighlight: boolean;
   isPlaying: boolean;
   playbackTime: number;
   pendingAutoPlayAfterResolveRef: MutableRefObject<boolean>;
@@ -14,12 +23,108 @@ type UseHlsPlayerOptions = {
 export function useHlsPlayer({
   sourceVideoRef,
   activeResolvedSource,
+  subtitleTracks,
+  selectedSubtitleId,
+  subtitleFontColor,
+  subtitleFontSize,
+  subtitleDropShadow,
+  subtitleBackgroundHighlight,
   isPlaying,
   playbackTime,
   pendingAutoPlayAfterResolveRef,
   setPlaying,
 }: UseHlsPlayerOptions) {
   const latestPlaybackTimeRef = useRef(playbackTime);
+  const hlsRef = useRef<Hls | null>(null);
+  const dashRef = useRef<dashjs.MediaPlayerClass | null>(null);
+
+  const isDashUrl = (url: string) => /\.mpd(?:$|\?)/i.test(url);
+  const isHlsUrl = (url: string) => /\.m3u8(?:$|\?)/i.test(url);
+
+  const applySelectedTextTrackMode = (
+    video: HTMLVideoElement,
+    selectedTrack: ResolvedSubtitleTrack | null,
+    disableSubtitles = false,
+  ) => {
+    const textTracks = Array.from(video.textTracks || []);
+    for (const track of textTracks) {
+      track.mode = 'disabled';
+    }
+
+    if (!textTracks.length || disableSubtitles) return;
+
+    const target = selectedTrack ?? subtitleTracks.find((track) => track.isDefault) ?? subtitleTracks[0] ?? null;
+    if (!target) return;
+
+    for (const track of textTracks) {
+      const id = String(track.id || '').trim();
+      const label = String(track.label || '').trim().toLowerCase();
+      const language = String(track.language || '').trim().toLowerCase();
+      if (
+        id === target.id ||
+        label === target.label.trim().toLowerCase() ||
+        language === target.language.trim().toLowerCase()
+      ) {
+        track.mode = 'showing';
+        return;
+      }
+    }
+  };
+
+  const applySubtitleStyle = () => {
+    if (typeof document === 'undefined') return;
+
+    const styleId = 'myanime1996-subtitle-style';
+    let styleElement = document.getElementById(styleId) as HTMLStyleElement | null;
+    if (!styleElement) {
+      styleElement = document.createElement('style');
+      styleElement.id = styleId;
+      document.head.appendChild(styleElement);
+    }
+
+    const textShadow = subtitleDropShadow ? '0 1px 2px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.75)' : 'none';
+    const backgroundColor = subtitleBackgroundHighlight ? 'rgba(0, 0, 0, 0.72)' : 'transparent';
+    styleElement.textContent = `.right-now-video-native::cue { color: ${subtitleFontColor}; font-size: ${subtitleFontSize}px; text-shadow: ${textShadow}; background-color: ${backgroundColor}; }`;
+  };
+
+  const applySubtitleTracks = (video: HTMLVideoElement) => {
+    const managedTracks = Array.from(video.querySelectorAll('track[data-myanime1996-subtitle="managed"]'));
+    for (const track of managedTracks) {
+      track.remove();
+    }
+
+    if (!subtitleTracks.length) {
+      for (const textTrack of Array.from(video.textTracks || [])) {
+        textTrack.mode = 'disabled';
+      }
+      return;
+    }
+
+    const subtitlesDisabled = selectedSubtitleId === SUBTITLE_OFF_ID;
+    const selectedTrack = subtitlesDisabled
+      ? null
+      : selectedSubtitleId
+      ? subtitleTracks.find((track) => track.id === selectedSubtitleId) ?? null
+      : subtitleTracks.find((track) => track.isDefault) ?? null;
+
+    for (const subtitle of subtitleTracks) {
+      if (!subtitle.url) continue;
+      const trackElement = document.createElement('track');
+      trackElement.kind = 'subtitles';
+      trackElement.id = subtitle.id;
+      trackElement.label = subtitle.label;
+      trackElement.srclang = subtitle.language;
+      trackElement.src = subtitle.url;
+      trackElement.default = subtitlesDisabled
+        ? false
+        : selectedTrack
+          ? selectedTrack.id === subtitle.id
+          : Boolean(subtitle.isDefault);
+      trackElement.setAttribute('data-myanime1996-subtitle', 'managed');
+      trackElement.setAttribute('data-subtitle-id', subtitle.id);
+      video.appendChild(trackElement);
+    }
+  };
 
   useEffect(() => {
     latestPlaybackTimeRef.current = Math.max(0, playbackTime);
@@ -34,7 +139,63 @@ export function useHlsPlayer({
     // Guard against empty/blanks URLs and non-http schemes.
     if (!url || !/^https?:\/\//.test(url)) return;
 
-    if (Hls.isSupported()) {
+    video.crossOrigin = 'anonymous';
+
+    if (isDashUrl(url)) {
+      const player = dashjs.MediaPlayer().create();
+      dashRef.current = player;
+
+      player.updateSettings({
+        streaming: {
+          abr: {
+            autoSwitchBitrate: {
+              video: true,
+              audio: true,
+            },
+          },
+        },
+      });
+
+      player.on(dashjs.MediaPlayer.events.ERROR, (event: unknown) => {
+        console.warn('DASH playback error:', event);
+      });
+
+      player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
+        const resumeTime = Math.max(0, latestPlaybackTimeRef.current);
+        if (resumeTime > 0.25) {
+          try {
+            video.currentTime = resumeTime;
+          } catch {
+            // Ignore seek timing failures while metadata is stabilizing.
+          }
+        }
+
+        if (isPlaying || pendingAutoPlayAfterResolveRef.current) {
+          void video
+            .play()
+            .then(() => {
+              pendingAutoPlayAfterResolveRef.current = false;
+            })
+            .catch((err) => {
+              console.warn('DASH autoplay rejected:', err);
+              setPlaying(false);
+            });
+        }
+      });
+
+      player.initialize(video, url, false);
+
+      return () => {
+        dashRef.current = null;
+        try {
+          player.reset();
+        } catch {
+          // Ignore reset errors during teardown.
+        }
+      };
+    }
+
+    if (isHlsUrl(url) && Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: false,
         lowLatencyMode: false,
@@ -47,6 +208,7 @@ export function useHlsPlayer({
       // attachMedia must happen before loadSource (hls.js API contract).
       hls.attachMedia(video);
       hls.loadSource(url);
+      hlsRef.current = hls;
 
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
@@ -94,6 +256,7 @@ export function useHlsPlayer({
       });
 
       return () => {
+        hlsRef.current = null;
         hls.destroy();
       };
     }
@@ -114,4 +277,72 @@ export function useHlsPlayer({
       }
     }
   }, [activeResolvedSource?.type, activeResolvedSource?.url, pendingAutoPlayAfterResolveRef, setPlaying, sourceVideoRef]);
+
+  useEffect(() => {
+    applySubtitleStyle();
+  }, [subtitleBackgroundHighlight, subtitleDropShadow, subtitleFontColor, subtitleFontSize]);
+
+  useEffect(() => {
+    const video = sourceVideoRef.current;
+    if (!video) return;
+
+    applySubtitleTracks(video);
+
+    const hls = hlsRef.current;
+    const dash = dashRef.current;
+    if (!hls && !dash) return;
+    if (subtitleTracks.length === 0) return;
+
+    const subtitlesDisabled = selectedSubtitleId === SUBTITLE_OFF_ID;
+
+    const selectedTrack = subtitlesDisabled
+      ? null
+      : selectedSubtitleId
+      ? subtitleTracks.find((track) => track.id === selectedSubtitleId) ?? null
+      : subtitleTracks.find((track) => track.isDefault) ?? null;
+
+    applySelectedTextTrackMode(video, selectedTrack, subtitlesDisabled);
+    const deferredApply = () => applySelectedTextTrackMode(video, selectedTrack, subtitlesDisabled);
+    const timeoutId = window.setTimeout(deferredApply, 180);
+    const rafId = window.requestAnimationFrame(deferredApply);
+
+    if (subtitlesDisabled && hls) {
+      hls.subtitleTrack = -1;
+    }
+
+    if (selectedTrack && hls) {
+      const languageNeedle = selectedTrack.language.toLowerCase();
+      const subtitleTrackIndex = hls.subtitleTracks.findIndex((track) => {
+        const language = String(track?.lang || '').toLowerCase();
+        const name = String(track?.name || '').toLowerCase();
+        return language === languageNeedle || name.includes(languageNeedle);
+      });
+
+      if (subtitleTrackIndex >= 0) {
+        hls.subtitleTrack = subtitleTrackIndex;
+      }
+      return () => {
+        window.clearTimeout(timeoutId);
+        window.cancelAnimationFrame(rafId);
+      };
+    }
+
+    if (selectedTrack && dash && typeof dash.getTracksFor === 'function' && typeof dash.setCurrentTrack === 'function') {
+      const languageNeedle = selectedTrack.language.toLowerCase();
+      const textTracks = dash.getTracksFor('text') || [];
+      const track = textTracks.find((entry) => {
+        const language = String(entry?.lang || '').toLowerCase();
+        const label = String(entry?.labels?.[0]?.text || '').toLowerCase();
+        return language === languageNeedle || label.includes(languageNeedle);
+      });
+      if (track) {
+        dash.setCurrentTrack(track);
+      }
+    }
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [selectedSubtitleId, sourceVideoRef, subtitleTracks]);
 }

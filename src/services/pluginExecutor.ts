@@ -5,6 +5,7 @@ import type {
   PluginResolverRuntimeRequest,
   ResolvedSource,
   ResolvedSourceOption,
+  ResolvedSubtitleTrack,
   SourceAudioLanguage,
 } from '../types/plugin';
 
@@ -19,13 +20,38 @@ type PluginResolverFunction = (
 
 const compiledResolverCache = new Map<string, PluginResolverFunction>();
 
+function isPluginRuntimeCacheKey(key: string) {
+  return /^__myanime1996.*cache$/i.test(key);
+}
+
+function listPluginRuntimeCacheKeys() {
+  const keys: string[] = [];
+  for (const rawKey of Reflect.ownKeys(globalThis)) {
+    if (typeof rawKey !== 'string') continue;
+    if (!isPluginRuntimeCacheKey(rawKey)) continue;
+    keys.push(rawKey);
+  }
+  return keys.sort((left, right) => left.localeCompare(right));
+}
+
+export function getPluginResolverCacheSnapshot(): Record<string, unknown> {
+  const snapshot: Record<string, unknown> = {};
+  for (const key of listPluginRuntimeCacheKeys()) {
+    snapshot[key] = (globalThis as Record<string, unknown>)[key];
+  }
+  return snapshot;
+}
+
+export function clearPluginResolverCacheByKey(cacheKey: string): boolean {
+  const trimmed = String(cacheKey || '').trim();
+  if (!trimmed || !isPluginRuntimeCacheKey(trimmed)) return false;
+  return Reflect.deleteProperty(globalThis, trimmed);
+}
+
 export function clearPluginResolverCaches(): void {
   compiledResolverCache.clear();
 
-  const cacheKeyPattern = /^__myanime1996.*cache$/i;
-  for (const key of Reflect.ownKeys(globalThis)) {
-    if (typeof key !== 'string') continue;
-    if (!cacheKeyPattern.test(key)) continue;
+  for (const key of listPluginRuntimeCacheKeys()) {
     Reflect.deleteProperty(globalThis, key);
   }
 }
@@ -36,10 +62,7 @@ export function clearPluginResolverCaches(): void {
  * without wiping the full resolve cache.
  */
 export function clearPluginRateLimit(): void {
-  const cacheKeyPattern = /^__myanime1996.*cache$/i;
-  for (const key of Reflect.ownKeys(globalThis)) {
-    if (typeof key !== 'string') continue;
-    if (!cacheKeyPattern.test(key)) continue;
+  for (const key of listPluginRuntimeCacheKeys()) {
     try {
       const cache = (globalThis as Record<string, unknown>)[key];
       if (cache && typeof cache === 'object' && 'rateLimit' in cache) {
@@ -125,6 +148,7 @@ function isDeclaredPluginHost(plugin: ImportedSourcePluginDefinition, targetUrl:
 
 function createResolverFetch(plugin: ImportedSourcePluginDefinition): typeof fetch {
   const warnedOrigins = new Set<string>();
+  let nativeHttpAvailability: 'unknown' | 'supported' | 'unsupported' = 'unknown';
 
   const shouldUseNativeFallback = (input: RequestInfo | URL, init?: RequestInit) => {
     const rawUrl = toRequestUrl(input);
@@ -171,8 +195,13 @@ function createResolverFetch(plugin: ImportedSourcePluginDefinition): typeof fet
   };
 
   const tryNativePluginFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response | null> => {
+    if (nativeHttpAvailability === 'unsupported') {
+      return null;
+    }
+
     try {
       const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+      nativeHttpAvailability = 'supported';
       const url = toRequestUrl(input);
       const method = (init?.method || 'GET').toUpperCase();
       const headers = toHeaderObject(init?.headers);
@@ -185,6 +214,7 @@ function createResolverFetch(plugin: ImportedSourcePluginDefinition): typeof fet
         signal: init?.signal,
       });
     } catch (nativeError) {
+      nativeHttpAvailability = 'unsupported';
       console.warn(`Native plugin fallback request failed for plugin ${plugin.id}.`, nativeError);
       return null;
     }
@@ -215,11 +245,40 @@ function createResolverFetch(plugin: ImportedSourcePluginDefinition): typeof fet
 
   return async (input, init) => {
     warnUndeclaredHost(input);
+    const canUseNativeFallback = shouldUseNativeFallback(input, init);
+
+    if (canUseNativeFallback) {
+      const nativeFirstResponse = await tryNativePluginFetch(input, init);
+      if (nativeFirstResponse?.ok) {
+        return nativeFirstResponse;
+      }
+    }
 
     try {
-      return await fetch(input, init);
+      const response = await fetch(input, init);
+
+      // Some providers (e.g., Cloudflare-protected subtitle endpoints) may return
+      // bot-block pages to WebView fetch but succeed via native HTTP.
+      if (
+        canUseNativeFallback &&
+        [401, 403, 429].includes(response.status)
+      ) {
+        const fallbackResponse = await tryNativePluginFetch(input, init);
+        if (fallbackResponse?.ok) {
+          return fallbackResponse;
+        }
+      }
+
+      if (canUseNativeFallback && response.status >= 500) {
+        const fallbackResponse = await tryNativePluginFetch(input, init);
+        if (fallbackResponse?.ok) {
+          return fallbackResponse;
+        }
+      }
+
+      return response;
     } catch (error) {
-      if (!shouldUseNativeFallback(input, init)) {
+      if (!canUseNativeFallback) {
         throw error;
       }
 
@@ -230,6 +289,60 @@ function createResolverFetch(plugin: ImportedSourcePluginDefinition): typeof fet
 
       throw error;
     }
+  };
+}
+
+function createResolverNativeFetchText(
+  plugin: ImportedSourcePluginDefinition,
+  signal: AbortSignal,
+): PluginResolverRuntimeApi['nativeFetchText'] {
+  const toHeaderObject = (headersInit?: HeadersInit): Record<string, string> => {
+    if (!headersInit) return {};
+    const out: Record<string, string> = {};
+    const headers = new Headers(headersInit);
+    for (const [key, value] of headers.entries()) {
+      out[key] = value;
+    }
+    return out;
+  };
+
+  return async (url, init) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Invalid URL passed to nativeFetchText: ${url}`);
+    }
+
+    if (!isDeclaredPluginHost(plugin, parsed)) {
+      throw new Error(`nativeFetchText blocked undeclared host: ${parsed.origin}`);
+    }
+
+    const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http');
+    const method = (init?.method || 'GET').toUpperCase() as 'GET' | 'POST' | 'HEAD';
+    const headers = toHeaderObject(init?.headers);
+    const response = await tauriFetch(url, {
+      method,
+      headers,
+      body: init?.body,
+      signal,
+    });
+    const text = await response.text();
+    const responseHeaders: Record<string, string> = {};
+    try {
+      for (const [key, value] of response.headers.entries()) {
+        responseHeaders[key.toLowerCase()] = value;
+      }
+    } catch {
+      // Ignore header parsing issues and return text payload regardless.
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      text,
+      headers: responseHeaders,
+    };
   };
 }
 
@@ -263,6 +376,43 @@ function normalizeServer(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function normalizeSubtitleTrack(value: unknown): ResolvedSubtitleTrack | null {
+  if (!value || typeof value !== 'object') return null;
+
+  const candidate = value as Partial<ResolvedSubtitleTrack>;
+  const id = typeof candidate.id === 'string' ? candidate.id.trim() : '';
+  const language = typeof candidate.language === 'string' ? candidate.language.trim() : '';
+  const label = typeof candidate.label === 'string' ? candidate.label.trim() : '';
+  const url = typeof candidate.url === 'string' && candidate.url.trim().length > 0 ? candidate.url.trim() : undefined;
+
+  if (!id || !language || !label) return null;
+
+  return {
+    id,
+    language,
+    label,
+    url,
+    isDefault: candidate.isDefault === true,
+  };
+}
+
+function normalizeSubtitleTracks(value: unknown): ResolvedSubtitleTrack[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const tracks: ResolvedSubtitleTrack[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of value) {
+    const normalized = normalizeSubtitleTrack(entry);
+    if (!normalized) continue;
+    if (seen.has(normalized.id)) continue;
+    seen.add(normalized.id);
+    tracks.push(normalized);
+  }
+
+  return tracks.length > 0 ? tracks : undefined;
+}
+
 function normalizeSourceOption(
   plugin: ImportedSourcePluginDefinition,
   value: unknown,
@@ -278,6 +428,7 @@ function normalizeSourceOption(
   const rawId = typeof candidate.id === 'string' ? candidate.id.trim() : '';
   const language = normalizeAudioLanguage(candidate.language);
   const server = normalizeServer(candidate.server);
+  const subtitles = normalizeSubtitleTracks(candidate.subtitles);
 
   return {
     id: rawId.length > 0 ? rawId : defaultId,
@@ -287,6 +438,8 @@ function normalizeSourceOption(
     language,
     server,
     controllable: typeof candidate.controllable === 'boolean' ? candidate.controllable : type === 'direct',
+    subtitles,
+    optionMeta: candidate.optionMeta,
   };
 }
 
@@ -345,6 +498,7 @@ function buildResolvedFromOption(
     selectedOptionId: selected.id,
     options,
     controllable: selected.controllable,
+    subtitles: selected.subtitles,
   };
 }
 
@@ -357,6 +511,7 @@ function normalizeResolvedSource(plugin: ImportedSourcePluginDefinition, value: 
   const type = candidate.type === 'direct' ? 'direct' : 'embed';
   const language = normalizeAudioLanguage(candidate.language);
   const server = normalizeServer(candidate.server);
+  const subtitles = normalizeSubtitleTracks(candidate.subtitles);
 
   return {
     type,
@@ -366,6 +521,7 @@ function normalizeResolvedSource(plugin: ImportedSourcePluginDefinition, value: 
     language,
     server,
     controllable: typeof candidate.controllable === 'boolean' ? candidate.controllable : type === 'direct',
+    subtitles,
   };
 }
 
@@ -514,6 +670,7 @@ export async function executeImportedPluginResolver(
 
   const api: PluginResolverRuntimeApi = {
     fetch: createResolverFetch(plugin),
+    nativeFetchText: createResolverNativeFetchText(plugin, controller.signal),
     URL,
     URLSearchParams,
     JSON,

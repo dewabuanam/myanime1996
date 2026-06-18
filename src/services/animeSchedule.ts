@@ -329,7 +329,6 @@ function normalizeAnimeScheduleId(record: Record<string, unknown>, media: Record
 }
 
 function resolveAnimeScheduleJikanId(record: Record<string, unknown>, media: Record<string, unknown>): number | undefined {
-  console.log('Resolving AnimeSchedule Jikan ID from record and media:', { record, media });
   const malId =
     getNumber(record, ['jikanId', 'jikan_id']) ||
     getNumber(media, ['jikanId', 'jikan_id']) ||
@@ -490,14 +489,12 @@ function toAnimeDetail(raw: unknown): AnimeDetail | null {
 }
 
 async function resolveAnimeScheduleJikanIdByRoute(route: string): Promise<number | undefined> {
-  console.log('Resolving AnimeSchedule Jikan ID by route:', route);
   const path = `/anime/${encodeURIComponent(route)}`;
   try {
     const json = await cachedFetch(path, DAY, (raw) => raw);
     const record = toRecord(json);
     if (!record) return undefined;
     const media = toRecord(record.media) ?? toRecord(record.anime) ?? record;
-    console.log('Fetched AnimeSchedule record for route resolution:', { record, media });
     return resolveAnimeScheduleJikanId(record, media);
   } catch {
     return undefined;
@@ -873,11 +870,6 @@ export async function resolveAnimeScheduleBridgeJikanId(
   const route = explicitRoute && explicitRoute.length > 0
     ? explicitRoute
     : parseRouteFromInput(idOrRoute);
-  console.log('Resolving AnimeSchedule bridge Jikan ID for input:', {
-    idOrRoute,
-    animeScheduleRoute,
-    parsedRoute: route,
-  });
   if (!route) return undefined;
 
   const jikanId = await resolveAnimeScheduleJikanIdByRoute(route);

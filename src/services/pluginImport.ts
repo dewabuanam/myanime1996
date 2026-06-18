@@ -1,6 +1,12 @@
 import { open } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';
-import type { ImportedSourcePluginDefinition, PluginHostRequirements, PluginIconPng, SourcePluginArtifact } from '../types/plugin';
+import type {
+  ImportedSourcePluginDefinition,
+  PluginHostRequirements,
+  PluginIconPng,
+  PluginIconSvg,
+  SourcePluginArtifact,
+} from '../types/plugin';
 
 function isBase64(value: string) {
   return /^[A-Za-z0-9+/=\s]+$/.test(value);
@@ -23,6 +29,29 @@ function validateIcon(icon: unknown): PluginIconPng | undefined {
   }
   return {
     mimeType: 'image/png',
+    dataBase64: candidate.dataBase64,
+    width: candidate.width,
+    height: candidate.height,
+  };
+}
+
+function validateIconSvg(icon: unknown): PluginIconSvg | undefined {
+  if (!icon || typeof icon !== 'object') return undefined;
+  const candidate = icon as Partial<PluginIconSvg>;
+  if (candidate.mimeType !== 'image/svg+xml') {
+    throw new Error('Plugin SVG icon must use image/svg+xml mime type.');
+  }
+  if (!candidate.dataBase64 || typeof candidate.dataBase64 !== 'string' || !isBase64(candidate.dataBase64)) {
+    throw new Error('Plugin SVG icon base64 payload is invalid.');
+  }
+  if (candidate.width !== undefined && typeof candidate.width !== 'number') {
+    throw new Error('Plugin SVG icon width must be a number when provided.');
+  }
+  if (candidate.height !== undefined && typeof candidate.height !== 'number') {
+    throw new Error('Plugin SVG icon height must be a number when provided.');
+  }
+  return {
+    mimeType: 'image/svg+xml',
     dataBase64: candidate.dataBase64,
     width: candidate.width,
     height: candidate.height,
@@ -119,6 +148,7 @@ export function parseSourcePluginArtifact(rawText: string): ImportedSourcePlugin
   }
 
   const iconPng = validateIcon(plugin.iconPng);
+  const iconSvg = validateIconSvg(plugin.iconSvg);
   const hostRequirements = validateHostRequirements(plugin.hostRequirements);
   if (!hostRequirements) {
     console.warn(`Plugin ${plugin.id} does not declare hostRequirements. Runtime is allowed but host observability will be limited.`);
@@ -130,6 +160,7 @@ export function parseSourcePluginArtifact(rawText: string): ImportedSourcePlugin
     version: plugin.version,
     compatibilityApiVersion: '1.0',
     iconPng,
+    iconSvg,
     hostRequirements,
     resolver: {
       kind: 'inline-js',

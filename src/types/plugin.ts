@@ -28,6 +28,19 @@ export interface PluginResolverRuntimeRequest {
 
 export interface PluginResolverRuntimeApi {
   fetch: typeof fetch;
+  nativeFetchText?: (
+    url: string,
+    init?: {
+      method?: 'GET' | 'POST' | 'HEAD';
+      headers?: Record<string, string>;
+      body?: string;
+    },
+  ) => Promise<{
+    ok: boolean;
+    status: number;
+    text: string;
+    headers?: Record<string, string>;
+  }>;
   URL: typeof URL;
   URLSearchParams: typeof URLSearchParams;
   JSON: JSON;
@@ -37,6 +50,13 @@ export interface PluginResolverRuntimeApi {
 
 export interface PluginIconPng {
   mimeType: 'image/png';
+  dataBase64: string;
+  width?: number;
+  height?: number;
+}
+
+export interface PluginIconSvg {
+  mimeType: 'image/svg+xml';
   dataBase64: string;
   width?: number;
   height?: number;
@@ -54,6 +74,7 @@ export interface ImportedSourcePluginDefinition {
   version: string;
   compatibilityApiVersion: '1.0';
   iconPng?: PluginIconPng;
+  iconSvg?: PluginIconSvg;
   hostRequirements?: PluginHostRequirements;
   resolver: {
     kind: 'inline-js';
@@ -83,6 +104,15 @@ export interface ResolvedSource {
   selectedOptionId?: string;
   options?: ResolvedSourceOption[];
   controllable?: boolean;
+  subtitles?: ResolvedSubtitleTrack[];
+}
+
+export interface ResolvedSubtitleTrack {
+  id: string;
+  language: string;
+  label: string;
+  url?: string;
+  isDefault?: boolean;
 }
 
 export interface ResolvedSourceOption {
@@ -93,6 +123,7 @@ export interface ResolvedSourceOption {
   language?: SourceAudioLanguage;
   server?: string;
   controllable?: boolean;
+  subtitles?: ResolvedSubtitleTrack[];
   optionMeta?: unknown;
 }
 

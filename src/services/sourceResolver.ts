@@ -17,6 +17,9 @@ type ResolverTraceError = Error & {
 };
 
 function toIconDataUri(plugin: ImportedSourcePluginDefinition) {
+  if (plugin.iconSvg?.dataBase64) {
+    return `data:${plugin.iconSvg.mimeType};base64,${plugin.iconSvg.dataBase64}`;
+  }
   if (!plugin.iconPng?.dataBase64) return undefined;
   return `data:${plugin.iconPng.mimeType};base64,${plugin.iconPng.dataBase64}`;
 }
@@ -50,6 +53,7 @@ type ResolveSourceOptions = {
   preferredSourcePluginId?: string;
   preferredAudioLanguage?: SourceAudioLanguage;
   selectedSourceOptionId?: string;
+  forceRefresh?: boolean;
 };
 
 function nowMs() {
@@ -183,22 +187,24 @@ export async function resolveSourceForPlayableWithTrace(
         sourceOptionId: options.selectedSourceOptionId,
       };
 
-      const cached = await getCachedResolvedSource(identity);
-      if (cached) {
-        const attempt: SourceResolveAttemptLog = {
-          pluginId,
-          pluginName: plugin.name,
-          order: index + 1,
-          status: 'cache-hit',
-          durationMs: Math.round(nowMs() - startedAt),
-          message: 'Cache hit for this item identity. Resolver execution skipped.',
-        };
-        trace.attempts.push(attempt);
-        onAttempt?.(attempt);
-        trace.resolvedPluginId = pluginId;
-        trace.resolvedLabel = cached.label ?? plugin.name;
-        trace.resolvedLanguage = cached.language;
-        return { resolved: cached, trace };
+      if (!options.forceRefresh) {
+        const cached = await getCachedResolvedSource(identity);
+        if (cached) {
+          const attempt: SourceResolveAttemptLog = {
+            pluginId,
+            pluginName: plugin.name,
+            order: index + 1,
+            status: 'cache-hit',
+            durationMs: Math.round(nowMs() - startedAt),
+            message: 'Cache hit for this item identity. Resolver execution skipped.',
+          };
+          trace.attempts.push(attempt);
+          onAttempt?.(attempt);
+          trace.resolvedPluginId = pluginId;
+          trace.resolvedLabel = cached.label ?? plugin.name;
+          trace.resolvedLanguage = cached.language;
+          return { resolved: cached, trace };
+        }
       }
 
       const execution = await executeImportedPluginResolver(plugin, resolverItem, {
@@ -206,13 +212,16 @@ export async function resolveSourceForPlayableWithTrace(
       });
       if (execution.resolved) {
         await setCachedResolvedSource(identity, execution.resolved);
+        const message = options.forceRefresh
+          ? `Retry forced fresh resolve (cache bypass). ${execution.message}`
+          : execution.message;
         const attempt: SourceResolveAttemptLog = {
           pluginId,
           pluginName: plugin.name,
           order: index + 1,
           status: 'resolved',
           durationMs: Math.round(nowMs() - startedAt),
-          message: execution.message,
+          message,
           steps: execution.steps,
         };
         trace.attempts.push(attempt);
