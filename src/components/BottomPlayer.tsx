@@ -1,10 +1,11 @@
-import { Expand, FastForward, Maximize, Minimize, Pause, Play, Rewind, SkipBack, SkipForward, SquareArrowOutUpRight, Volume2, VolumeX, X } from 'lucide-react';
+import { Expand, FastForward, Info, Maximize, Minimize, Pause, Play, Rewind, SkipBack, SkipForward, SquareArrowOutUpRight, Volume2, VolumeX, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ANISKIP_LABELS, voteOnAniSkip } from '../services/aniSkip';
+import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
 import { getDisplayTitle } from '../utils/title';
 import { toCanonicalYouTubeWatchUrl } from '../utils/youtubeUrl';
@@ -47,6 +48,8 @@ export default function BottomPlayer() {
   const setTrailerMuted = useAppStore((state) => state.setTrailerMuted);
   const playNextInQueue = useAppStore((state) => state.playNextInQueue);
   const playPreviousInQueue = useAppStore((state) => state.playPreviousInQueue);
+  const selectAnime = useAppStore((state) => state.selectAnime);
+  const openRightPanelWithView = useAppStore((state) => state.openRightPanelWithView);
   const externalPlaybackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const externalElapsedRef = useRef(0);
   const externalWindowTargetRef = useRef<string | null>(null);
@@ -369,6 +372,19 @@ export default function BottomPlayer() {
     openInBrowser();
   };
 
+  const openCurrentAnimeDetail = () => {
+    if (!currentlyPlayingItem) return;
+
+    void (async () => {
+      const canonicalDetailId = await resolveCanonicalDetailRouteId(currentlyPlayingItem.anime);
+      const selectedAnime = canonicalDetailId
+        ? { ...currentlyPlayingItem.anime, id: canonicalDetailId, jikanId: canonicalDetailId }
+        : currentlyPlayingItem.anime;
+      await selectAnime(selectedAnime);
+      await openRightPanelWithView('detail');
+    })();
+  };
+
   const openPlaybackTooltip = isFullyUnsupported
     ? 'Fully Unsupported'
     : isFullscreenOnly
@@ -376,6 +392,8 @@ export default function BottomPlayer() {
       : canOpenPlaybackAction
         ? 'Open New Tab'
         : 'No active URL';
+  const canOpenAnimeDetail = Boolean(currentlyPlayingItem);
+  const openAnimeDetailTooltip = canOpenAnimeDetail ? 'Open Anime Detail' : 'No anime selected';
 
   const isExternalWindowTransport = isExternalWindowPlaybackActive;
   const disablePauseControl = isExternalWindowTransport;
@@ -721,6 +739,16 @@ export default function BottomPlayer() {
             data-tooltip={openPlaybackTooltip}
           >
             <SquareArrowOutUpRight size={13} />
+          </button>
+          <button
+            type="button"
+            className="top-icon-btn h-7 w-7 shrink-0 aspect-square rounded-full retro-tooltip tooltip-left"
+            onClick={openCurrentAnimeDetail}
+            disabled={!canOpenAnimeDetail}
+            aria-label="Open current anime detail"
+            data-tooltip={openAnimeDetailTooltip}
+          >
+            <Info size={13} />
           </button>
           <button
             type="button"
