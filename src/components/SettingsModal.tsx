@@ -5,7 +5,7 @@ import { save } from '@tauri-apps/plugin-dialog';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
 import { clearAniSkipDataCache } from '../services/aniSkip';
 import { DEFAULT_ANIMESCHEDULE_TOKEN } from '../services/animeSchedule';
-import { clearPluginResolverCacheByKey, getPluginResolverCacheSnapshot } from '../services/pluginExecutor';
+import { clearPluginResolverCacheByKey, getPluginResolverCacheSnapshot, replacePluginResolverCacheByKey } from '../services/pluginExecutor';
 import { clearSourceResolveCache } from '../services/sourceCache';
 import { getStoredValue, setStoredValue } from '../services/store';
 import { useAppStore } from '../state/appStore';
@@ -180,6 +180,23 @@ function findVideoToken(value: unknown) {
   return typeof token === 'string' ? token.trim() : '';
 }
 
+function stringifyCacheValue(value: unknown) {
+  try {
+    return JSON.stringify(value ?? {}, null, 2);
+  } catch {
+    return '{}';
+  }
+}
+
+function createCacheEditorDrafts(snapshot: Record<string, unknown>) {
+  const cards = buildCacheCards(snapshot);
+  const drafts: Record<string, string> = {};
+  for (const card of cards) {
+    drafts[card.id] = stringifyCacheValue(snapshot[card.key]);
+  }
+  return drafts;
+}
+
 export default function SettingsModal() {
   const isSettingsOpen = useAppStore((state) => state.isSettingsOpen);
   const setSettingsOpen = useAppStore((state) => state.setSettingsOpen);
@@ -219,6 +236,7 @@ export default function SettingsModal() {
   const [cacheViewerLoading, setCacheViewerLoading] = useState(false);
   const [busyCacheCardId, setBusyCacheCardId] = useState<string | null>(null);
   const [cacheSnapshot, setCacheSnapshot] = useState<Record<string, unknown>>({});
+  const [cacheEditorDraftByCardId, setCacheEditorDraftByCardId] = useState<Record<string, string>>({});
   const isDevMode = (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
 
   const cacheCards = useMemo(() => buildCacheCards(cacheSnapshot), [cacheSnapshot]);
@@ -249,6 +267,7 @@ export default function SettingsModal() {
       setCacheViewerLoading(false);
       setBusyCacheCardId(null);
       setCacheSnapshot({});
+      setCacheEditorDraftByCardId({});
     }
   }, [animeScheduleApiToken, isSettingsOpen]);
 
@@ -278,6 +297,7 @@ export default function SettingsModal() {
       setCacheViewerLoading(true);
       const snapshot = await loadCacheSnapshot();
       setCacheSnapshot(snapshot);
+      setCacheEditorDraftByCardId(createCacheEditorDrafts(snapshot));
       setCacheViewerOpen(true);
       setStatusMessage('Cache data loaded.');
     } catch {
@@ -312,9 +332,66 @@ export default function SettingsModal() {
 
       const snapshot = await loadCacheSnapshot();
       setCacheSnapshot(snapshot);
+      setCacheEditorDraftByCardId(createCacheEditorDrafts(snapshot));
       setStatusMessage(`${card.title} cleared.`);
     } catch {
       setStatusMessage(`Unable to clear ${card.title}.`);
+    } finally {
+      setBusyCacheCardId(null);
+    }
+  };
+
+  const replaceCacheCardValue = async (card: CacheCard) => {
+    const draft = String(cacheEditorDraftByCardId[card.id] || '').trim();
+    if (!draft) {
+      setStatusMessage(`Enter JSON before replacing ${card.title}.`);
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(draft);
+    } catch {
+      setStatusMessage(`Invalid JSON for ${card.title}.`);
+      return;
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      setStatusMessage(`${card.title} must be a JSON object.`);
+      return;
+    }
+
+    try {
+      setBusyCacheCardId(card.id);
+
+      if (card.kind === 'runtime') {
+        const replaced = replacePluginResolverCacheByKey(card.key, parsed);
+        if (!replaced) {
+          throw new Error('runtime cache replace failed');
+        }
+      } else {
+        const key = card.key as CacheViewKey;
+        if (key === 'jikanCache') {
+          await setStoredValue('jikanCache', parsed as Record<string, never>);
+        } else if (key === 'animeScheduleCache') {
+          await setStoredValue('animeScheduleCache', parsed as Record<string, never>);
+        } else if (key === 'sourceResolveCache') {
+          await setStoredValue('sourceResolveCache', parsed as Record<string, never>);
+        } else if (key === 'aniSkipCache') {
+          await setStoredValue('aniSkipCache', parsed as Record<string, never>);
+        } else if (key === 'jikanMeta') {
+          await setStoredValue('jikanMeta', parsed as Record<string, string | number | boolean>);
+        } else if (key === 'animeScheduleMeta') {
+          await setStoredValue('animeScheduleMeta', parsed as Record<string, string | number | boolean>);
+        }
+      }
+
+      const snapshot = await loadCacheSnapshot();
+      setCacheSnapshot(snapshot);
+      setCacheEditorDraftByCardId(createCacheEditorDrafts(snapshot));
+      setStatusMessage(`${card.title} replaced.`);
+    } catch {
+      setStatusMessage(`Unable to replace ${card.title}.`);
     } finally {
       setBusyCacheCardId(null);
     }
@@ -857,16 +934,41 @@ export default function SettingsModal() {
                       <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">{card.title}</p>
                       <p className="text-xs text-cream/60">{card.description}</p>
                     </div>
-                    <button
-                      type="button"
-                      className="settings-action-btn retro-tooltip"
-                      onClick={() => void clearCacheCard(card)}
-                      disabled={busyCacheCardId === card.id}
-                      data-tooltip={busyCacheCardId === card.id ? 'Clearing cache' : `Clear ${card.title}`}
-                    >
-                      <Trash2 size={14} />
-                      {busyCacheCardId === card.id ? 'Clearing...' : 'Clear'}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="settings-action-btn retro-tooltip"
+                        onClick={() => void replaceCacheCardValue(card)}
+                        disabled={busyCacheCardId === card.id}
+                        data-tooltip={busyCacheCardId === card.id ? 'Replacing cache' : `Replace ${card.title}`}
+                      >
+                        {busyCacheCardId === card.id ? 'Replacing...' : 'Replace'}
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-action-btn retro-tooltip"
+                        onClick={() => void clearCacheCard(card)}
+                        disabled={busyCacheCardId === card.id}
+                        data-tooltip={busyCacheCardId === card.id ? 'Clearing cache' : `Clear ${card.title}`}
+                      >
+                        <Trash2 size={14} />
+                        {busyCacheCardId === card.id ? 'Clearing...' : 'Clear'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/65">Replace Value (JSON Object)</p>
+                    <textarea
+                      className="h-32 w-full rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-xs text-cream outline-none focus:border-amberline"
+                      value={cacheEditorDraftByCardId[card.id] ?? stringifyCacheValue(cacheSnapshot[card.key])}
+                      onChange={(event) =>
+                        setCacheEditorDraftByCardId((previous) => ({
+                          ...previous,
+                          [card.id]: event.target.value,
+                        }))
+                      }
+                      spellCheck={false}
+                    />
                   </div>
                   {findVideoToken(cacheSnapshot[card.key]) && (
                     <div className="mt-2 rounded-lg border border-cream/10 bg-black/20 px-2 py-1 text-[11px] text-cream/70">

@@ -48,6 +48,19 @@ export function clearPluginResolverCacheByKey(cacheKey: string): boolean {
   return Reflect.deleteProperty(globalThis, trimmed);
 }
 
+export function replacePluginResolverCacheByKey(cacheKey: string, value: unknown): boolean {
+  const trimmed = String(cacheKey || '').trim();
+  if (!trimmed || !isPluginRuntimeCacheKey(trimmed)) return false;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+
+  try {
+    (globalThis as Record<string, unknown>)[trimmed] = value;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function clearPluginResolverCaches(): void {
   compiledResolverCache.clear();
 
