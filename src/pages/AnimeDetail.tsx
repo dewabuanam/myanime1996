@@ -1,12 +1,15 @@
 import { CalendarDays, Clapperboard, Clock3, Flame, Heart, Play, Star, Trophy } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { getAnimeDetailEpisodeBundle } from '../services/animeDetailEpisodes';
+import SeasonLinkBadge from '../components/SeasonLinkBadge';
+import { FALLBACK_PAGE_SIZE, getAnimeDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import { getAnimeEpisodeById } from '../services/jikan';
 import { useAppStore } from '../state/appStore';
 import type { AnimeDetail as AnimeDetailType, AnimeEpisode, AnimeEpisodePagination } from '../types/anime';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
+import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import { parseReleaseTimestamp } from '../utils/releaseTime';
+import { resolveAnimeSeason } from '../utils/season';
 import { getDisplayTitle } from '../utils/title';
 
 function formatDuration(durationMinutes?: number, aired?: string) {
@@ -53,6 +56,8 @@ export default function AnimeDetail() {
   const toggleFavorite = useAppStore((state) => state.toggleFavorite);
   const favorites = useAppStore((state) => state.favorites);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
+  const seasonMeta = useMemo(() => (anime ? resolveAnimeSeason(anime) : null), [anime]);
+  const episodeTotalLabel = useMemo(() => (anime ? formatEpisodeTotalLabel(anime.episodes, anime.status) : '?/?'), [anime]);
 
   const queryEpisode = useMemo(() => {
     const raw = Number(searchParams.get('episode'));
@@ -124,7 +129,7 @@ export default function AnimeDetail() {
   useEffect(() => {
     if (!queryEpisode) return;
     if (!episodes.some((entry) => entry.episodeNumber === queryEpisode)) {
-      const targetPage = Math.max(1, Math.floor((queryEpisode - 1) / 25) + 1);
+      const targetPage = Math.max(1, Math.floor((queryEpisode - 1) / FALLBACK_PAGE_SIZE) + 1);
       if (targetPage !== episodePage) {
         setEpisodePage(targetPage);
       }
@@ -157,11 +162,12 @@ export default function AnimeDetail() {
               <Star size={12} className="text-amberline" /> {anime.score?.toFixed(1) ?? 'N/A'}
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Total Episodes">
-              <Clapperboard size={12} className="text-amberline" /> {anime.episodes ?? '?'}
+              <Clapperboard size={12} className="text-amberline" /> {episodeTotalLabel}
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Broadcast Year">
               <CalendarDays size={12} className="text-amberline" /> {anime.year ?? 'TBA'}
             </span>
+            {seasonMeta ? <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="full" showLabel /> : null}
             <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Episode Duration">
               <Clock3 size={12} className="text-amberline" /> {anime.duration || formatDuration(anime.durationMinutes)}
             </span>

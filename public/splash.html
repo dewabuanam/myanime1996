@@ -55,6 +55,14 @@
         color: rgba(236, 183, 104, 0.75);
       }
 
+      .logo {
+        display: block;
+        width: min(12rem, 60vw);
+        height: auto;
+        margin: 0 auto 1rem;
+        filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.42));
+      }
+
       .title {
         margin: 0.9rem 0 0;
         font-size: 1.8rem;
@@ -102,6 +110,7 @@
   <body>
     <main class="wrap">
       <section class="panel">
+        <img src="/assets/logo.png" alt="My Anime 1996" class="logo" />
         <p class="tag">My Anime 1996</p>
         <h1 class="title">Booting Archive</h1>
         <p class="desc">Loading library, playback queue, and plugins</p>

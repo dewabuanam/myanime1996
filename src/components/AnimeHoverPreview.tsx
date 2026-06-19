@@ -1,9 +1,11 @@
-import { History, Info, ListPlus, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { History, Info, ListPlus, Play, RotateCcw, Star, Users, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import SeasonLinkBadge from './SeasonLinkBadge';
 import { getAnimeTrailerUrl } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
 import type { AnimeSummary } from '../types/anime';
+import { resolveAnimeSeason } from '../utils/season';
 import { getDisplayTitle } from '../utils/title';
 
 type AnimeHoverPreviewProps = {
@@ -34,6 +36,11 @@ const PREVIEW_MARGIN = 12;
 const HIDE_DELAY_MS = 160;
 
 const YOUTUBE_EMBED_HOST = 'www.youtube-nocookie.com';
+
+const formatCompactCount = (value?: number) => {
+  if (!value || value <= 0) return 'N/A';
+  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+};
 
 const toAutoplayEmbedUrl = (url?: string, muted = false) => {
   if (!url) return '';
@@ -122,6 +129,11 @@ export default function AnimeHoverPreview({
   const trailerUrl = useMemo(() => toAutoplayEmbedUrl(resolvedTrailerUrl, true), [resolvedTrailerUrl]);
   const displayTitle = useMemo(() => getDisplayTitle(anime, titleLanguage), [anime, titleLanguage]);
   const japaneseTitle = anime.titleJapanese?.trim() ?? '';
+  const seasonMeta = useMemo(() => resolveAnimeSeason(anime), [anime]);
+  const statusLabel = anime.status?.trim() || 'Currently Airing';
+  const genreBadges = (anime.genres?.length ? anime.genres.slice(0, 3) : ['Anime']);
+  const scoreLabel = anime.score?.toFixed(1) ?? 'N/A';
+  const memberLabel = formatCompactCount(anime.members);
   const fallbackVisual = anime.banner?.trim() || anime.image;
 
   useEffect(() => {
@@ -314,27 +326,38 @@ export default function AnimeHoverPreview({
             >
               {isPreviewMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
             </button>
-            {onPlayTrailer ? (
-              <button
-                type="button"
-                className="anime-hover-trailer-play-btn retro-tooltip"
-                onClick={onPlayTrailer}
-                aria-label="Play trailer"
-                data-tooltip="Play Trailer"
-              >
-                <Play size={14} />
-              </button>
-            ) : null}
           </>
         ) : (
           <img src={fallbackVisual} alt="" className="anime-hover-preview-poster" />
         )}
+        {onPlayTrailer ? (
+          <button
+            type="button"
+            className="anime-hover-trailer-play-btn retro-tooltip"
+            onClick={onPlayTrailer}
+            aria-label="Play trailer"
+            data-tooltip="Play Trailer"
+          >
+            <Play size={14} />
+          </button>
+        ) : null}
+        {episodeLabel ? <span className="anime-hover-preview-episode-overlay">{episodeLabel}</span> : null}
         {posterOverlayLabel ? <span className="anime-card-poster-overlay-badge">{posterOverlayLabel}</span> : null}
       </div>
 
       <div className="anime-hover-preview-body">
-        <p className="anime-hover-preview-title line-clamp-2" title={displayTitle}>{displayTitle}</p>
-        {japaneseTitle && <p className="anime-hover-preview-japanese line-clamp-1" title={japaneseTitle}>{japaneseTitle}</p>}
+        <div className="anime-hover-preview-top-row">
+          <div className="min-w-0">
+            <p className="anime-hover-preview-title line-clamp-2" title={displayTitle}>{displayTitle}</p>
+            {japaneseTitle && <p className="anime-hover-preview-japanese line-clamp-1" title={japaneseTitle}>{japaneseTitle}</p>}
+          </div>
+          <div className="anime-hover-preview-score-stack">
+            <span className="anime-hover-preview-score"><Star size={11} className="fill-amberline" /> {scoreLabel}</span>
+            <span className="anime-hover-preview-members retro-tooltip" data-tooltip={anime.members ? `${anime.members.toLocaleString('en-US')} Members` : 'Members unavailable'}>
+              <Users size={10} className="text-amberline" /> {memberLabel}
+            </span>
+          </div>
+        </div>
 
         <div className="anime-hover-preview-actions">
           {canPlayAnime && onPlay ? (
@@ -363,11 +386,13 @@ export default function AnimeHoverPreview({
           </button>
         </div>
 
-        <p className="anime-hover-preview-episode">{episodeLabel}</p>
-        {mediaLabel ? <p className="anime-hover-preview-media-type">{mediaLabel}</p> : null}
-        <p className="anime-hover-preview-genres">
-          {(anime.genres?.length ? anime.genres.slice(0, 3) : ['Anime']).join(' • ')}
-        </p>
+        {seasonMeta ? <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="full" showLabel className="anime-hover-preview-season" /> : null}
+        <p className="anime-hover-preview-status">{statusLabel}</p>
+        <div className="anime-hover-preview-genres">
+          {genreBadges.map((genre) => (
+            <span key={genre} className="anime-hover-preview-genre-badge">{genre}</span>
+          ))}
+        </div>
       </div>
     </div>
   ) : null;

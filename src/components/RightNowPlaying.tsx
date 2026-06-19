@@ -33,6 +33,7 @@ const FULLSCREEN_OVERLAY_HIDE_MS = 2000;
 const MAX_REASONABLE_MAL_ID = 2_000_000;
 const VOLUME_STEP = 5;
 const SUBTITLE_OFF_ID = '__off__';
+const TRAILER_FINDING_SIGNAL_TIMEOUT_MS = 30_000;
 
 function isEditableKeyboardTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -133,6 +134,7 @@ export default function RightNowPlaying() {
     Record<number, { iconDataUri: string; pluginName: string }>
   >({});
   const [isPaneLayoutMenuOpen, setIsPaneLayoutMenuOpen] = useState(false);
+  const [hasTrailerFindingSignalTimedOut, setHasTrailerFindingSignalTimedOut] = useState(false);
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(() =>
     typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false,
   );
@@ -144,6 +146,8 @@ export default function RightNowPlaying() {
   );
 
   const hasTrailerPlayback = currentlyPlayingItem?.kind === 'trailer' && Boolean(trailerVideoId);
+  const isResolvingTrailerSignal =
+    currentlyPlayingItem?.kind === 'trailer' && !hasTrailerPlayback && !hasTrailerFindingSignalTimedOut;
   const isNonTrailerPlayback = Boolean(currentlyPlayingItem && currentlyPlayingItem.kind !== 'trailer');
   const isNowPlayingView = rightPanelView === 'now-playing';
   const isDetailView = rightPanelView === 'detail';
@@ -203,6 +207,27 @@ export default function RightNowPlaying() {
       return haystack.includes(term);
     });
   }, [detailEpisodeSearchQuery, detailEpisodes]);
+
+  useEffect(() => {
+    if (currentlyPlayingItem?.kind !== 'trailer') {
+      setHasTrailerFindingSignalTimedOut(false);
+      return;
+    }
+
+    if (hasTrailerPlayback) {
+      setHasTrailerFindingSignalTimedOut(false);
+      return;
+    }
+
+    setHasTrailerFindingSignalTimedOut(false);
+    const timeoutId = window.setTimeout(() => {
+      setHasTrailerFindingSignalTimedOut(true);
+    }, TRAILER_FINDING_SIGNAL_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentlyPlayingItem?.id, currentlyPlayingItem?.kind, hasTrailerPlayback]);
 
   const queueUpcoming = useMemo(() => {
     if (!queue.length) return [];
@@ -839,7 +864,10 @@ export default function RightNowPlaying() {
         return;
       }
 
-      setDetailAnime(payload.detail);
+      setDetailAnime({
+        ...payload.detail,
+        members: payload.detail.members ?? detail.members,
+      });
       setDetailEpisodes(payload.episodes);
       setDetailEpisodePagination(payload.pagination);
       setDetailExpandedEpisode(null);
@@ -1364,12 +1392,16 @@ export default function RightNowPlaying() {
           {autoSkipToastLabel ? <div className="skip-toast">{`Skipped ${autoSkipToastLabel}`}</div> : null}
           <div className={`right-now-video-frame w-full ${isRightPanelFullpage ? 'right-now-video-frame-full' : 'aspect-video'}`}>
             <div ref={trailerPlayerMountRef} className={`right-now-video-player ${hasTrailerPlayback ? '' : 'hidden'}`} />
-            {hasTrailerPlayback ? null : isResolvingSource ? (
+            {hasTrailerPlayback ? null : isResolvingSource || isResolvingTrailerSignal ? (
               <div className="right-now-no-signal">
                 <div className="right-now-no-signal-crt right-now-finding-signal-crt" aria-hidden="true" />
                 <div className="right-now-no-signal-badge">
                   <p className="right-now-no-signal-title">Finding Signal</p>
-                  <p className="right-now-no-signal-subtitle">Scanning plugins by priority for a playable source.</p>
+                  <p className="right-now-no-signal-subtitle">
+                    {isResolvingTrailerSignal
+                      ? 'Scanning Jikan trailer signal for a playable stream.'
+                      : 'Scanning plugins by priority for a playable source.'}
+                  </p>
                   <p className="right-now-no-signal-meta">{fallbackTypeLabel}</p>
                 </div>
               </div>

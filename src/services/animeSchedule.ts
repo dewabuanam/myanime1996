@@ -4,8 +4,11 @@ import { getStoredValue, setStoredValue } from './store';
 import {
   getAnimeDetails as getJikanAnimeDetails,
   getLatestPromoAnime as getJikanLatestPromoAnime,
+  getTopAnime as getJikanTopAnime,
+  getTopAiringAnime as getJikanTopAiringAnime,
   getTopUpcomingAnime as getJikanTopUpcomingAnime,
 } from './jikan';
+import { inferSeasonFromDate, normalizeSeasonKey } from '../utils/season';
 
 const BASE_URL = 'https://animeschedule.net/api/v3';
 const IMAGE_BASE_URL = 'https://img.animeschedule.net/production/assets/public/img/';
@@ -31,6 +34,16 @@ type AnimeScheduleRateLimitListener = (event: AnimeScheduleRateLimitEvent) => vo
 type CacheFetchOptions<T> = {
   onUpdate?: (value: T) => void;
   forceRefresh?: boolean;
+  upcomingSeasonFilter?: 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
+  upcomingRating?: 'g' | 'pg' | 'pg13' | 'r17' | 'r' | 'rx';
+  topAnimeType?: 'TV' | 'OVA' | 'Movie' | 'Special' | 'ONA' | 'Music' | 'CM' | 'PV' | 'TV Special';
+  topAnimeRating?: 'g' | 'pg' | 'pg13' | 'r17' | 'r' | 'rx';
+  seasonYear?: number;
+  season?: 'winter' | 'spring' | 'summer' | 'fall';
+  seasonFilter?: 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
+  seasonContinuing?: boolean;
+  seasonPageLimit?: number;
+  seasonPageCount?: number;
 };
 
 type AnimeScheduleNormalizeOptions = {
@@ -103,7 +116,15 @@ export async function clearAnimeScheduleDataCache() {
   ]);
 }
 
-const cacheKey = (path: string) => `animeschedule:${path}`;
+function getLocalDateBucket() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+const cacheKey = (path: string) => `animeschedule:${path}|day:${getLocalDateBucket()}`;
 
 const isSamePayload = <T>(a: T, b: T) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -321,6 +342,16 @@ function parseYearFromText(value?: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function parseSeasonFromText(value?: string) {
+  if (!value) return undefined;
+  const lowered = value.toLowerCase();
+  if (lowered.includes('winter')) return 'winter';
+  if (lowered.includes('spring')) return 'spring';
+  if (lowered.includes('summer')) return 'summer';
+  if (lowered.includes('fall') || lowered.includes('autumn')) return 'fall';
+  return undefined;
+}
+
 function toAbsoluteImageUrl(value?: string) {
   if (!value) return undefined;
   const trimmed = value.trim();
@@ -449,6 +480,7 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
   const episodes = getNumber(record, ['episodeNumber', 'episode', 'airingEpisode']) ?? getNumber(media, ['episodes']);
   const durationMinutes = getNumber(media, ['duration', 'lengthMin']) ?? getNumber(record, ['episodeDuration', 'lengthMin']);
   const score = getNumber(toRecord(record.stats), ['averageScore', 'score']) ?? getNumber(media, ['score', 'averageScore']);
+  const members = getNumber(toRecord(record.stats), ['trackedCount']);
 
   // For timetable-driven shelves, episodeDate must be the primary release timestamp.
   const startDateText =
@@ -462,6 +494,12 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
     getNumber(record, ['year']) ??
     (startDate && Number.isFinite(startDate.getUTCFullYear()) ? startDate.getUTCFullYear() : undefined) ??
     parseYearFromText(getString(toRecord(record.season), ['title']));
+  const seasonTitle = getString(toRecord(record.season), ['title']);
+  const season =
+    parseSeasonFromText(seasonTitle) ??
+    normalizeSeasonKey(getString(record, ['season'])) ??
+    normalizeSeasonKey(getString(media, ['season'])) ??
+    inferSeasonFromDate(normalizedStartDateText)?.season;
 
   const mediaType = getString(media, ['format', 'type']) || getString(toRecord((record.mediaTypes as unknown[] | undefined)?.[0]), ['name']);
   const status = getString(record, ['status', 'airType']) || getString(media, ['status']) || 'Latest update';
@@ -488,7 +526,10 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
     banner,
     synopsis,
     score,
+    members,
     year,
+    season,
+    seasonYear: year,
     // Store the normalized (UTC-anchored) timestamp so all downstream
     // sorting/filtering by airingDate is consistent and timezone-safe.
     airingDate: normalizedStartDateText,
@@ -518,6 +559,7 @@ function toAnimeDetail(raw: unknown): AnimeDetail | null {
     source,
     rank: undefined,
     popularity: getNumber(toRecord(record?.stats), ['trackedCount']),
+    members: getNumber(toRecord(record?.stats), ['trackedCount']),
     aired: seasonTitle || getString(record, ['premier', 'subPremier', 'dubPremier']) || getString(websites, ['official']),
   };
 
@@ -692,6 +734,31 @@ async function getAnimeScheduleAnimePage(page = 1, pageSize = DEFAULT_LIST_PAGE_
   );
 }
 
+async function collectAnimeScheduleAnimeCandidates(
+  minimumCount: number,
+  normalizeOptions: AnimeScheduleNormalizeOptions = {},
+  maxPages = 4,
+) {
+  const target = Math.max(DEFAULT_LIST_PAGE_SIZE, Math.floor(minimumCount));
+  const seen = new Set<number>();
+  const collected: AnimeSummary[] = [];
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const items = await getAnimeScheduleAnimePage(page, DEFAULT_LIST_PAGE_SIZE, normalizeOptions);
+    if (!items.length) break;
+
+    for (const anime of items) {
+      if (seen.has(anime.id)) continue;
+      seen.add(anime.id);
+      collected.push(anime);
+    }
+
+    if (collected.length >= target) break;
+  }
+
+  return collected;
+}
+
 function sortByScore(list: AnimeSummary[]) {
   return [...list].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 }
@@ -719,6 +786,12 @@ function getIsoWeekAndYear(date = new Date()) {
 }
 
 export async function getAnimeScheduleTopAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
+  try {
+    return await getJikanTopAnime(limit, options);
+  } catch {
+    // Fallback to AnimeSchedule-derived popular list when Jikan is unavailable.
+  }
+
   const page = await getAnimeScheduleAnimePage(1, Math.max(limit * 3, DEFAULT_LIST_PAGE_SIZE));
   const sorted = sortByScore(page).slice(0, Math.max(1, Math.floor(limit)));
   options?.onUpdate?.(sorted);
@@ -729,23 +802,56 @@ export async function getAnimeScheduleSeasonalAnime(limit = 10, options?: CacheF
   const now = new Date();
   const season = currentSeasonName(now.getMonth());
   const year = now.getFullYear();
-  const page = await getAnimeScheduleAnimePage(1, Math.max(limit * 4, DEFAULT_LIST_PAGE_SIZE));
-  const seasonal = page.filter((anime) => {
+  const candidates = await collectAnimeScheduleAnimeCandidates(Math.max(limit * 8, DEFAULT_LIST_PAGE_SIZE));
+  const seasonal = candidates.filter((anime) => {
     const hasYear = anime.year === year;
     const status = anime.status?.toLowerCase() ?? '';
-    const isActive = status.includes('ongoing') || status.includes('air');
-    return hasYear || isActive || (anime.synopsis.toLowerCase().includes(season) && anime.year === year);
+    const isActive = status.includes('ongoing') || status.includes('air') || status.includes('currently');
+    const hasSeasonMention = anime.synopsis.toLowerCase().includes(season);
+    const releaseTimestamp = getReleaseTimestamp(anime.airingDate);
+    const isThisYearByDate = Number.isFinite(releaseTimestamp) && new Date(releaseTimestamp).getFullYear() === year;
+    return hasYear || isThisYearByDate || isActive || (hasSeasonMention && hasYear);
   });
-  const result = seasonal.slice(0, Math.max(1, Math.floor(limit)));
+  const result = seasonal
+    .sort((a, b) => {
+      const byScore = (b.score ?? 0) - (a.score ?? 0);
+      if (byScore !== 0) return byScore;
+      return getReleaseTimestamp(b.airingDate) - getReleaseTimestamp(a.airingDate);
+    })
+    .slice(0, Math.max(1, Math.floor(limit)));
   options?.onUpdate?.(result);
   return result;
 }
 
 export async function getAnimeScheduleTopAiringAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
-  const page = await getAnimeScheduleAnimePage(1, Math.max(limit * 4, DEFAULT_LIST_PAGE_SIZE));
-  const airing = sortByScore(page.filter((anime) => (anime.status?.toLowerCase() ?? '').includes('ongoing'))).slice(0, Math.max(1, Math.floor(limit)));
-  options?.onUpdate?.(airing);
-  return airing;
+  try {
+    return await getJikanTopAiringAnime(limit, options);
+  } catch {
+    // Fallback to AnimeSchedule-derived airing list when Jikan is unavailable.
+  }
+
+  const candidates = await collectAnimeScheduleAnimeCandidates(Math.max(limit * 8, DEFAULT_LIST_PAGE_SIZE));
+  const airing = sortByScore(
+    candidates.filter((anime) => {
+      const status = anime.status?.toLowerCase() ?? '';
+      return status.includes('ongoing') || status.includes('airing') || status.includes('currently');
+    }),
+  ).slice(0, Math.max(1, Math.floor(limit)));
+
+  if (airing.length >= Math.max(1, Math.floor(limit))) {
+    options?.onUpdate?.(airing);
+    return airing;
+  }
+
+  const fallback = sortByScore(
+    candidates.filter((anime) => {
+      const timestamp = getReleaseTimestamp(anime.airingDate);
+      return Number.isFinite(timestamp) && timestamp <= Date.now();
+    }),
+  ).slice(0, Math.max(1, Math.floor(limit)));
+
+  options?.onUpdate?.(fallback);
+  return fallback;
 }
 
 export async function getAnimeScheduleTopUpcomingAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
@@ -755,13 +861,25 @@ export async function getAnimeScheduleTopUpcomingAnime(limit = 10, options?: Cac
     // Fallback to AnimeSchedule-derived upcoming list when Jikan is unavailable.
   }
 
-  const page = await getAnimeScheduleAnimePage(1, Math.max(limit * 4, DEFAULT_LIST_PAGE_SIZE));
+  const rawUpcomingFilter = options?.upcomingSeasonFilter ?? await getStoredValue('upcomingSeasonFilter', 'all');
+  const upcomingMediaFilter = typeof rawUpcomingFilter === 'string' ? rawUpcomingFilter.trim().toLowerCase() : 'all';
+
+  const page = await collectAnimeScheduleAnimeCandidates(Math.max(limit * 8, DEFAULT_LIST_PAGE_SIZE));
   const now = Date.now();
   const upcoming = page
     .filter((anime) => {
       const status = anime.status?.toLowerCase() ?? '';
-      if (status.includes('upcoming') || status.includes('not yet')) return true;
+      if (status.includes('upcoming') || status.includes('not yet')) {
+        if (upcomingMediaFilter === 'all') return true;
+        const mediaType = anime.mediaType?.trim().toLowerCase() ?? '';
+        return mediaType === upcomingMediaFilter;
+      }
       return Boolean(anime.year && anime.year >= new Date(now).getFullYear());
+    })
+    .filter((anime) => {
+      if (upcomingMediaFilter === 'all') return true;
+      const mediaType = anime.mediaType?.trim().toLowerCase() ?? '';
+      return mediaType === upcomingMediaFilter;
     })
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
     .slice(0, Math.max(1, Math.floor(limit)));
@@ -796,7 +914,9 @@ export async function getAnimeScheduleLatestPromoAnime(limit = 10, options?: Cac
     }
   }
 
-  const result = Array.from(merged.values()).slice(0, safeLimit);
+  const result = Array.from(merged.values())
+    .sort((a, b) => getReleaseTimestamp(b.airingDate) - getReleaseTimestamp(a.airingDate))
+    .slice(0, safeLimit);
   options?.onUpdate?.(result);
   return result;
 }
@@ -879,6 +999,7 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
       !detail.rating ||
       !detail.rank ||
       !detail.popularity ||
+      !detail.members ||
       !detail.aired ||
       !detail.source
     )
@@ -894,6 +1015,7 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
       detail.rating = detail.rating || jikanDetail.rating;
       detail.rank = detail.rank ?? jikanDetail.rank;
       detail.popularity = detail.popularity ?? jikanDetail.popularity;
+      detail.members = detail.members ?? jikanDetail.members;
       detail.aired = detail.aired || jikanDetail.aired;
       detail.source = detail.source || jikanDetail.source;
     } catch {

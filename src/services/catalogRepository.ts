@@ -1,4 +1,5 @@
 import type { AnimeDetail, AnimeSummary } from '../types/anime';
+import { sortByScoreThenPopularity } from '../utils/animeRanking';
 import { parseReleaseTimestamp } from '../utils/releaseTime';
 import { getStoredValue } from './store';
 import { animeScheduleCatalogProvider } from './providers/animeScheduleCatalogProvider';
@@ -63,6 +64,11 @@ function shapeUpcomingUpdatedList(items: AnimeSummary[]) {
   return deduped.sort((a, b) => getAiringTimestamp(a) - getAiringTimestamp(b));
 }
 
+function shapeLatestPromoList(items: AnimeSummary[]) {
+  const deduped = dedupeAnimeList(items);
+  return deduped.sort((a, b) => getAiringTimestamp(b) - getAiringTimestamp(a));
+}
+
 async function getPreferredProvider() {
   const value = await getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE);
   return value === 'jikan' ? jikanCatalogProvider : animeScheduleCatalogProvider;
@@ -85,21 +91,60 @@ export async function getBaseCatalogSourceSetting(): Promise<BaseCatalogSource> 
 }
 
 export async function getTopAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
+  const safeLimit = Math.max(1, Math.floor(limit));
   const preferred = await getPreferredProvider();
-  if (preferred === jikanCatalogProvider) {
-    return dedupeAnimeList(await jikanCatalogProvider.getTopAnime(limit, options));
+  const hasPopularFilters = Boolean(options?.topAnimeType || options?.topAnimeRating);
+
+  const primary = dedupeAnimeList(await jikanCatalogProvider.getTopAnime(limit, options).catch(() => []));
+  if (primary.length >= Math.max(3, Math.floor(safeLimit / 2))) {
+    return primary.slice(0, safeLimit);
   }
-  return dedupeAnimeList(await runWithFallback(
-    () => preferred.getTopAnime(limit, options),
-    () => jikanCatalogProvider.getTopAnime(limit, options),
-  ));
+
+  if (hasPopularFilters) {
+    return primary.slice(0, safeLimit);
+  }
+
+  if (preferred === jikanCatalogProvider) {
+    return primary.slice(0, safeLimit);
+  }
+
+  const fallback = dedupeAnimeList(await preferred.getTopAnime(limit, options).catch(() => []));
+  return dedupeAnimeList([...primary, ...fallback]).slice(0, safeLimit);
 }
 
 export async function getSeasonalAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
-  const preferred = await getPreferredProvider();
-  if (preferred === jikanCatalogProvider) {
-    return dedupeAnimeList(await jikanCatalogProvider.getSeasonalAnime(limit, options));
+  const isSeasonTargetedRequest = Boolean(
+    options?.season ||
+    options?.seasonYear ||
+    options?.seasonFilter ||
+    options?.seasonContinuing !== undefined,
+  );
+
+  if (isSeasonTargetedRequest) {
+    const targeted = dedupeAnimeList(await runWithFallback(
+      () => jikanCatalogProvider.getSeasonalAnime(limit, options),
+      () => animeScheduleCatalogProvider.getSeasonalAnime(limit, options),
+    ));
+    return targeted.slice(0, Math.max(1, Math.floor(limit)));
   }
+
+  const preferred = await getPreferredProvider();
+  const [animeScheduleSeasonal, providerSeasonal, jikanSeasonal] = await Promise.all([
+    animeScheduleCatalogProvider.getSeasonalAnime(limit, options).catch(() => []),
+    preferred.getSeasonalAnime(limit, options).catch(() => []),
+    jikanCatalogProvider.getSeasonalAnime(limit, options).catch(() => []),
+  ]);
+
+  const merged = dedupeAnimeList([
+    ...animeScheduleSeasonal,
+    ...providerSeasonal,
+    ...jikanSeasonal,
+  ]);
+
+  if (merged.length > 0) {
+    return merged.slice(0, Math.max(1, Math.floor(limit)));
+  }
+
   return dedupeAnimeList(await runWithFallback(
     () => preferred.getSeasonalAnime(limit, options),
     () => jikanCatalogProvider.getSeasonalAnime(limit, options),
@@ -150,35 +195,67 @@ export async function getUpcomingUpdatedAnime(limit = 10, options?: CacheFetchOp
 
 export async function getLatestPromoAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   const preferred = await getPreferredProvider();
+  const promoOptions: CacheFetchOptions<AnimeSummary[]> | undefined = options
+    ? {
+        ...options,
+        onUpdate: (value) => {
+          options.onUpdate?.(shapeLatestPromoList(value));
+        },
+      }
+    : undefined;
+
   if (preferred === jikanCatalogProvider) {
-    return dedupeAnimeList(await jikanCatalogProvider.getLatestPromoAnime(limit, options));
+    return shapeLatestPromoList(dedupeAnimeList(await jikanCatalogProvider.getLatestPromoAnime(limit, promoOptions)));
   }
-  return dedupeAnimeList(await runWithFallback(
-    () => preferred.getLatestPromoAnime(limit, options),
-    () => jikanCatalogProvider.getLatestPromoAnime(limit, options),
+  const primary = dedupeAnimeList(await runWithFallback(
+    () => preferred.getLatestPromoAnime(limit, promoOptions),
+    () => jikanCatalogProvider.getLatestPromoAnime(limit, promoOptions),
   ));
+  if (primary.length >= Math.max(3, Math.floor(limit / 2))) return shapeLatestPromoList(primary);
+  const fallback = dedupeAnimeList(await jikanCatalogProvider.getLatestPromoAnime(limit, promoOptions).catch(() => []));
+  return shapeLatestPromoList(dedupeAnimeList([...primary, ...fallback])).slice(0, Math.max(1, Math.floor(limit)));
 }
 
 export async function getTopAiringAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   const preferred = await getPreferredProvider();
   if (preferred === jikanCatalogProvider) {
-    return dedupeAnimeList(await jikanCatalogProvider.getTopAiringAnime(limit, options));
+    const primary = dedupeAnimeList(await jikanCatalogProvider.getTopAiringAnime(limit, options));
+    if (primary.length >= Math.max(3, Math.floor(limit / 2))) {
+      return sortByScoreThenPopularity(primary).slice(0, Math.max(1, Math.floor(limit)));
+    }
+    const fallback = dedupeAnimeList(await animeScheduleCatalogProvider.getTopAiringAnime(limit, options).catch(() => []));
+    return sortByScoreThenPopularity(dedupeAnimeList([...primary, ...fallback])).slice(0, Math.max(1, Math.floor(limit)));
   }
-  return dedupeAnimeList(await runWithFallback(
+  const primary = dedupeAnimeList(await runWithFallback(
     () => preferred.getTopAiringAnime(limit, options),
     () => jikanCatalogProvider.getTopAiringAnime(limit, options),
   ));
+  if (primary.length >= Math.max(3, Math.floor(limit / 2))) {
+    return sortByScoreThenPopularity(primary).slice(0, Math.max(1, Math.floor(limit)));
+  }
+  const fallback = dedupeAnimeList(await jikanCatalogProvider.getTopAiringAnime(limit, options).catch(() => []));
+  return sortByScoreThenPopularity(dedupeAnimeList([...primary, ...fallback])).slice(0, Math.max(1, Math.floor(limit)));
 }
 
 export async function getTopUpcomingAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   const preferred = await getPreferredProvider();
   if (preferred === jikanCatalogProvider) {
-    return dedupeAnimeList(await jikanCatalogProvider.getTopUpcomingAnime(limit, options));
+    const primary = dedupeAnimeList(await jikanCatalogProvider.getTopUpcomingAnime(limit, options));
+    if (primary.length >= Math.max(3, Math.floor(limit / 2))) {
+      return sortByScoreThenPopularity(primary).slice(0, Math.max(1, Math.floor(limit)));
+    }
+    const fallback = dedupeAnimeList(await animeScheduleCatalogProvider.getTopUpcomingAnime(limit, options).catch(() => []));
+    return sortByScoreThenPopularity(dedupeAnimeList([...primary, ...fallback])).slice(0, Math.max(1, Math.floor(limit)));
   }
-  return dedupeAnimeList(await runWithFallback(
+  const primary = dedupeAnimeList(await runWithFallback(
     () => preferred.getTopUpcomingAnime(limit, options),
     () => jikanCatalogProvider.getTopUpcomingAnime(limit, options),
   ));
+  if (primary.length >= Math.max(3, Math.floor(limit / 2))) {
+    return sortByScoreThenPopularity(primary).slice(0, Math.max(1, Math.floor(limit)));
+  }
+  const fallback = dedupeAnimeList(await jikanCatalogProvider.getTopUpcomingAnime(limit, options).catch(() => []));
+  return sortByScoreThenPopularity(dedupeAnimeList([...primary, ...fallback])).slice(0, Math.max(1, Math.floor(limit)));
 }
 
 export async function searchAnime(query: string): Promise<AnimeSummary[]> {

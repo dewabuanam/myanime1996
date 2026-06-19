@@ -1,8 +1,10 @@
 import { Info, Play } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import HeroSeeAllMenu from '../components/HeroSeeAllMenu';
 import AnimeHoverPreview from '../components/AnimeHoverPreview';
 import AnimeShelfScrollable from '../components/AnimeShelfScrollable';
+import SeasonLinkBadge from '../components/SeasonLinkBadge';
 import {
   getLatestPromoAnime,
   getLatestUpdatedAnime,
@@ -21,9 +23,17 @@ import {
   getReleaseBadgeLabel,
   isUpcomingByReleaseTime,
 } from '../utils/releaseTime';
+import { compareByScoreThenPopularity } from '../utils/animeRanking';
+import { HOME_SHELF_TO_SEE_ALL_TYPE, type SeeAllSort, type SeeAllType } from '../utils/seeAll';
+import { buildSeasonSeeAllPath, getCurrentSeasonYear, getSeasonLabelUpper, resolveAnimeSeason } from '../utils/season';
 import { getDisplayTitle } from '../utils/title';
+import { TOP_AIRING_SHARED_FETCH_LIMIT, TOP_POPULAR_SHARED_FETCH_LIMIT, TOP_UPCOMING_SHARED_FETCH_LIMIT } from '../constants/catalogLimits';
 
 const SHELF_LIMIT = 20;
+const HOME_TOP_SHELF_LIMIT = TOP_POPULAR_SHARED_FETCH_LIMIT;
+const SEASON_PAGE_LIMIT = 10;
+const SEASON_PAGE_COUNT = 2;
+const SEASON_FETCH_LIMIT = SEASON_PAGE_LIMIT * SEASON_PAGE_COUNT;
 
 type ContinueWatchingItem = {
   source?: AnimeSummary;
@@ -157,13 +167,6 @@ const toAnimeSummary = (item: ShelfItem): AnimeSummary => {
   };
 };
 
-const seasonNameForMonth = (month: number) => {
-  if (month >= 3 && month <= 5) return 'Spring';
-  if (month >= 6 && month <= 8) return 'Summer';
-  if (month >= 9 && month <= 11) return 'Fall';
-  return 'Winter';
-};
-
 const isNotYetAired = (anime: AnimeSummary) => {
   if (isUpcomingByReleaseTime(anime.airingDate)) return true;
   const status = anime.status?.toLowerCase() ?? '';
@@ -180,13 +183,13 @@ const getPosterOverlayLabel = (anime: AnimeSummary, watchedCompleted = false) =>
 
 export default function Home() {
   const navigate = useNavigate();
+  const activeSeasonMeta = useMemo(() => getCurrentSeasonYear(), []);
   const [seasonal, setSeasonal] = useState<AnimeSummary[]>([]);
   const [popular, setPopular] = useState<AnimeSummary[]>([]);
   const [latestUpdated, setLatestUpdated] = useState<AnimeSummary[]>([]);
   const [upcomingUpdated, setUpcomingUpdated] = useState<AnimeSummary[]>([]);
   const [latestPromo, setLatestPromo] = useState<AnimeSummary[]>([]);
   const [topAiring, setTopAiring] = useState<AnimeSummary[]>([]);
-  const [topAnime, setTopAnime] = useState<AnimeSummary[]>([]);
   const [topUpcoming, setTopUpcoming] = useState<AnimeSummary[]>([]);
   const [featuredAnimeId, setFeaturedAnimeId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -225,6 +228,7 @@ export default function Home() {
     const mediaType = anime.mediaType?.trim();
     if (!mediaType) return 'TV';
     const normalized = mediaType.toLowerCase();
+    if (normalized === 'unapproved') return null;
     if (normalized === 'tv') return 'TV';
     if (normalized === 'movie') return 'MOVIE';
     if (normalized === 'ova') return 'OVA';
@@ -236,7 +240,11 @@ export default function Home() {
   const getMediaLabel = (mode: ShelfPlayableMode, anime: AnimeSummary, fallbackEpisode: number) => {
     if (mode === 'trailer') return 'Trailer';
     if (mode === 'episode') return `Episode ${String(Math.max(1, fallbackEpisode)).padStart(2, '0')}`;
-    return getAnimeMediaTypeLabel(anime);
+    const mediaTypeLabel = getAnimeMediaTypeLabel(anime);
+    if (mediaTypeLabel) return mediaTypeLabel;
+    const normalizedStatus = anime.status?.trim().toLowerCase() ?? '';
+    if (normalizedStatus.includes('continuing')) return 'CONTINUING';
+    return 'SERIES';
   };
 
   const getMetaLabel = (item: ShelfItem, shelfKey: string, anime: AnimeSummary) => {
@@ -246,14 +254,16 @@ export default function Home() {
     }
     if (shelfKey === 'latest') {
       const releaseDateTime = formatReleaseDateTime(anime.airingDate);
-      return releaseDateTime ? `Release ${releaseDateTime} local` : anime.status ?? 'Latest update';
+      return releaseDateTime ? `Release ${releaseDateTime}` : anime.status ?? 'Latest update';
     }
     if (shelfKey === 'upcoming-update') {
       const releaseDateTime = formatReleaseDateTime(anime.airingDate);
-      return releaseDateTime ? `Airs ${releaseDateTime} local` : anime.status ?? 'Upcoming update';
+      return releaseDateTime ? `Airs ${releaseDateTime}` : anime.status ?? 'Upcoming update';
     }
     if (shelfKey === 'promo') return anime.status ?? 'Latest promo';
-    if (shelfKey === 'upcoming') return anime.status ?? 'Upcoming';
+    if (shelfKey === 'upcoming') return anime.year ? `Year ${anime.year}` : 'Upcoming';
+    if (shelfKey === 'airing') return 'Top Airing';
+    if (shelfKey === 'season' || shelfKey === 'popular') return '';
     return anime.status ?? (anime.year ? `Year ${anime.year}` : '');
   };
 
@@ -269,7 +279,6 @@ export default function Home() {
     const onPopular = (value: AnimeSummary[]) => {
       if (!alive) return;
       setPopular(value);
-      setTopAnime(value);
     };
     const onLatestUpdated = (value: AnimeSummary[]) => {
       if (!alive) return;
@@ -309,18 +318,24 @@ export default function Home() {
     async function load() {
       try {
         const [seasonalData, popularData, latestUpdatedData, upcomingUpdatedData, latestPromoData, topAiringData, topUpcomingData] = await Promise.all([
-          getSeasonalAnime(SHELF_LIMIT, { onUpdate: onSeasonal }),
-          getTopAnime(SHELF_LIMIT, { onUpdate: onPopular }),
+          getSeasonalAnime(SEASON_FETCH_LIMIT, {
+            onUpdate: onSeasonal,
+            seasonYear: activeSeasonMeta.year,
+            season: activeSeasonMeta.season,
+            seasonPageLimit: SEASON_PAGE_LIMIT,
+            seasonPageCount: SEASON_PAGE_COUNT,
+            seasonContinuing: true,
+          }),
+          getTopAnime(TOP_POPULAR_SHARED_FETCH_LIMIT, { onUpdate: onPopular }),
           getLatestUpdatedAnime(SHELF_LIMIT, { onUpdate: onLatestUpdated }),
           getUpcomingUpdatedAnime(SHELF_LIMIT, { onUpdate: onUpcomingUpdated }),
           getLatestPromoAnime(SHELF_LIMIT, { onUpdate: onLatestPromo }),
-          getTopAiringAnime(SHELF_LIMIT, { onUpdate: onTopAiring }),
-          getTopUpcomingAnime(SHELF_LIMIT, { onUpdate: onTopUpcoming }),
+          getTopAiringAnime(TOP_AIRING_SHARED_FETCH_LIMIT, { onUpdate: onTopAiring }),
+          getTopUpcomingAnime(TOP_UPCOMING_SHARED_FETCH_LIMIT, { onUpdate: onTopUpcoming, upcomingSeasonFilter: 'all' }),
         ]);
         if (!alive) return;
         setSeasonal(seasonalData);
         setPopular(popularData);
-        setTopAnime(popularData);
         setLatestUpdated(latestUpdatedData);
         setUpcomingUpdated(upcomingUpdatedData);
         setLatestPromo(latestPromoData);
@@ -353,17 +368,17 @@ export default function Home() {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [homeRefreshVersion]);
+  }, [activeSeasonMeta.season, activeSeasonMeta.year, homeRefreshVersion]);
 
   const heroPool = useMemo(() => {
     const poolMap = new Map<number, AnimeSummary>();
-    [...seasonal, ...popular, ...latestUpdated, ...latestPromo, ...topAiring, ...topAnime, ...topUpcoming].forEach((anime) => {
+    [...seasonal, ...popular, ...latestUpdated, ...latestPromo, ...topAiring, ...topUpcoming].forEach((anime) => {
       if (!poolMap.has(anime.id)) {
         poolMap.set(anime.id, anime);
       }
     });
     return Array.from(poolMap.values());
-  }, [latestPromo, latestUpdated, popular, seasonal, topAiring, topAnime, topUpcoming]);
+  }, [latestPromo, latestUpdated, popular, seasonal, topAiring, topUpcoming]);
 
   useEffect(() => {
     if (!heroPool.length) {
@@ -386,13 +401,13 @@ export default function Home() {
 
   const animeLookup = useMemo(() => {
     const map = new Map<number, AnimeSummary>();
-    [...seasonal, ...popular, ...latestUpdated, ...latestPromo, ...topAiring, ...topAnime, ...topUpcoming].forEach((anime) => map.set(anime.id, anime));
+    [...seasonal, ...popular, ...latestUpdated, ...latestPromo, ...topAiring, ...topUpcoming].forEach((anime) => map.set(anime.id, anime));
     return map;
-  }, [latestPromo, latestUpdated, popular, seasonal, topAiring, topAnime, topUpcoming]);
+  }, [latestPromo, latestUpdated, popular, seasonal, topAiring, topUpcoming]);
 
   const animeIdentityLookup = useMemo(() => {
     const map = new Map<string, AnimeSummary>();
-    [...seasonal, ...popular, ...latestUpdated, ...latestPromo, ...topAiring, ...topAnime, ...topUpcoming].forEach((anime) => {
+    [...seasonal, ...popular, ...latestUpdated, ...latestPromo, ...topAiring, ...topUpcoming].forEach((anime) => {
       const keys = buildAnimeIdentityKeys(anime);
       keys.forEach((key) => {
         if (!map.has(key)) {
@@ -401,7 +416,7 @@ export default function Home() {
       });
     });
     return map;
-  }, [latestPromo, latestUpdated, popular, seasonal, topAiring, topAnime, topUpcoming]);
+  }, [latestPromo, latestUpdated, popular, seasonal, topAiring, topUpcoming]);
 
   const startWatching = async () => {
     if (!featured) return;
@@ -451,38 +466,34 @@ export default function Home() {
   }, [animeIdentityLookup, animeLookup, watchHistory]);
 
   const seasonLabel = useMemo(() => {
-    const now = new Date();
-    return `${seasonNameForMonth(now.getMonth())} ${now.getFullYear()}`;
-  }, []);
+    return `${getSeasonLabelUpper(activeSeasonMeta.season)} ${activeSeasonMeta.year}`;
+  }, [activeSeasonMeta.season, activeSeasonMeta.year]);
 
   const nextRelease = useMemo(() => upcomingUpdated.slice(0, SHELF_LIMIT), [upcomingUpdated]);
   const latestReleased = useMemo(() => latestUpdated.slice(0, SHELF_LIMIT), [latestUpdated]);
+  const sortedPopular = useMemo(() => [...popular].sort(compareByScoreThenPopularity), [popular]);
 
   const rawShelves = useMemo<ShelfConfig[]>(
     () => [
       { key: 'continue', title: 'Continue Watching', tooltip: 'View All Continue Watching', density: 5 as const, items: continueWatching, withProgress: true },
-      { key: 'season', title: `Current Season • ${seasonLabel}`, tooltip: 'View All Current Season', density: 6 as const, items: seasonal.slice(0, SHELF_LIMIT), withProgress: false },
+      { key: 'season', title: seasonLabel, tooltip: `View All ${seasonLabel}`, density: 6 as const, items: seasonal, withProgress: false },
       { key: 'upcoming-update', title: 'Upcoming Update', tooltip: 'View All Upcoming Update', density: 6 as const, items: nextRelease, withProgress: false },
       { key: 'latest', title: 'Latest Update', tooltip: 'View All Latest Update', density: 6 as const, items: latestReleased, withProgress: false },
       { key: 'promo', title: 'Latest Promo', tooltip: 'View All Latest Promo', density: 6 as const, items: latestPromo.slice(0, SHELF_LIMIT), withProgress: false },
-      { key: 'airing', title: 'Top Airing', tooltip: 'View All Top Airing', density: 6 as const, items: topAiring.slice(0, SHELF_LIMIT), withProgress: false },
-      { key: 'top-anime', title: 'Top Anime', tooltip: 'View All Top Anime', density: 6 as const, items: topAnime.slice(0, SHELF_LIMIT), withProgress: false },
-      { key: 'popular', title: 'Popular on My Anime 1996', tooltip: 'View All Popular Anime', density: 6 as const, items: popular.slice(0, SHELF_LIMIT), withProgress: false },
-      { key: 'upcoming', title: 'Top Upcoming', tooltip: 'View All Top Upcoming', density: 6 as const, items: topUpcoming.slice(0, SHELF_LIMIT), withProgress: false },
+      { key: 'airing', title: 'Top Airing', tooltip: 'View All Top Airing', density: 6 as const, items: topAiring, withProgress: false },
+      { key: 'popular', title: 'Popular on My Anime 1996', tooltip: 'View All Popular Anime', density: 6 as const, items: sortedPopular, withProgress: false },
+      { key: 'upcoming', title: 'Top Upcoming', tooltip: 'View All Top Upcoming', density: 6 as const, items: topUpcoming, withProgress: false },
     ],
-    [continueWatching, latestPromo, latestReleased, nextRelease, popular, seasonLabel, seasonal, topAiring, topAnime, topUpcoming],
-  );
-
-  const sectionFallbackPool = useMemo<ShelfItem[]>(
-    () => [...seasonal, ...latestUpdated, ...latestPromo, ...popular, ...topAiring, ...topAnime, ...topUpcoming],
-    [latestPromo, latestUpdated, popular, seasonal, topAiring, topAnime, topUpcoming],
+    [continueWatching, latestPromo, latestReleased, nextRelease, seasonLabel, seasonal, sortedPopular, topAiring, topUpcoming],
   );
 
   const shelves = useMemo(() => {
     const builtShelves = rawShelves.map((shelf) => {
       const sectionSeen = new Map<string, number>();
       const uniqueItems: ShelfItem[] = [];
-      const maxItems = SHELF_LIMIT;
+      const maxItems = shelf.key === 'airing' || shelf.key === 'popular' || shelf.key === 'upcoming'
+        ? HOME_TOP_SHELF_LIMIT
+        : SHELF_LIMIT;
 
       for (const item of shelf.items) {
         const identityKeys = buildShelfIdentityKeys(item);
@@ -504,28 +515,6 @@ export default function Home() {
         if (uniqueItems.length >= maxItems) break;
       }
 
-      if (shelf.key !== 'continue' && shelf.key !== 'latest' && shelf.key !== 'upcoming-update' && uniqueItems.length < SHELF_LIMIT) {
-        for (const candidate of sectionFallbackPool) {
-          const identityKeys = buildShelfIdentityKeys(candidate);
-          const duplicateIndex = Array.from(identityKeys)
-            .map((key) => sectionSeen.get(key))
-            .find((index): index is number => index !== undefined);
-
-          if (duplicateIndex === undefined) {
-            const nextIndex = uniqueItems.length;
-            uniqueItems.push(candidate);
-            identityKeys.forEach((key) => sectionSeen.set(key, nextIndex));
-          } else {
-            if (shouldReplaceShelfItem(uniqueItems[duplicateIndex], candidate)) {
-              uniqueItems[duplicateIndex] = candidate;
-            }
-            identityKeys.forEach((key) => sectionSeen.set(key, duplicateIndex));
-          }
-
-          if (uniqueItems.length >= SHELF_LIMIT) break;
-        }
-      }
-
       return {
         ...shelf,
         items: uniqueItems,
@@ -533,7 +522,7 @@ export default function Home() {
     });
 
     return builtShelves.filter((shelf) => shelf.items.length > 0);
-  }, [rawShelves, sectionFallbackPool]);
+  }, [rawShelves]);
 
   const selectFromCard = async (item: ContinueWatchingItem | AnimeSummary) => {
     const anime = toAnimeSummary(item);
@@ -653,11 +642,32 @@ export default function Home() {
     return entry;
   };
 
+  const openSeeAll = (type: SeeAllType, sort?: SeeAllSort) => {
+    const params = new URLSearchParams();
+    if (sort) {
+      params.set('sort', sort);
+    }
+    if (type === 'season') {
+      params.set('year', String(activeSeasonMeta.year));
+      params.set('season', activeSeasonMeta.season);
+    }
+    const query = params.toString();
+    navigate(query ? `/see-all/${type}?${query}` : `/see-all/${type}`);
+  };
+
   return (
     <div className="space-y-6 pb-4">
       <section className="hero-scene hero-band relative overflow-hidden px-6 py-9">
         {featured?.banner && <img src={featured.banner} alt="" className="hero-retro-image absolute inset-0 h-full w-full object-cover opacity-[0.34]" />}
         <div className="absolute inset-0 bg-gradient-to-r from-[#0f0b09]/92 via-[#15100d]/84 to-[#1e160f]/40" />
+
+        <div className="hero-seeall-menu-slot">
+          <HeroSeeAllMenu
+            onNavigate={(type, sort) => {
+              openSeeAll(type, sort);
+            }}
+          />
+        </div>
 
         <div className="relative z-10 max-w-[52%]">
           <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-amberline/80">Welcome Back</p>
@@ -703,7 +713,12 @@ export default function Home() {
               onClick={() => {
                 if (shelf.key === 'continue') {
                   navigate('/history');
+                  return;
                 }
+
+                const mappedType = HOME_SHELF_TO_SEE_ALL_TYPE[shelf.key];
+                if (!mappedType) return;
+                openSeeAll(mappedType);
               }}
             >
               See all
@@ -719,10 +734,13 @@ export default function Home() {
               const previewAnime = toAnimeSummary(item);
               const displayTitle = getDisplayTitle(previewAnime, titleLanguage);
               const secondaryTitle = previewAnime.titleJapanese ?? '';
-              const isRankedShelf = shelf.key === 'airing' || shelf.key === 'upcoming' || shelf.key === 'top-anime';
+              const isRankedShelf = shelf.key === 'airing' || shelf.key === 'upcoming';
               const labelMode = getCardLabelMode(shelf.key);
               const mediaLabel = getMediaLabel(labelMode, previewAnime, isContinueWatchingItem(item) ? item.episode : episodes ?? 1);
+              const statusLabel = previewAnime.status?.trim() || 'Currently Airing';
+              const mediaStatusLabel = `${mediaLabel} • ${statusLabel}`;
               const previewEpisodeLabel = getMetaLabel(item, shelf.key, previewAnime);
+              const seasonMeta = resolveAnimeSeason(previewAnime);
               const resumeEntry = getResumeEntry(previewAnime);
               const canonicalAnimeId = previewAnime.jikanId ?? previewAnime.id;
               const watchEntry = watchProgress[canonicalAnimeId] ?? watchProgress[previewAnime.id];
@@ -763,7 +781,16 @@ export default function Home() {
                     <div className="anime-card-copy mt-2">
                       <p className="anime-card-title anime-card-title-slot line-clamp-2">{displayTitle}</p>
                       <p className="anime-card-jp anime-card-jp-slot line-clamp-1">{secondaryTitle || '\u3000'}</p>
-                      <p className="anime-card-jp">{mediaLabel}</p>
+                      {seasonMeta ? (
+                        <SeasonLinkBadge
+                          season={seasonMeta.season}
+                          year={seasonMeta.year}
+                          variant="compact"
+                          interaction="action"
+                          onActivate={() => navigate(buildSeasonSeeAllPath(seasonMeta.year, seasonMeta.season))}
+                        />
+                      ) : null}
+                      <p className="anime-card-jp">{mediaStatusLabel}</p>
                       {previewEpisodeLabel ? <p className="anime-card-meta">{previewEpisodeLabel}</p> : null}
                       {shelf.withProgress && isContinueWatchingItem(item) && <div className="stream-progress"><span style={{ width: `${item.progress}%` }} /></div>}
                     </div>

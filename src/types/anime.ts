@@ -26,8 +26,14 @@ export interface AnimeSummary {
   banner?: string;
   synopsis: string;
   score?: number;
+  rank?: number;
+  popularity?: number;
+  members?: number;
   year?: number;
+  season?: 'winter' | 'spring' | 'summer' | 'fall';
+  seasonYear?: number;
   airingDate?: string;
+  currentEpisode?: number;
   episodes?: number;
   status?: string;
   studios: string[];

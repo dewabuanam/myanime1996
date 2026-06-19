@@ -1,9 +1,12 @@
 import { Info, ListPlus, Play, Star } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import SeasonLinkBadge from './SeasonLinkBadge';
 import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
 import type { AnimeSummary } from '../types/anime';
 import { getReleaseBadgeLabel } from '../utils/releaseTime';
+import { resolveAnimeSeason } from '../utils/season';
+import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import { getDisplayTitle } from '../utils/title';
 
 interface AnimeCardProps {
@@ -25,6 +28,9 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
   const watchEntry = (detailAnimeId ? watchProgress[detailAnimeId] : undefined) ?? watchProgress[anime.id];
   const isWatchedCompleted = Boolean(watchEntry?.completed || (watchEntry?.progress ?? 0) >= 100);
   const posterStatusLabel = getReleaseBadgeLabel(anime.airingDate, anime.mediaType, isWatchedCompleted);
+  const seasonMeta = resolveAnimeSeason(anime);
+  const currentEpisode = watchEntry?.episode ?? anime.episodes;
+  const episodeTotalLabel = formatEpisodeTotalLabel(currentEpisode, anime.episodes, anime.status);
   const mediaLabel =
     mediaType === 'tv'
       ? 'TV'
@@ -82,8 +88,9 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
           <h3 className="line-clamp-2 font-display text-lg font-semibold uppercase leading-tight text-cream">{displayTitle}</h3>
           <p className="mt-1 inline-flex">{mediaLabel}</p>
           <p className="mt-1 font-mono text-[11px] uppercase tracking-[0.14em] text-cream/45">
-            {anime.year ?? 'TBA'} / {anime.episodes ?? '?'} eps
+            {anime.year ?? 'TBA'} / {episodeTotalLabel} eps
           </p>
+          {seasonMeta ? <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="compact" className="mt-1" /> : null}
         </div>
         {!compact && <p className="line-clamp-3 text-sm leading-5 text-cream/62">{anime.synopsis}</p>}
         <div className="flex items-center justify-between gap-3">

@@ -9,6 +9,7 @@ import { clearPluginResolverCacheByKey, getPluginResolverCacheSnapshot, replaceP
 import { clearSourceResolveCache } from '../services/sourceCache';
 import { getStoredValue, setStoredValue } from '../services/store';
 import { useAppStore } from '../state/appStore';
+import type { UpcomingSeasonFilter } from '../state/appStore';
 import ConfirmDialog from './ConfirmDialog';
 
 type SettingAction = {
@@ -37,6 +38,16 @@ type CacheCard = {
   description: string;
   kind: 'stored' | 'runtime';
 };
+
+const UPCOMING_FILTER_OPTIONS: Array<{ value: UpcomingSeasonFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'tv', label: 'TV' },
+  { value: 'movie', label: 'Movie' },
+  { value: 'ova', label: 'OVA' },
+  { value: 'special', label: 'Special' },
+  { value: 'ona', label: 'ONA' },
+  { value: 'music', label: 'Music' },
+];
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -213,6 +224,10 @@ export default function SettingsModal() {
   const setAutoSkipOpening = useAppStore((state) => state.setAutoSkipOpening);
   const setAutoSkipEnding = useAppStore((state) => state.setAutoSkipEnding);
   const setAutoSkipRecap = useAppStore((state) => state.setAutoSkipRecap);
+  const allowNsfw = useAppStore((state) => state.allowNsfw);
+  const setAllowNsfw = useAppStore((state) => state.setAllowNsfw);
+  const upcomingSeasonFilter = useAppStore((state) => state.upcomingSeasonFilter);
+  const setUpcomingSeasonFilter = useAppStore((state) => state.setUpcomingSeasonFilter);
   const subtitleFontColor = useAppStore((state) => state.subtitleFontColor);
   const subtitleFontSizeDocked = useAppStore((state) => state.subtitleFontSizeDocked);
   const subtitleFontSizeExpanded = useAppStore((state) => state.subtitleFontSizeExpanded);
@@ -232,6 +247,7 @@ export default function SettingsModal() {
   const [statusMessage, setStatusMessage] = useState('');
   const [pendingConfirmActionId, setPendingConfirmActionId] = useState<string | null>(null);
   const [tokenDraft, setTokenDraft] = useState('');
+  const [assumeEpisodeCountFromReleaseDate, setAssumeEpisodeCountFromReleaseDate] = useState(false);
   const [isCacheViewerOpen, setCacheViewerOpen] = useState(false);
   const [cacheViewerLoading, setCacheViewerLoading] = useState(false);
   const [busyCacheCardId, setBusyCacheCardId] = useState<string | null>(null);
@@ -401,6 +417,17 @@ export default function SettingsModal() {
     if (!isSettingsOpen) return;
     setTokenDraft(animeScheduleApiToken);
   }, [animeScheduleApiToken, isSettingsOpen]);
+
+  useEffect(() => {
+    if (!isSettingsOpen) return;
+    void getStoredValue('assumeEpisodeCountFromReleaseDate', false)
+      .then((value) => {
+        setAssumeEpisodeCountFromReleaseDate(Boolean(value));
+      })
+      .catch(() => {
+        setAssumeEpisodeCountFromReleaseDate(false);
+      });
+  }, [isSettingsOpen]);
 
   const actions = useMemo<SettingAction[]>(
     () => [
@@ -609,6 +636,52 @@ export default function SettingsModal() {
                       <p className="rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream/80">AnimeSchedule (Default)</p>
                     </div>
 
+                    <div className="space-y-3 rounded-xl border border-amberline/30 bg-[linear-gradient(135deg,rgba(54,36,23,0.42),rgba(10,8,6,0.5))] p-3">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-amberline/90">Global Content Filter</p>
+
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        onClick={() => void setAllowNsfw(!allowNsfw)}
+                        aria-label={`${allowNsfw ? 'Disable' : 'Enable'} NSFW content`}
+                      >
+                        <span className="text-sm text-cream/80">Allow NSFW Content</span>
+                        {allowNsfw ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        onClick={() => {
+                          const next = !assumeEpisodeCountFromReleaseDate;
+                          setAssumeEpisodeCountFromReleaseDate(next);
+                          void setStoredValue('assumeEpisodeCountFromReleaseDate', next).then(() => {
+                            setStatusMessage(`Release-date episode assumption ${next ? 'enabled' : 'disabled'}.`);
+                          });
+                        }}
+                        aria-label={`${assumeEpisodeCountFromReleaseDate ? 'Disable' : 'Enable'} release-date episode assumption`}
+                      >
+                        <span className="text-sm text-cream/80">Assume Episodes From Release Date</span>
+                        {assumeEpisodeCountFromReleaseDate ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                      </button>
+
+                      <div className="space-y-2">
+                        <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Upcoming Media Type</p>
+                        <div className="flex flex-wrap gap-2">
+                          {UPCOMING_FILTER_OPTIONS.map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`settings-upcoming-filter-btn ${upcomingSeasonFilter === option.value ? 'is-active' : ''}`}
+                              onClick={() => void setUpcomingSeasonFilter(option.value)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="space-y-2">
                       <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">AnimeSchedule API Token</p>
                       <input
@@ -664,6 +737,8 @@ export default function SettingsModal() {
                       <p>AnimeSchedule mode uses timetable endpoints: /timetables and /timetables/{'{'}airType{'}'}.</p>
                       <p>Token is stored locally in app settings. Default token is preloaded and can be replaced with your own.</p>
                       <p>If AnimeSchedule latest updates fail, the app falls back to Jikan for reliability.</p>
+                      <p>NSFW and upcoming media type preferences apply globally (Home + See All + search/upcoming catalog fetches).</p>
+                      <p>Assume Episodes From Release Date is disabled by default and only used when timetable + episode list data cannot determine latest episode count.</p>
                     </div>
                   </article>
                 ) : selectedAction.id === 'clear-cache' ? (

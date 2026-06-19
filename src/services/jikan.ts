@@ -1,5 +1,6 @@
 import type { AnimeDetail, AnimeEpisode, AnimeSummary, CachedPayload } from '../types/anime';
 import { getStoredValue, setStoredValue } from './store';
+import { getCurrentSeasonYear, inferSeasonFromDate, normalizeSeasonKey, type SeasonKey } from '../utils/season';
 
 const BASE_URL = 'https://api.jikan.moe/v4';
 const HOUR = 60 * 60 * 1000;
@@ -15,7 +16,25 @@ const ANIME_ENTITY_TTL = 30 * 24 * HOUR;
 type CacheFetchOptions<T> = {
   onUpdate?: (value: T) => void;
   forceRefresh?: boolean;
+  cacheContext?: string;
+  useDailyCacheKey?: boolean;
+  upcomingSeasonFilter?: UpcomingSeasonFilter;
+  upcomingRating?: 'g' | 'pg' | 'pg13' | 'r17' | 'r' | 'rx';
+  topAnimeType?: 'TV' | 'OVA' | 'Movie' | 'Special' | 'ONA' | 'Music' | 'CM' | 'PV' | 'TV Special';
+  topAnimeRating?: 'g' | 'pg' | 'pg13' | 'r17' | 'r' | 'rx';
+  seasonYear?: number;
+  season?: SeasonKey;
+  seasonFilter?: UpcomingSeasonFilter;
+  seasonContinuing?: boolean;
+  seasonPageLimit?: number;
+  seasonPageCount?: number;
 };
+
+type TopAnimeType = 'TV' | 'OVA' | 'Movie' | 'Special' | 'ONA' | 'Music' | 'CM' | 'PV' | 'TV Special';
+type TopAnimeRating = 'g' | 'pg' | 'pg13' | 'r17' | 'r' | 'rx';
+type TopAnimeFilter = 'bypopularity' | 'upcoming' | 'airing';
+
+type UpcomingSeasonFilter = 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
 
 type HomeRefreshCallbacks = {
   onSeasonal?: (value: AnimeSummary[]) => void;
@@ -27,6 +46,82 @@ type HomeRefreshCallbacks = {
 };
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
+
+const UPCOMING_ALLOWED_FILTERS = new Set(['tv', 'movie', 'ova', 'special', 'ona', 'music']);
+
+function mapUpcomingFilterToTopAnimeType(filter: UpcomingSeasonFilter): TopAnimeType | null {
+  switch (filter) {
+    case 'tv':
+      return 'TV';
+    case 'movie':
+      return 'Movie';
+    case 'ova':
+      return 'OVA';
+    case 'special':
+      return 'Special';
+    case 'ona':
+      return 'ONA';
+    case 'music':
+      return 'Music';
+    case 'all':
+    default:
+      return null;
+  }
+}
+
+function normalizeUpcomingSeasonFilter(value: unknown): UpcomingSeasonFilter {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (UPCOMING_ALLOWED_FILTERS.has(normalized)) {
+      return normalized as Exclude<UpcomingSeasonFilter, 'all'>;
+    }
+  }
+  return 'all';
+}
+
+async function readGlobalCatalogContentPrefs() {
+  const [allowNsfwRaw, upcomingSeasonFilterRaw] = await Promise.all([
+    getStoredValue('allowNsfw', false),
+    getStoredValue('upcomingSeasonFilter', 'all'),
+  ]);
+
+  return {
+    allowNsfw: Boolean(allowNsfwRaw),
+    upcomingSeasonFilter: normalizeUpcomingSeasonFilter(upcomingSeasonFilterRaw),
+  };
+}
+
+function withJikanContentFlags(
+  path: string,
+  options: {
+    allowNsfw: boolean;
+    page?: number;
+    limit?: number;
+    upcomingFilter?: UpcomingSeasonFilter;
+  },
+) {
+  const [pathname, rawQuery = ''] = path.split('?');
+  const params = new URLSearchParams(rawQuery);
+
+  if (typeof options.page === 'number' && Number.isFinite(options.page)) {
+    params.set('page', String(Math.max(1, Math.floor(options.page))));
+  }
+
+  if (typeof options.limit === 'number' && Number.isFinite(options.limit)) {
+    params.set('limit', String(Math.max(1, Math.floor(options.limit))));
+  }
+
+  if (options.upcomingFilter && options.upcomingFilter !== 'all') {
+    params.set('filter', options.upcomingFilter);
+  }
+
+  if (!options.allowNsfw) {
+    params.set('sfw', 'true');
+  }
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
 
 export async function clearJikanDataCache() {
   inFlightRequests.clear();
@@ -67,11 +162,21 @@ interface JikanAnime {
   source?: string;
   rank?: number;
   popularity?: number;
+  members?: number;
   aired?: { from?: string; to?: string; string?: string };
+  season?: string;
 }
 
 interface JikanListResponse {
   data: JikanAnime[];
+}
+
+interface JikanPagedListResponse extends JikanListResponse {
+  pagination?: {
+    last_visible_page?: number;
+    has_next_page?: boolean;
+    current_page?: number;
+  };
 }
 
 interface JikanDetailResponse {
@@ -155,7 +260,20 @@ interface JikanWatchPromoListResponse {
   data: JikanWatchPromoItem[];
 }
 
-const cacheKey = (path: string) => `jikan:${path}`;
+function getLocalDateBucket() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+const cacheKey = (path: string, options: { cacheContext?: string; useDailyCacheKey?: boolean } = {}) => {
+  const base = `jikan:${path}`;
+  const withContext = options.cacheContext ? `${base}|ctx:${options.cacheContext}` : base;
+  if (!options.useDailyCacheKey) return withContext;
+  return `${withContext}|day:${getLocalDateBucket()}`;
+};
 
 const isSamePayload = <T>(a: T, b: T) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -234,7 +352,12 @@ function mergeAnimeSummary(existing: AnimeSummary | undefined, incoming: AnimeSu
     banner: isFilled(incoming.banner) ? incoming.banner : existing.banner,
     synopsis: isFilled(incoming.synopsis) ? incoming.synopsis : existing.synopsis,
     score: incoming.score ?? existing.score,
+    rank: incoming.rank ?? existing.rank,
+    popularity: incoming.popularity ?? existing.popularity,
+    members: incoming.members ?? existing.members,
     year: incoming.year ?? existing.year,
+    season: incoming.season ?? existing.season,
+    seasonYear: incoming.seasonYear ?? existing.seasonYear,
     airingDate: isFilled(incoming.airingDate) ? incoming.airingDate : existing.airingDate,
     episodes: incoming.episodes ?? existing.episodes,
     status: isFilled(incoming.status) ? incoming.status : existing.status,
@@ -314,6 +437,9 @@ function normalizeJikanSynonyms(anime: JikanAnime): string[] | undefined {
 }
 
 function normalizeAnime(anime: JikanAnime): AnimeSummary {
+  const normalizedSeason = normalizeSeasonKey(anime.season);
+  const inferredSeason = inferSeasonFromDate(anime.aired?.from || anime.aired?.to || anime.aired?.string);
+
   const image =
     anime.images?.webp?.large_image_url ||
     anime.images?.jpg?.large_image_url ||
@@ -334,7 +460,12 @@ function normalizeAnime(anime: JikanAnime): AnimeSummary {
     banner: anime.trailer?.images?.maximum_image_url || anime.trailer?.images?.large_image_url || image,
     synopsis: anime.synopsis || 'No synopsis has been recorded on this tape yet.',
     score: anime.score,
+    rank: anime.rank,
+    popularity: anime.popularity,
+    members: anime.members,
     year: anime.year,
+    season: normalizedSeason ?? inferredSeason?.season ?? undefined,
+    seasonYear: anime.year ?? inferredSeason?.year,
     airingDate: anime.aired?.from || anime.aired?.to || anime.aired?.string,
     episodes: anime.episodes,
     mediaType: anime.type,
@@ -353,6 +484,7 @@ function normalizeDetail(anime: JikanAnime): AnimeDetail {
     source: anime.source,
     rank: anime.rank,
     popularity: anime.popularity,
+    members: anime.members,
     aired: anime.aired?.string,
   };
 }
@@ -538,7 +670,7 @@ async function cachedFetch<T>(
   mapper: (json: unknown) => T,
   options: CacheFetchOptions<T> = {},
 ): Promise<T> {
-  const key = cacheKey(path);
+  const key = cacheKey(path, options);
   const cache = await getStoredValue('jikanCache', {});
   const cached = cache[key] as CachedPayload<T> | undefined;
   const now = Date.now();
@@ -602,7 +734,7 @@ async function cachedAnimeListFetch(
   mapper: (json: unknown) => AnimeSummary[],
   options: CacheFetchOptions<AnimeSummary[]> = {},
 ) {
-  const key = cacheKey(path);
+  const key = cacheKey(path, options);
   const cache = await getStoredValue('jikanCache', {});
   const cached = cache[key] as CachedPayload<unknown> | undefined;
   const now = Date.now();
@@ -652,57 +784,210 @@ async function cachedAnimeListFetch(
   return fetchAndStoreAnimeList(key, path, ttl, mapper);
 }
 
-export function getTopAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
-  return cachedAnimeListFetch(`/top/anime?limit=${limit}`, 6 * HOUR, (json) =>
-    (json as JikanListResponse).data.map(normalizeAnime),
-    options,
-  ).catch(() => []);
+export async function getTopAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
+  const prefs = await readGlobalCatalogContentPrefs();
+  const result = await getTopAnimeByFilterPaged({
+    limit,
+    filter: 'bypopularity',
+    allowNsfw: prefs.allowNsfw,
+    topAnimeType: options?.topAnimeType,
+    topAnimeRating: options?.topAnimeRating,
+    cachePrefix: 'top-popular',
+    forceRefresh: options?.forceRefresh,
+  });
+  options?.onUpdate?.(result);
+  return result;
 }
 
-export function getSeasonalAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
-  return cachedAnimeListFetch(`/seasons/now?limit=${limit}`, 6 * HOUR, (json) =>
-    (json as JikanListResponse).data.map(normalizeAnime),
-    options,
-  ).catch(() => []);
+async function getTopAnimeByFilterPaged(params: {
+  limit: number;
+  filter: TopAnimeFilter;
+  allowNsfw: boolean;
+  topAnimeType?: TopAnimeType;
+  topAnimeRating?: TopAnimeRating;
+  cachePrefix: string;
+  forceRefresh?: boolean;
+}) {
+  const safeLimit = Math.max(1, Math.floor(params.limit));
+  const pageLimit = 25;
+  const maxPages = 2;
+  const merged: AnimeSummary[] = [];
+  const seen = new Set<number>();
+
+  for (let page = 1; page <= maxPages; page += 1) {
+    const baseParams = new URLSearchParams({ filter: params.filter });
+    if (params.topAnimeType) {
+      baseParams.set('type', params.topAnimeType);
+    }
+    if (params.topAnimeRating) {
+      baseParams.set('rating', params.topAnimeRating);
+    }
+
+    const path = withJikanContentFlags(`/top/anime?${baseParams.toString()}`, {
+      allowNsfw: params.allowNsfw,
+      page,
+      limit: pageLimit,
+    });
+
+    const pagePayload = await cachedFetch<{ items: AnimeSummary[]; hasNextPage: boolean }>(
+      path,
+      6 * HOUR,
+      (json) => {
+        const payload = json as JikanPagedListResponse;
+        return {
+          items: (payload.data ?? []).map(normalizeAnime),
+          hasNextPage: payload.pagination?.has_next_page === true,
+        };
+      },
+      {
+        forceRefresh: params.forceRefresh,
+        cacheContext: `${params.cachePrefix}:type:${params.topAnimeType ?? 'none'}:rating:${params.topAnimeRating ?? 'none'}:page:${page}`,
+        useDailyCacheKey: true,
+      },
+    ).catch(() => ({ items: [] as AnimeSummary[], hasNextPage: false }));
+
+    for (const anime of pagePayload.items) {
+      if (seen.has(anime.id)) continue;
+      seen.add(anime.id);
+      merged.push(anime);
+    }
+
+    if (!pagePayload.hasNextPage) break;
+  }
+
+  return merged.slice(0, safeLimit);
+}
+
+export async function getSeasonalAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
+  const prefs = await readGlobalCatalogContentPrefs();
+  const nowSeason = getCurrentSeasonYear();
+  const selectedSeason = options?.season ?? nowSeason.season;
+  const selectedYear = options?.seasonYear ?? nowSeason.year;
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const pageLimit = Math.max(1, Math.min(25, Math.floor(options?.seasonPageLimit ?? 10)));
+  const pageCount = Math.max(1, Math.min(4, Math.floor(options?.seasonPageCount ?? 2)));
+  const seasonFilter = options?.seasonFilter && options.seasonFilter !== 'all' ? options.seasonFilter : null;
+  const seasonContinuing = options?.seasonContinuing ?? true;
+
+  const merged: AnimeSummary[] = [];
+  const seen = new Set<number>();
+
+  for (let page = 1; page <= pageCount; page += 1) {
+    const seasonParams = new URLSearchParams();
+    if (seasonFilter) {
+      seasonParams.set('filter', seasonFilter);
+    }
+    if (seasonContinuing) {
+      seasonParams.set('continuing', 'true');
+    }
+
+    const seasonPath = `/seasons/${selectedYear}/${selectedSeason}${seasonParams.toString() ? `?${seasonParams.toString()}` : ''}`;
+    const path = withJikanContentFlags(seasonPath, {
+      allowNsfw: prefs.allowNsfw,
+      page,
+      limit: pageLimit,
+    });
+
+    const pagePayload = await cachedFetch<{ items: AnimeSummary[]; hasNextPage: boolean }>(
+      path,
+      6 * HOUR,
+      (json) => {
+        const payload = json as JikanPagedListResponse;
+        return {
+          items: (payload.data ?? []).map(normalizeAnime),
+          hasNextPage: payload.pagination?.has_next_page === true,
+        };
+      },
+      {
+        forceRefresh: options?.forceRefresh,
+        cacheContext: `seasonal:${selectedYear}:${selectedSeason}:filter:${seasonFilter ?? 'all'}:continuing:${seasonContinuing ? '1' : '0'}:limit:${pageLimit}:page:${page}`,
+        useDailyCacheKey: true,
+      },
+    ).catch(() => ({ items: [] as AnimeSummary[], hasNextPage: false }));
+
+    for (const anime of pagePayload.items) {
+      if (seen.has(anime.id)) continue;
+      seen.add(anime.id);
+      merged.push({
+        ...anime,
+        season: anime.season ?? selectedSeason,
+        seasonYear: anime.seasonYear ?? selectedYear,
+      });
+    }
+
+    if (!pagePayload.hasNextPage) break;
+  }
+
+  const result = merged.slice(0, safeLimit);
+  options?.onUpdate?.(result);
+  return result;
 }
 
 export function getLatestUpdatedAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   return cachedAnimeListFetch(`/watch/episodes?limit=${limit}`, 2 * HOUR, (json) =>
     (json as JikanWatchEpisodeListResponse).data.map(normalizeWatchEpisodeItem),
-    options,
+    { ...options, cacheContext: 'latest-updated', useDailyCacheKey: true },
   ).catch(() => []);
 }
 
 export function getLatestPromoAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   return cachedAnimeListFetch(`/watch/promos?limit=${limit}`, 2 * HOUR, (json) =>
     (json as JikanWatchPromoListResponse).data.map((item) => normalizeWatchPromoItem(item, 'Latest promo')),
-    options,
+    { ...options, cacheContext: 'latest-promo', useDailyCacheKey: true },
   ).catch(() => []);
 }
 
-export function getTopAiringAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
-  return cachedAnimeListFetch(`/top/anime?filter=airing&limit=${limit}`, 6 * HOUR, (json) =>
-    (json as JikanListResponse).data.map(normalizeAnime),
-    options,
-  ).catch(() => []);
+export async function getTopAiringAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
+  const prefs = await readGlobalCatalogContentPrefs();
+  const result = await getTopAnimeByFilterPaged({
+    limit,
+    filter: 'airing',
+    allowNsfw: prefs.allowNsfw,
+    topAnimeType: options?.topAnimeType,
+    topAnimeRating: options?.topAnimeRating,
+    cachePrefix: 'top-airing',
+    forceRefresh: options?.forceRefresh,
+  });
+  options?.onUpdate?.(result);
+  return result;
 }
 
-export function getTopUpcomingAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
-  return cachedAnimeListFetch(`/top/anime?filter=upcoming&limit=${limit}`, 6 * HOUR, (json) =>
-    (json as JikanListResponse).data.map(normalizeAnime),
-    options,
-  ).catch(() => []);
+export async function getTopUpcomingAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
+  const prefs = await readGlobalCatalogContentPrefs();
+  const activeUpcomingFilter = options?.upcomingSeasonFilter ?? prefs.upcomingSeasonFilter;
+  const activeUpcomingRating = options?.upcomingRating;
+  const topAnimeType = mapUpcomingFilterToTopAnimeType(activeUpcomingFilter);
+  const result = await getTopAnimeByFilterPaged({
+    limit,
+    filter: 'upcoming',
+    allowNsfw: prefs.allowNsfw,
+    topAnimeType: topAnimeType ?? undefined,
+    topAnimeRating: activeUpcomingRating,
+    cachePrefix: `top-upcoming:season:${activeUpcomingFilter}`,
+    forceRefresh: options?.forceRefresh,
+  });
+  options?.onUpdate?.(result);
+  return result;
 }
 
-export function searchAnime(query: string) {
+export async function searchAnime(query: string) {
+  const prefs = await readGlobalCatalogContentPrefs();
   const encoded = encodeURIComponent(query.trim());
-  return cachedAnimeListFetch(`/anime?q=${encoded}&limit=16`, HOUR, (json) =>
+  const path = withJikanContentFlags(`/anime?q=${encoded}`, { allowNsfw: prefs.allowNsfw, limit: 16 });
+  return cachedAnimeListFetch(path, HOUR, (json) =>
     (json as JikanListResponse).data.map(normalizeAnime),
+    { cacheContext: `search:${encoded}`, useDailyCacheKey: true },
   ).catch(() => []);
 }
 
 export function getAnimeDetails(id: string | number) {
-  return cachedFetch(`/anime/${id}/full`, HOUR, (json) => normalizeDetail((json as JikanDetailResponse).data))
+  const normalizedId = String(id).trim();
+  return cachedFetch(
+    `/anime/${id}/full`,
+    HOUR,
+    (json) => normalizeDetail((json as JikanDetailResponse).data),
+    { cacheContext: `anime-detail:${normalizedId}`, useDailyCacheKey: true },
+  )
     .then(async (detail) => {
       const cache = await getStoredValue('jikanCache', {});
       const now = Date.now();

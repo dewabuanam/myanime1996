@@ -20,6 +20,7 @@ let animeScheduleRateLimitListenerBound = false;
 
 export type PlaybackSupportMode = 'fully-supported' | 'fullscreen-only' | 'fully-unsupported';
 export type AnimeSkipType = 'op' | 'ed' | 'recap';
+export type UpcomingSeasonFilter = 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
 
 export type AnimeSkipButtonSegment = {
   type: AnimeSkipType;
@@ -89,6 +90,8 @@ interface AppState {
   autoSkipOpening: boolean;
   autoSkipEnding: boolean;
   autoSkipRecap: boolean;
+  allowNsfw: boolean;
+  upcomingSeasonFilter: UpcomingSeasonFilter;
   animeSkipButtonSegment: AnimeSkipButtonSegment | null;
   baseCatalogSource: BaseCatalogSource;
   animeScheduleApiToken: string;
@@ -147,6 +150,8 @@ interface AppState {
   setAutoSkipOpening: (enabled: boolean) => Promise<void>;
   setAutoSkipEnding: (enabled: boolean) => Promise<void>;
   setAutoSkipRecap: (enabled: boolean) => Promise<void>;
+  setAllowNsfw: (enabled: boolean) => Promise<void>;
+  setUpcomingSeasonFilter: (filter: UpcomingSeasonFilter) => Promise<void>;
   setAnimeSkipButtonSegment: (segment: AnimeSkipButtonSegment | null) => void;
   setBaseCatalogSource: (source: BaseCatalogSource) => Promise<void>;
   setAnimeScheduleApiToken: (token: string) => Promise<void>;
@@ -218,6 +223,13 @@ function normalizeAnimeScheduleApiToken(value: unknown): string {
   if (typeof value !== 'string') return DEFAULT_ANIMESCHEDULE_TOKEN;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : DEFAULT_ANIMESCHEDULE_TOKEN;
+}
+
+function normalizeUpcomingSeasonFilter(value: unknown): UpcomingSeasonFilter {
+  if (value === 'tv' || value === 'movie' || value === 'ova' || value === 'special' || value === 'ona' || value === 'music') {
+    return value;
+  }
+  return 'all';
 }
 
 function normalizeOptionalText(value: unknown): string | null {
@@ -718,6 +730,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   autoSkipOpening: false,
   autoSkipEnding: false,
   autoSkipRecap: false,
+  allowNsfw: false,
+  upcomingSeasonFilter: 'all',
   animeSkipButtonSegment: null,
   baseCatalogSource: DEFAULT_BASE_CATALOG_SOURCE,
   animeScheduleApiToken: DEFAULT_ANIMESCHEDULE_TOKEN,
@@ -755,6 +769,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawAutoSkipOpening,
         rawAutoSkipEnding,
         rawAutoSkipRecap,
+        rawAllowNsfw,
+        rawUpcomingSeasonFilter,
         rawBaseCatalogSource,
         rawAnimeScheduleApiToken,
         animeScheduleRateLimitGuideDismissedDate,
@@ -796,6 +812,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('autoSkipOpening', false),
         getStoredValue('autoSkipEnding', false),
         getStoredValue('autoSkipRecap', false),
+        getStoredValue('allowNsfw', false),
+        getStoredValue('upcomingSeasonFilter', 'all' as UpcomingSeasonFilter),
         getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
         getStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
         getStoredValue('animeScheduleRateLimitGuideDismissedDate', null),
@@ -871,6 +889,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       const baseCatalogSource = normalizeBaseCatalogSource(rawBaseCatalogSource);
       if (rawBaseCatalogSource !== baseCatalogSource) {
         await setStoredValue('baseCatalogSource', baseCatalogSource);
+      }
+
+      const allowNsfw = Boolean(rawAllowNsfw);
+      if (rawAllowNsfw !== allowNsfw) {
+        await setStoredValue('allowNsfw', allowNsfw);
+      }
+
+      const upcomingSeasonFilter = normalizeUpcomingSeasonFilter(rawUpcomingSeasonFilter);
+      if (rawUpcomingSeasonFilter !== upcomingSeasonFilter) {
+        await setStoredValue('upcomingSeasonFilter', upcomingSeasonFilter);
       }
 
       const animeScheduleApiToken = normalizeAnimeScheduleApiToken(rawAnimeScheduleApiToken);
@@ -999,6 +1027,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipOpening: Boolean(rawAutoSkipOpening),
         autoSkipEnding: Boolean(rawAutoSkipEnding),
         autoSkipRecap: Boolean(rawAutoSkipRecap),
+        allowNsfw,
+        upcomingSeasonFilter,
         animeSkipButtonSegment: null,
         baseCatalogSource,
         animeScheduleApiToken,
@@ -1070,6 +1100,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipOpening: false,
         autoSkipEnding: false,
         autoSkipRecap: false,
+        allowNsfw: false,
+        upcomingSeasonFilter: 'all',
         episodeMetadata: null,
         animeSkipButtonSegment: null,
         baseCatalogSource: DEFAULT_BASE_CATALOG_SOURCE,
@@ -1292,6 +1324,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     }
 
+    await get().replaceQueueAndPlay([makeTrailerItem(trailerAnime)], 0);
+
     if (!trailerAnime.trailerUrl?.trim()) {
       const detailAnimeId = anime.jikanId ?? anime.id;
       const resolvedTrailerUrl = await getAnimeTrailerUrl(detailAnimeId);
@@ -1300,10 +1334,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...anime,
           trailerUrl: resolvedTrailerUrl,
         };
+        await get().replaceQueueAndPlay([makeTrailerItem(trailerAnime)], 0);
       }
     }
-
-    await get().replaceQueueAndPlay([makeTrailerItem(trailerAnime)], 0);
   },
 
   addAnimeSeriesToQueue: async (anime) => {
@@ -1776,6 +1809,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ autoSkipRecap: next });
   },
 
+  setAllowNsfw: async (enabled) => {
+    const next = Boolean(enabled);
+    await setStoredValue('allowNsfw', next);
+    set({ allowNsfw: next, homeRefreshVersion: get().homeRefreshVersion + 1 });
+  },
+
+  setUpcomingSeasonFilter: async (filter) => {
+    const next = normalizeUpcomingSeasonFilter(filter);
+    await setStoredValue('upcomingSeasonFilter', next);
+    set({ upcomingSeasonFilter: next, homeRefreshVersion: get().homeRefreshVersion + 1 });
+  },
+
   setAnimeSkipButtonSegment: (segment) => {
     set({ animeSkipButtonSegment: segment });
   },
@@ -2061,6 +2106,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipOpening: current.autoSkipOpening,
         autoSkipEnding: current.autoSkipEnding,
         autoSkipRecap: current.autoSkipRecap,
+        allowNsfw: current.allowNsfw,
+        upcomingSeasonFilter: current.upcomingSeasonFilter,
         baseCatalogSource: current.baseCatalogSource,
         animeScheduleApiToken: current.animeScheduleApiToken,
         subtitleFontColor: current.subtitleFontColor,
@@ -2122,6 +2169,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('autoSkipOpening', false),
       setStoredValue('autoSkipEnding', false),
       setStoredValue('autoSkipRecap', false),
+      setStoredValue('allowNsfw', false),
+      setStoredValue('upcomingSeasonFilter', 'all' as UpcomingSeasonFilter),
       setStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
       setStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
       setStoredValue('animeScheduleRateLimitGuideDismissedDate', null),
@@ -2169,6 +2218,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       autoSkipOpening: false,
       autoSkipEnding: false,
       autoSkipRecap: false,
+      allowNsfw: false,
+      upcomingSeasonFilter: 'all',
       episodeMetadata: null,
       animeSkipButtonSegment: null,
       baseCatalogSource: DEFAULT_BASE_CATALOG_SOURCE,

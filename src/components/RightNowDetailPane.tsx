@@ -1,7 +1,11 @@
+import { useState } from 'react';
 import { CalendarDays, ChevronDown, Clock3, List, Play, RotateCcw } from 'lucide-react';
+import SeasonLinkBadge from './SeasonLinkBadge';
 import type { AnimeDetail, AnimeEpisode, AnimeEpisodePagination, TitleLanguage } from '../types/anime';
 import { formatEpisodeDuration, formatEpisodeScoreOutOfTen } from '../utils/episodeFormatters';
+import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
+import { resolveAnimeSeason } from '../utils/season';
 
 type DetailEpisodeIcon = {
   iconDataUri: string;
@@ -41,6 +45,14 @@ export default function RightNowDetailPane({
   onPlayEpisode,
   onToggleEpisodeExpand,
 }: RightNowDetailPaneProps) {
+  const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
+  const seasonMeta = detailAnimeView ? resolveAnimeSeason(detailAnimeView) : null;
+  const scoreLabel = detailAnimeView?.score?.toFixed(1) ?? 'N/A';
+  const membersLabel = detailAnimeView?.members ? detailAnimeView.members.toLocaleString('en-US') : 'N/A';
+  const rankLabel = detailAnimeView?.rank ? String(detailAnimeView.rank) : 'N/A';
+  const popularityLabel = detailAnimeView?.popularity ? String(detailAnimeView.popularity) : 'N/A';
+  const episodeTotalLabel = formatEpisodeTotalLabel(detailAnimeView?.currentEpisode, detailAnimeView?.episodes);
+
   if (isDetailLoading && !detailAnimeView) {
     return (
       <div className="space-y-3">
@@ -61,23 +73,74 @@ export default function RightNowDetailPane({
 
   return (
     <div className="space-y-2.5">
-      <div className="relative overflow-hidden rounded-2xl border border-cream/12 bg-black/45">
-        <img src={detailAnimeView.image} alt="" className="h-40 w-full object-cover" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+      <div className="grid grid-cols-[140px_minmax(0,1fr)] items-start gap-2.5">
+        <div className="relative overflow-hidden rounded-xl border border-cream/12 bg-black/45">
+          <img src={detailAnimeView.image} alt="" className="aspect-[3/4] h-full w-full object-cover" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+        </div>
+
+        <div className="min-w-0 space-y-1.5">
+          <div className="flex flex-wrap items-stretch gap-2">
+            <div className="inline-flex rounded-lg border border-amberline/35 bg-amberline/12 px-2.5 py-1.5">
+              <div className="grid place-items-center text-center">
+                <p className="font-display text-[30px] leading-[0.9] text-amberline">{scoreLabel}</p>
+                <p className="mt-1 rounded-full border border-cream/22 bg-black/24 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/84 retro-tooltip" data-tooltip={detailAnimeView.members ? `${detailAnimeView.members.toLocaleString('en-US')} Members` : 'Members unavailable'}>
+                  {membersLabel}
+                </p>
+              </div>
+            </div>
+
+            <div className="inline-flex rounded-lg border border-amberline/35 bg-amberline/10 px-2.5 py-1">
+              <div className="flex min-w-[76px] flex-col items-center justify-center gap-0.5 text-center">
+                <p className="font-mono text-[10px] uppercase leading-none tracking-[0.1em] text-cream/68">Rank</p>
+                <span className="inline-flex items-center justify-center retro-tooltip font-display text-[24px] leading-none text-amberline/95" data-tooltip="Rank">{rankLabel}</span>
+              </div>
+            </div>
+
+            <div className="inline-flex rounded-lg border border-amberline/35 bg-amberline/10 px-2.5 py-1">
+              <div className="flex min-w-[76px] flex-col items-center justify-center gap-0.5 text-center">
+                <p className="font-mono text-[10px] uppercase leading-none tracking-[0.1em] text-cream/68">Popularity</p>
+                <span className="inline-flex items-center justify-center retro-tooltip font-display text-[24px] leading-none text-amberline/95" data-tooltip="Popularity">{popularityLabel}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Episodes">
+              <List size={11} className="text-amberline" /> {episodeTotalLabel}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Year">
+              <CalendarDays size={11} className="text-amberline" /> {detailYearLabel}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Status">
+              <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {(detailAnimeView.genres?.length ? detailAnimeView.genres.slice(0, 4) : ['Anime']).map((genre) => (
+              <span key={genre} className="inline-flex items-center rounded-full border border-amberline/30 bg-amberline/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.09em] text-amberline/90">
+                {genre}
+              </span>
+            ))}
+          </div>
+
+          {seasonMeta ? <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="full" showLabel /> : null}
+        </div>
       </div>
 
-      <p className="line-clamp-4 text-cream/72">{detailAnimeView.synopsis ?? 'Select an anime to view details and playback context.'}</p>
+      <p className={isSynopsisExpanded ? 'text-justify text-cream/72' : 'line-clamp-5 text-justify text-cream/72'}>{detailAnimeView.synopsis ?? 'Select an anime to view details and playback context.'}</p>
 
-      <div className="flex flex-wrap gap-1.5">
-        <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Year">
-          <CalendarDays size={11} className="text-amberline" /> {detailYearLabel}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Episodes">
-          <List size={11} className="text-amberline" /> {detailAnimeView.episodes ?? '?'}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Status">
-          <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
-        </span>
+      <div className="flex justify-center">
+        <button
+          type="button"
+          className="vhs-button-ghost p-1.5 text-[10px] retro-tooltip"
+          onClick={() => setIsSynopsisExpanded((current) => !current)}
+          data-tooltip={isSynopsisExpanded ? 'Collapse Synopsis' : 'Expand Synopsis'}
+          aria-label={isSynopsisExpanded ? 'Collapse Synopsis' : 'Expand Synopsis'}
+        >
+          <ChevronDown size={13} className={isSynopsisExpanded ? 'rotate-180 transition-transform' : 'transition-transform'} />
+        </button>
       </div>
 
       <div className="space-y-1.5 border-t border-cream/10 pt-2">
@@ -191,7 +254,7 @@ export default function RightNowDetailPane({
                       ) : null}
                     </div>
                     <p className="font-mono text-[10px] uppercase tracking-[0.13em] text-amberline/72">Synopsis</p>
-                    <p className="mt-1 text-xs leading-5 text-cream/70">{episode.synopsis || 'No synopsis recorded for this episode.'}</p>
+                    <p className="mt-1 text-justify text-xs leading-5 text-cream/70">{episode.synopsis || 'No synopsis recorded for this episode.'}</p>
                   </div>
                 ) : null}
               </article>

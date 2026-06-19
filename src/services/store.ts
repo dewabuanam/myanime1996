@@ -20,6 +20,9 @@ type StoreShape = {
   autoSkipOpening: boolean;
   autoSkipEnding: boolean;
   autoSkipRecap: boolean;
+  assumeEpisodeCountFromReleaseDate: boolean;
+  allowNsfw: boolean;
+  upcomingSeasonFilter: 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
   subtitleFontColor: string;
   subtitleFontSize: number;
   subtitleFontSizeDocked: number;
