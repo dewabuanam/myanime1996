@@ -23,6 +23,10 @@ function toExternalPlaybackUrl(url: string, isTrailer: boolean) {
   return toCanonicalYouTubeWatchUrl(url);
 }
 
+const SUBTITLE_OFF_ID = '__off__';
+const FULLSCREEN_SUBTITLE_EXTRA_GAP_PX = 10;
+const FULLSCREEN_SUBTITLE_ANIMATION_MS = 200;
+
 export default function BottomPlayer() {
   const currentlyPlayingItem = useAppStore((state) => state.currentlyPlayingItem);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
@@ -35,6 +39,7 @@ export default function BottomPlayer() {
   const isTrailerMuted = useAppStore((state) => state.isTrailerMuted);
   const activePlaybackUrl = useAppStore((state) => state.activePlaybackUrl);
   const playbackSupportMode = useAppStore((state) => state.playbackSupportMode);
+  const selectedSubtitleId = useAppStore((state) => state.selectedSubtitleId);
   const isResolvingPlaybackSource = useAppStore((state) => state.isResolvingPlaybackSource);
   const isTrailerPlayerReady = useAppStore((state) => state.isTrailerPlayerReady);
   const currentlyPlayingKind = currentlyPlayingItem?.kind;
@@ -54,9 +59,14 @@ export default function BottomPlayer() {
   const externalElapsedRef = useRef(0);
   const externalWindowTargetRef = useRef<string | null>(null);
   const wasMaximizedBeforeFullscreenRef = useRef(false);
+  const cueOriginalPlacementRef = useRef(new WeakMap<TextTrackCue, { line: number | 'auto'; snapToLines: boolean }>());
+  const trackedCueSetRef = useRef(new Set<TextTrackCue>());
+  const subtitleLiftPxRef = useRef(0);
+  const subtitleLiftAnimationFrameRef = useRef<number | null>(null);
   const [isExternalWindowOpen, setIsExternalWindowOpen] = useState(false);
   const [isAppFullscreen, setIsAppFullscreen] = useState(false);
   const fullscreenControlsHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const playerFooterRef = useRef<HTMLElement | null>(null);
   const [isFullscreenControlsVisible, setIsFullscreenControlsVisible] = useState(true);
 
   const isTrailerActive = currentlyPlayingKind === 'trailer' && isTrailerPlayerReady;
@@ -579,8 +589,143 @@ export default function BottomPlayer() {
 
   const shouldHideInFullscreen = isAppFullscreen && !isFullscreenControlsVisible;
 
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    const getSubtitleTracks = (video: HTMLVideoElement) =>
+      Array.from(video.textTracks || []).filter((track) => track.kind === 'subtitles' || track.kind === 'captions');
+
+    const rememberOriginalCuePlacement = (cue: TextTrackCue, vttCue: VTTCue) => {
+      if (cueOriginalPlacementRef.current.has(cue)) return;
+      cueOriginalPlacementRef.current.set(cue, {
+        line: vttCue.line,
+        snapToLines: vttCue.snapToLines,
+      });
+      trackedCueSetRef.current.add(cue);
+    };
+
+    const restoreTrackedCues = () => {
+      for (const cue of Array.from(trackedCueSetRef.current)) {
+        const vttCue = cue as VTTCue;
+        const original = cueOriginalPlacementRef.current.get(cue);
+        if (!original || typeof vttCue.line === 'undefined') {
+          trackedCueSetRef.current.delete(cue);
+          continue;
+        }
+        vttCue.snapToLines = original.snapToLines;
+        vttCue.line = original.line;
+        cueOriginalPlacementRef.current.delete(cue);
+        trackedCueSetRef.current.delete(cue);
+      }
+    };
+
+    const applyCueLift = (cue: TextTrackCue, liftPx: number, videoHeightPx: number) => {
+      const vttCue = cue as VTTCue;
+      if (typeof vttCue.line === 'undefined') return;
+
+      rememberOriginalCuePlacement(cue, vttCue);
+      const percentLift = (liftPx / Math.max(videoHeightPx, 1)) * 100;
+      const nextLinePercent = Math.max(18, Math.min(92, 92 - percentLift));
+      vttCue.snapToLines = false;
+      vttCue.line = Number(nextLinePercent.toFixed(2));
+    };
+
+    const applyLiftToCurrentCues = (liftPx: number) => {
+      const video = document.querySelector<HTMLVideoElement>('.right-now-video-native');
+      if (!video) return;
+
+      if (liftPx <= 0.5) {
+        restoreTrackedCues();
+        return;
+      }
+
+      const videoHeightPx = Math.max(1, Math.ceil(video.getBoundingClientRect().height));
+      for (const track of getSubtitleTracks(video)) {
+        const cues = Array.from(track.activeCues || []);
+        for (const cue of cues) {
+          applyCueLift(cue, liftPx, videoHeightPx);
+        }
+      }
+    };
+
+    const resolveTargetLiftPx = () => {
+      const video = document.querySelector<HTMLVideoElement>('.right-now-video-native');
+      if (!video) return 0;
+
+      const subtitlesExplicitlyDisabled = selectedSubtitleId === SUBTITLE_OFF_ID;
+      const managedTracksCount = video.querySelectorAll('track[data-myanime1996-subtitle="managed"]').length;
+      const shouldApplyLift = isAppFullscreen && isFullscreenControlsVisible && !subtitlesExplicitlyDisabled && managedTracksCount > 0;
+      if (!shouldApplyLift) return 0;
+
+      const fallbackFooterHeightPx = 96;
+      const footerHeightPx = Math.ceil(playerFooterRef.current?.getBoundingClientRect().height ?? fallbackFooterHeightPx);
+      return Math.max(0, footerHeightPx + FULLSCREEN_SUBTITLE_EXTRA_GAP_PX);
+    };
+
+    const animateLift = (targetLiftPx: number) => {
+      if (subtitleLiftAnimationFrameRef.current) {
+        cancelAnimationFrame(subtitleLiftAnimationFrameRef.current);
+        subtitleLiftAnimationFrameRef.current = null;
+      }
+
+      const startLiftPx = subtitleLiftPxRef.current;
+      const delta = targetLiftPx - startLiftPx;
+      if (Math.abs(delta) < 0.5) {
+        subtitleLiftPxRef.current = targetLiftPx;
+        applyLiftToCurrentCues(targetLiftPx);
+        return;
+      }
+
+      const startedAt = performance.now();
+      const easeInOutCubic = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+      const step = (timestamp: number) => {
+        const elapsed = timestamp - startedAt;
+        const progress = Math.min(1, elapsed / FULLSCREEN_SUBTITLE_ANIMATION_MS);
+        const eased = easeInOutCubic(progress);
+        const currentLiftPx = startLiftPx + delta * eased;
+
+        subtitleLiftPxRef.current = currentLiftPx;
+        applyLiftToCurrentCues(currentLiftPx);
+
+        if (progress < 1) {
+          subtitleLiftAnimationFrameRef.current = requestAnimationFrame(step);
+        } else {
+          subtitleLiftAnimationFrameRef.current = null;
+          subtitleLiftPxRef.current = targetLiftPx;
+          applyLiftToCurrentCues(targetLiftPx);
+        }
+      };
+
+      subtitleLiftAnimationFrameRef.current = requestAnimationFrame(step);
+    };
+
+    const syncCuePosition = () => {
+      const targetLiftPx = resolveTargetLiftPx();
+      animateLift(targetLiftPx);
+      applyLiftToCurrentCues(subtitleLiftPxRef.current);
+    };
+
+    syncCuePosition();
+
+    const pollId = window.setInterval(syncCuePosition, 120);
+    window.addEventListener('resize', syncCuePosition);
+
+    return () => {
+      window.clearInterval(pollId);
+      window.removeEventListener('resize', syncCuePosition);
+      if (subtitleLiftAnimationFrameRef.current) {
+        cancelAnimationFrame(subtitleLiftAnimationFrameRef.current);
+        subtitleLiftAnimationFrameRef.current = null;
+      }
+      subtitleLiftPxRef.current = 0;
+      restoreTrackedCues();
+    };
+  }, [isAppFullscreen, isFullscreenControlsVisible, selectedSubtitleId]);
+
   return (
     <footer
+      ref={playerFooterRef}
       className={`vhs-panel mini-player grid h-full items-center gap-4 px-4 py-3 transition-all duration-200 ${shouldHideInFullscreen ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
       style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(220px, clamp(16rem, 50vw, 40rem)) minmax(0,1fr)' }}
     >
