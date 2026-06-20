@@ -25,6 +25,9 @@ function formatRelativeTime(value: string) {
 
 export default function History() {
   const history = useAppStore((state) => state.watchHistory);
+  const libraryItems = useAppStore((state) => state.libraryItems);
+  const libraryNotifications = useAppStore((state) => state.libraryNotifications);
+  const libraryLastNotifiedEpisodeByAnimeId = useAppStore((state) => state.libraryLastNotifiedEpisodeByAnimeId);
   const removeHistoryItem = useAppStore((state) => state.removeHistoryItem);
   const clearHistory = useAppStore((state) => state.clearHistory);
   const selectAnime = useAppStore((state) => state.selectAnime);
@@ -80,15 +83,89 @@ export default function History() {
 
   const newestEntry = history[0];
 
-  const handleResume = async (animeId: number) => {
+  const latestNotifiedEpisodeByAnimeId = useMemo(() => {
+    const latestByAnimeId = new Map<number, number>();
+
+    const update = (animeId: number, episode: number) => {
+      const safeAnimeId = Math.max(1, Math.floor(Number(animeId) || 0));
+      const safeEpisode = Math.max(0, Math.floor(Number(episode) || 0));
+      if (safeAnimeId <= 0 || safeEpisode <= 0) return;
+      const previous = latestByAnimeId.get(safeAnimeId) ?? 0;
+      if (safeEpisode > previous) {
+        latestByAnimeId.set(safeAnimeId, safeEpisode);
+      }
+    };
+
+    for (const [rawAnimeId, rawEpisode] of Object.entries(libraryLastNotifiedEpisodeByAnimeId)) {
+      update(Number(rawAnimeId), Number(rawEpisode));
+    }
+
+    for (const notification of libraryNotifications) {
+      update(notification.animeId, notification.episode);
+    }
+
+    return latestByAnimeId;
+  }, [libraryLastNotifiedEpisodeByAnimeId, libraryNotifications]);
+
+  const getResumePlan = (animeId: number) => {
     const entry = history.find((item) => item.animeId === animeId);
-    if (!entry) return;
+    if (!entry) return null;
+    if (entry.progress <= 0) return null;
+
+    const currentEpisode = Math.max(1, Math.floor(entry.episode || 1));
+    const resumeAt = Math.max(0, Math.floor(entry.lastPlaybackSeconds ?? 0));
+    const resumeDuration = Math.max(0, Math.floor(entry.episodeDurationSeconds ?? 0));
+
+    if (entry.progress < 100) {
+      if (resumeAt <= 0 && currentEpisode <= 1) return null;
+      return {
+        entry,
+        episode: currentEpisode,
+        resumeAt,
+        resumeDuration,
+      };
+    }
+
+    const candidateAnimeIds = [entry.animeId, entry.jikanId]
+      .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index);
+    let latestKnownEpisode = Math.max(
+      1,
+      currentEpisode,
+      Math.floor(Number(entry.totalEpisodes) || 0),
+    );
+
+    for (const candidateAnimeId of candidateAnimeIds) {
+      const libraryItem = libraryItems[candidateAnimeId];
+      latestKnownEpisode = Math.max(
+        latestKnownEpisode,
+        Math.floor(Number(libraryItem?.currentEpisode) || 0),
+        Math.floor(Number(libraryItem?.episodes) || 0),
+        latestNotifiedEpisodeByAnimeId.get(candidateAnimeId) ?? 0,
+      );
+    }
+
+    const nextEpisode = currentEpisode + 1;
+    if (nextEpisode > latestKnownEpisode) return null;
+
+    return {
+      entry,
+      episode: nextEpisode,
+      resumeAt: 0,
+      resumeDuration: 0,
+    };
+  };
+
+  const handleResume = async (animeId: number) => {
+    const resumePlan = getResumePlan(animeId);
+    if (!resumePlan) return;
+    const entry = resumePlan.entry;
     const fallbackDurationMinutes =
       entry.episodeDurationSeconds && entry.episodeDurationSeconds > 0
         ? Math.max(1, Math.round(entry.episodeDurationSeconds / 60))
         : undefined;
     const anime = {
       id: entry.animeId,
+      jikanId: entry.jikanId,
       title: entry.title,
       titleEnglish: entry.titleEnglish,
       titleJapanese: entry.titleJapanese,
@@ -96,6 +173,7 @@ export default function History() {
       banner: undefined,
       synopsis: '',
       episodes: entry.totalEpisodes,
+      currentEpisode: entry.totalEpisodes,
       durationMinutes: fallbackDurationMinutes,
       score: undefined,
       year: undefined,
@@ -103,22 +181,24 @@ export default function History() {
       studios: [],
     };
     await selectAnime(anime);
-    await playEpisode(anime, entry.episode);
-    const resumeAt = Math.max(0, Math.floor(entry.lastPlaybackSeconds ?? 0));
+    await playEpisode(anime, resumePlan.episode);
+    const resumeAt = Math.max(0, resumePlan.resumeAt);
     if (resumeAt > 0) {
       requestSeekTo(resumeAt);
     }
   };
 
   const handleStartOver = async (animeId: number) => {
-    const entry = history.find((item) => item.animeId === animeId);
-    if (!entry) return;
+    const resumePlan = getResumePlan(animeId);
+    if (!resumePlan) return;
+    const entry = resumePlan.entry;
     const fallbackDurationMinutes =
       entry.episodeDurationSeconds && entry.episodeDurationSeconds > 0
         ? Math.max(1, Math.round(entry.episodeDurationSeconds / 60))
         : undefined;
     const anime = {
       id: entry.animeId,
+      jikanId: entry.jikanId,
       title: entry.title,
       titleEnglish: entry.titleEnglish,
       titleJapanese: entry.titleJapanese,
@@ -126,6 +206,7 @@ export default function History() {
       banner: undefined,
       synopsis: '',
       episodes: entry.totalEpisodes,
+      currentEpisode: entry.totalEpisodes,
       durationMinutes: fallbackDurationMinutes,
       score: undefined,
       year: undefined,
@@ -133,12 +214,15 @@ export default function History() {
       studios: [],
     };
     await selectAnime(anime);
-    await playEpisode(anime, entry.episode);
+    await playEpisode(anime, resumePlan.episode);
     setPlaybackTime(0);
     requestSeekTo(0);
   };
 
-  const isResumable = (progress: number) => progress > 0 && progress < 100;
+  const isStartOverAvailable = (animeId: number) => {
+    const resumePlan = getResumePlan(animeId);
+    return Boolean(resumePlan);
+  };
 
   const handleClearAll = async () => {
     setPendingAction({ type: 'clear-all' });
@@ -242,7 +326,7 @@ export default function History() {
               </div>
             </div>
             <div className="history-item-actions">
-              {isResumable(item.progress) ? (
+              {isStartOverAvailable(item.animeId) ? (
                 <button type="button" className="vhs-button px-3 py-1.5 retro-tooltip" onClick={() => void handleStartOver(item.animeId)} data-tooltip="Start Over Playback">
                   <Play size={13} /> Start Over
                 </button>

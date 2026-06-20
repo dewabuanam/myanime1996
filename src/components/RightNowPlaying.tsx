@@ -356,6 +356,13 @@ export default function RightNowPlaying() {
   }, [activeResolvedSource?.selectedOptionId, sourceOptions]);
 
   const activeSubtitleTracks = useMemo(() => activeSourceOption?.subtitles ?? [], [activeSourceOption]);
+  const hasActivePlayableSignal = useMemo(() => {
+    if (!currentlyPlayingItem) return false;
+    if (currentlyPlayingItem.kind === 'trailer') {
+      return hasTrailerPlayback;
+    }
+    return Boolean(activeResolvedSource?.url?.trim()) && !isResolvingSource;
+  }, [activeResolvedSource?.url, currentlyPlayingItem, hasTrailerPlayback, isResolvingSource]);
 
   const shouldBlockPlaybackSurface = hasTrailerPlayback || Boolean(activeResolvedSource) || isResolvingSource;
   const {
@@ -1053,6 +1060,7 @@ export default function RightNowPlaying() {
   useEffect(() => {
     if (!currentlyPlayingItem) return;
     if (currentlyPlayingItem.kind === 'trailer') return;
+    if (!hasActivePlayableSignal) return;
     if (!isPlaying) return;
 
     const elapsedSeconds = Math.max(0, Math.floor(playbackTime));
@@ -1075,11 +1083,12 @@ export default function RightNowPlaying() {
       elapsedSeconds,
       durationSeconds,
     });
-  }, [currentlyPlayingItem, isPlaying, playbackDuration, playbackTime, updateWatchProgress]);
+  }, [currentlyPlayingItem, hasActivePlayableSignal, isPlaying, playbackDuration, playbackTime, updateWatchProgress]);
 
   useEffect(() => {
     if (!currentlyPlayingItem) return;
     if (currentlyPlayingItem.kind === 'trailer') return;
+    if (!hasActivePlayableSignal) return;
     if (isPlaying) return;
 
     const elapsedSeconds = Math.max(0, Math.floor(playbackTime));
@@ -1102,7 +1111,7 @@ export default function RightNowPlaying() {
       elapsedSeconds,
       durationSeconds,
     });
-  }, [currentlyPlayingItem, isPlaying, playbackDuration, playbackTime, updateWatchProgress]);
+  }, [currentlyPlayingItem, hasActivePlayableSignal, isPlaying, playbackDuration, playbackTime, updateWatchProgress]);
 
   useEffect(() => {
     if (hasTrailerPlayback) {

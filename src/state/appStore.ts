@@ -599,8 +599,29 @@ function buildQueuePlayableItems(anime: AnimeSummary): PlayableItem[] {
     return [makeSingleMediaItem(anime, inferredKind)];
   }
 
-  const latestEpisode = Math.max(1, anime.currentEpisode ?? anime.episodes ?? 1);
+  const latestEpisode = Math.max(1, anime.currentEpisode ?? 1);
   return Array.from({ length: latestEpisode }, (_, index) => makeEpisodeItem(anime, index + 1, 'anime-card'));
+}
+
+async function resolveQueueEpisodeResolution(anime: AnimeSummary): Promise<{ latestEpisode: number; resolvedJikanId?: number }> {
+  let latestEpisode = Math.max(1, Math.floor(Number(anime.currentEpisode) || 0));
+  let resolvedJikanId = Number.isFinite(anime.jikanId) && Number(anime.jikanId) > 0
+    ? Math.floor(Number(anime.jikanId))
+    : undefined;
+
+  if (!resolvedJikanId) {
+    resolvedJikanId = await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
+  }
+
+  if (resolvedJikanId && resolvedJikanId > 0) {
+    const bundle = await getJikanDetailEpisodeBundle(resolvedJikanId, 1).catch(() => null);
+    latestEpisode = Math.max(latestEpisode, Math.floor(Number(bundle?.detail.currentEpisode) || 0));
+  }
+
+  return {
+    latestEpisode: Math.max(1, latestEpisode),
+    resolvedJikanId,
+  };
 }
 
 function sortHistory(history: WatchProgress[]) {
@@ -1785,11 +1806,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedSubtitleId: null,
     });
 
-    if (currentItem.kind === 'episode' || currentItem.kind === 'movie' || currentItem.kind === 'ova' || currentItem.kind === 'ona' || currentItem.kind === 'special') {
-      const animeId = getCanonicalAnimeId(currentItem.anime);
-      const existingProgress = get().watchProgress[animeId]?.progress ?? get().watchProgress[currentItem.anime.id]?.progress ?? 12;
-      void get().updateWatchProgress(currentItem.anime, existingProgress, currentItem.episodeNumber);
-    }
   },
 
   playAnimeSeries: async (anime) => {
@@ -1815,7 +1831,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
 
-    const items = buildSeriesPlayableItems(anime);
+    const episodeResolution = await resolveQueueEpisodeResolution(anime);
+    const queueAnime: AnimeSummary = {
+      ...anime,
+      jikanId: anime.jikanId ?? episodeResolution.resolvedJikanId,
+      currentEpisode: episodeResolution.latestEpisode,
+    };
+    const items = buildQueuePlayableItems(queueAnime);
     await get().replaceQueueAndPlay(items, 0);
   },
 
@@ -1856,7 +1878,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addAnimeSeriesToQueue: async (anime) => {
-    const additions = buildQueuePlayableItems(anime);
+    const episodeResolution = await resolveQueueEpisodeResolution(anime);
+    const queueAnime: AnimeSummary = {
+      ...anime,
+      jikanId: anime.jikanId ?? episodeResolution.resolvedJikanId,
+      currentEpisode: episodeResolution.latestEpisode,
+    };
+    const additions = buildQueuePlayableItems(queueAnime);
     const existingQueue = get().queue;
     const mergedQueue = [...existingQueue, ...additions];
     await setStoredValue('queue', mergedQueue);
@@ -2037,11 +2065,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         selectedSubtitleId: null,
       });
 
-      if (nextItem.kind === 'episode' || nextItem.kind === 'movie' || nextItem.kind === 'ova' || nextItem.kind === 'ona' || nextItem.kind === 'special') {
-        const animeId = getCanonicalAnimeId(nextItem.anime);
-        const existingProgress = get().watchProgress[animeId]?.progress ?? get().watchProgress[nextItem.anime.id]?.progress ?? 12;
-        void get().updateWatchProgress(nextItem.anime, existingProgress, nextItem.episodeNumber);
-      }
       return;
     }
 
@@ -2579,11 +2602,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     const currentItem = get().currentlyPlayingItem;
     if (!currentItem) return;
 
-    if (currentItem.kind === 'episode' || currentItem.kind === 'movie' || currentItem.kind === 'ova' || currentItem.kind === 'ona' || currentItem.kind === 'special') {
-      const animeId = getCanonicalAnimeId(currentItem.anime);
-      const existingProgress = get().watchProgress[animeId]?.progress ?? get().watchProgress[currentItem.anime.id]?.progress ?? 12;
-      void get().updateWatchProgress(currentItem.anime, existingProgress, currentItem.episodeNumber);
-    }
   },
 
   setPlaybackTime: (seconds) => {

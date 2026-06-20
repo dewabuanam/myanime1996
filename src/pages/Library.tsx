@@ -182,14 +182,41 @@ export default function Library() {
     await openRightPanelWithView('detail');
   };
 
-  const getResumeEntry = (item: LibraryAnimeItem) => {
+  const getResumePlan = (item: LibraryAnimeItem) => {
     const animeId = Math.max(1, Math.floor(item.animeId));
     const canonicalAnimeId = Math.max(1, Math.floor(item.jikanId ?? animeId));
     const entry = watchProgress[canonicalAnimeId] ?? watchProgress[animeId];
     if (!entry) return null;
-    if (entry.progress <= 0 || entry.progress >= 100) return null;
-    if (Math.max(0, Math.floor(entry.lastPlaybackSeconds ?? 0)) <= 0 && Math.max(1, entry.episode) <= 1) return null;
-    return entry;
+    if (entry.progress <= 0) return null;
+
+    const currentEpisode = Math.max(1, Math.floor(entry.episode || 1));
+    const resumeAt = Math.max(0, Math.floor(entry.lastPlaybackSeconds ?? 0));
+    const resumeDuration = Math.max(0, Math.floor(entry.episodeDurationSeconds ?? 0));
+
+    if (entry.progress < 100) {
+      if (resumeAt <= 0 && currentEpisode <= 1) return null;
+      return {
+        episode: currentEpisode,
+        resumeAt,
+        resumeDuration,
+      };
+    }
+
+    const latestKnownEpisode = Math.max(
+      1,
+      currentEpisode,
+      Math.floor(Number(item.currentEpisode) || 0),
+      Math.floor(Number(item.episodes) || 0),
+      Math.floor(Number(entry.totalEpisodes) || 0),
+    );
+    const nextEpisode = currentEpisode + 1;
+    if (nextEpisode > latestKnownEpisode) return null;
+
+    return {
+      episode: nextEpisode,
+      resumeAt: 0,
+      resumeDuration: 0,
+    };
   };
 
   const canPlayLibraryItem = (item: LibraryAnimeItem, isResumeAction: boolean) => {
@@ -200,18 +227,16 @@ export default function Library() {
 
   const playFromLibraryCard = async (item: LibraryAnimeItem) => {
     const anime = toAnimeSummaryFromLibraryItem(item);
-    const resumeEntry = getResumeEntry(item);
+    const resumePlan = getResumePlan(item);
 
-    if (resumeEntry) {
-      const resumeAt = Math.max(0, Math.floor(resumeEntry.lastPlaybackSeconds ?? 0));
-      const resumeDuration = Math.max(0, Math.floor(resumeEntry.episodeDurationSeconds ?? 0));
-      await playEpisode(anime, Math.max(1, resumeEntry.episode));
-      if (resumeDuration > 0) {
-        setPlaybackDuration(resumeDuration);
+    if (resumePlan) {
+      await playEpisode(anime, Math.max(1, resumePlan.episode));
+      if (resumePlan.resumeDuration > 0) {
+        setPlaybackDuration(resumePlan.resumeDuration);
       }
-      if (resumeAt > 0) {
-        setPlaybackTime(resumeAt);
-        requestSeekTo(resumeAt);
+      if (resumePlan.resumeAt > 0) {
+        setPlaybackTime(resumePlan.resumeAt);
+        requestSeekTo(resumePlan.resumeAt);
       }
       return;
     }
@@ -313,8 +338,8 @@ export default function Library() {
               const unreadAnimeIds = [item.animeId, item.jikanId]
                 .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index);
               const unreadCount = unreadAnimeIds.reduce((total, animeId) => total + (unreadNotificationCountByAnimeId.get(animeId) ?? 0), 0);
-              const resumeEntry = getResumeEntry(item);
-              const isResumeAction = Boolean(resumeEntry);
+              const resumePlan = getResumePlan(item);
+              const isResumeAction = Boolean(resumePlan);
               const playLabel = isResumeAction ? 'Resume' : 'Play Now';
               const canPlayAnime = canPlayLibraryItem(item, isResumeAction);
               return (

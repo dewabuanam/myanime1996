@@ -17,8 +17,9 @@ import {
   refreshHomeShelvesIfNeeded,
   resolveCanonicalDetailRouteId,
 } from '../services/catalogSource';
+import { getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import { useAppStore } from '../state/appStore';
-import type { AnimeSummary, LibraryStatus } from '../types/anime';
+import type { AnimeSummary, LibraryStatus, WatchProgress } from '../types/anime';
 import {
   formatReleaseDateTimeLocal,
   getReleaseBadgeLabel,
@@ -51,6 +52,11 @@ type ContinueWatchingItem = {
   elapsedSeconds: number;
   elapsedLabel: string;
   progress: number;
+  resumeEpisode: number;
+  resumeAtSeconds: number;
+  isNextEpisodeResume: boolean;
+  hasNewReleaseSignal: boolean;
+  updatedAt: string;
 };
 
 type ShelfDensity = 5 | 6;
@@ -209,6 +215,9 @@ export default function Home() {
   const watchHistory = useAppStore((state) => state.watchHistory);
   const removeHistoryItem = useAppStore((state) => state.removeHistoryItem);
   const watchProgress = useAppStore((state) => state.watchProgress);
+  const libraryItems = useAppStore((state) => state.libraryItems);
+  const libraryNotifications = useAppStore((state) => state.libraryNotifications);
+  const libraryLastNotifiedEpisodeByAnimeId = useAppStore((state) => state.libraryLastNotifiedEpisodeByAnimeId);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
   const homeRefreshVersion = useAppStore((state) => state.homeRefreshVersion);
   const runLibraryEpisodeDailyCheck = useAppStore((state) => state.runLibraryEpisodeDailyCheck);
@@ -259,7 +268,10 @@ export default function Home() {
   const getMetaLabel = (item: ShelfItem, shelfKey: string, anime: AnimeSummary) => {
     if (isContinueWatchingItem(item)) {
       const totalEpisodes = item.totalEpisodes && item.totalEpisodes > 0 ? `/${item.totalEpisodes}` : '';
-      return `Ep ${item.episode}${totalEpisodes} • ${item.elapsedLabel}`;
+      if (item.isNextEpisodeResume) {
+        return `Next Ep ${item.resumeEpisode}${totalEpisodes} • Ready`;
+      }
+      return `Ep ${item.resumeEpisode}${totalEpisodes} • ${item.elapsedLabel}`;
     }
     if (shelfKey === 'latest') {
       const releaseDateTime = formatReleaseDateTime(anime.airingDate);
@@ -428,6 +440,135 @@ export default function Home() {
     return map;
   }, [latestPromo, latestUpdated, popular, seasonal, topAiring, topUpcoming]);
 
+  const latestNotifiedEpisodeByAnimeId = useMemo(() => {
+    const latestByAnimeId = new Map<number, number>();
+
+    const update = (animeId: number, episode: number) => {
+      const safeAnimeId = Math.max(1, Math.floor(Number(animeId) || 0));
+      const safeEpisode = Math.max(0, Math.floor(Number(episode) || 0));
+      if (safeAnimeId <= 0 || safeEpisode <= 0) return;
+      const previous = latestByAnimeId.get(safeAnimeId) ?? 0;
+      if (safeEpisode > previous) {
+        latestByAnimeId.set(safeAnimeId, safeEpisode);
+      }
+    };
+
+    for (const [rawAnimeId, rawEpisode] of Object.entries(libraryLastNotifiedEpisodeByAnimeId)) {
+      update(Number(rawAnimeId), Number(rawEpisode));
+    }
+
+    for (const notification of libraryNotifications) {
+      update(notification.animeId, notification.episode);
+    }
+
+    return latestByAnimeId;
+  }, [libraryLastNotifiedEpisodeByAnimeId, libraryNotifications]);
+
+  const getLatestKnownEpisodeForHistoryEntry = (entry: WatchProgress, source?: AnimeSummary) => {
+    const candidateAnimeIds = [entry.animeId, entry.jikanId, source?.id, source?.jikanId]
+      .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index);
+
+    let latestKnownEpisode = Math.max(
+      1,
+      Math.floor(Number(entry.episode) || 1),
+      Math.floor(Number(source?.currentEpisode) || 0),
+    );
+
+    for (const animeId of candidateAnimeIds) {
+      const libraryItem = libraryItems[animeId];
+      latestKnownEpisode = Math.max(
+        latestKnownEpisode,
+        Math.floor(Number(libraryItem?.currentEpisode) || 0),
+        latestNotifiedEpisodeByAnimeId.get(animeId) ?? 0,
+      );
+    }
+
+    return latestKnownEpisode;
+  };
+
+  const resolveLatestPlayableEpisodeFromSignals = (anime: AnimeSummary) => {
+    const candidateAnimeIds = new Set<number>(
+      [anime.id, anime.jikanId]
+        .filter((value): value is number => typeof value === 'number' && value > 0),
+    );
+
+    const animeRoute = anime.animeScheduleRoute?.trim().toLowerCase() ?? '';
+    const animeTitleKeys = [anime.title, anime.titleEnglish, anime.titleJapanese]
+      .map((value) => normalizeIdentityText(value))
+      .filter((value): value is string => value.length > 0);
+
+    let latestEpisode = Math.max(1, Math.floor(Number(anime.currentEpisode) || 0));
+
+    for (const libraryItem of Object.values(libraryItems)) {
+      const idsMatch = candidateAnimeIds.has(libraryItem.animeId) || (typeof libraryItem.jikanId === 'number' && candidateAnimeIds.has(libraryItem.jikanId));
+      const routeMatch =
+        animeRoute.length > 0 &&
+        (libraryItem.animeScheduleRoute?.trim().toLowerCase() ?? '') === animeRoute;
+      const libraryTitleKeys = [libraryItem.title, libraryItem.titleEnglish, libraryItem.titleJapanese]
+        .map((value) => normalizeIdentityText(value))
+        .filter((value): value is string => value.length > 0);
+      const titleMatch = animeTitleKeys.some((key) => libraryTitleKeys.includes(key));
+
+      if (!idsMatch && !routeMatch && !titleMatch) continue;
+
+      candidateAnimeIds.add(libraryItem.animeId);
+      if (typeof libraryItem.jikanId === 'number' && libraryItem.jikanId > 0) {
+        candidateAnimeIds.add(libraryItem.jikanId);
+      }
+      latestEpisode = Math.max(latestEpisode, Math.floor(Number(libraryItem.currentEpisode) || 0));
+    }
+
+    for (const animeId of candidateAnimeIds) {
+      latestEpisode = Math.max(latestEpisode, latestNotifiedEpisodeByAnimeId.get(animeId) ?? 0);
+    }
+
+    return Math.max(1, latestEpisode);
+  };
+
+  const resolveLatestPlayableEpisode = async (anime: AnimeSummary) => {
+    let latestEpisode = resolveLatestPlayableEpisodeFromSignals(anime);
+    const resolvedJikanId = anime.jikanId ?? await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
+
+    if (resolvedJikanId && resolvedJikanId > 0) {
+      const bundle = await getJikanDetailEpisodeBundle(resolvedJikanId, 1).catch(() => null);
+      latestEpisode = Math.max(latestEpisode, Math.floor(Number(bundle?.detail.currentEpisode) || 0));
+    }
+
+    return Math.max(1, latestEpisode);
+  };
+
+  const getResumePlan = (anime: AnimeSummary) => {
+    const canonicalAnimeId = anime.jikanId ?? anime.id;
+    const entry = watchProgress[canonicalAnimeId] ?? watchProgress[anime.id];
+    if (!entry) return null;
+    if (entry.progress <= 0) return null;
+
+    const currentEpisode = Math.max(1, Math.floor(entry.episode || 1));
+    const resumeAt = Math.max(0, Math.floor(entry.lastPlaybackSeconds ?? 0));
+    const resumeDuration = Math.max(0, Math.floor(entry.episodeDurationSeconds ?? 0));
+
+    if (entry.progress < 100) {
+      if (resumeAt <= 0 && currentEpisode <= 1) return null;
+      return {
+        entry,
+        episode: currentEpisode,
+        resumeAt,
+        resumeDuration,
+      };
+    }
+
+    const latestKnownEpisode = Math.max(currentEpisode, resolveLatestPlayableEpisodeFromSignals(anime));
+    const nextEpisode = currentEpisode + 1;
+    if (nextEpisode > latestKnownEpisode) return null;
+
+    return {
+      entry,
+      episode: nextEpisode,
+      resumeAt: 0,
+      resumeDuration: 0,
+    };
+  };
+
   const startWatching = async () => {
     if (!featured) return;
     await playAnimeSeries(featured);
@@ -446,18 +587,34 @@ export default function Home() {
   const showStartWatching = Boolean(featured && !heroIsFromLatestPromo && !heroIsFromTopUpcoming && !isNotYetAired(featured));
 
   const continueWatching = useMemo<ContinueWatchingItem[]>(() => {
-    return watchHistory
-      .filter((item) => item.progress < 100)
-      .map((item) => {
+    const items: ContinueWatchingItem[] = [];
+
+    for (const item of watchHistory) {
         const directSource = animeLookup.get(item.animeId);
         const titleKeys = [item.title, item.titleEnglish, item.titleJapanese]
           .map((value) => normalizeIdentityText(value))
           .filter((value): value is string => value.length > 0)
           .map((value) => `title:${value}`);
         const matchedSource = directSource ?? titleKeys.map((key) => animeIdentityLookup.get(key)).find((anime): anime is AnimeSummary => !!anime);
+        const safeEpisode = Math.max(1, Math.floor(item.episode || 1));
+        const elapsedSeconds = Math.max(0, Math.floor(item.lastPlaybackSeconds ?? 0));
+        const inProgressResume =
+          item.progress > 0 &&
+          item.progress < 100 &&
+          (elapsedSeconds > 0 || safeEpisode > 1);
+        const latestKnownEpisode = getLatestKnownEpisodeForHistoryEntry(item, matchedSource);
+        const nextEpisodeResume = item.progress >= 100 && safeEpisode + 1 <= latestKnownEpisode;
 
-        return {
-          source: matchedSource,
+        if (!inProgressResume && !nextEpisodeResume) {
+          continue;
+        }
+
+        const latestNotifiedEpisode = [item.animeId, item.jikanId, matchedSource?.id, matchedSource?.jikanId]
+          .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index)
+          .reduce((best, animeId) => Math.max(best, latestNotifiedEpisodeByAnimeId.get(animeId) ?? 0), 0);
+
+        items.push({
+          ...(matchedSource ? { source: matchedSource } : {}),
           id: item.animeId,
           jikanId: item.jikanId ?? matchedSource?.jikanId,
           animeScheduleRoute: item.animeScheduleRoute ?? matchedSource?.animeScheduleRoute,
@@ -465,15 +622,27 @@ export default function Home() {
           titleEnglish: item.titleEnglish,
           titleJapanese: item.titleJapanese,
           image: item.image,
-          episode: item.episode,
+          episode: safeEpisode,
           totalEpisodes: item.totalEpisodes,
           episodeDurationSeconds: item.episodeDurationSeconds,
-          elapsedSeconds: Math.max(0, Math.floor(item.lastPlaybackSeconds ?? 0)),
+          elapsedSeconds,
           elapsedLabel: formatElapsedLabel(item.lastPlaybackSeconds ?? 0),
           progress: item.progress,
-        };
-      });
-  }, [animeIdentityLookup, animeLookup, watchHistory]);
+          resumeEpisode: nextEpisodeResume ? safeEpisode + 1 : safeEpisode,
+          resumeAtSeconds: nextEpisodeResume ? 0 : elapsedSeconds,
+          isNextEpisodeResume: nextEpisodeResume,
+          hasNewReleaseSignal: nextEpisodeResume && latestNotifiedEpisode >= safeEpisode + 1,
+          updatedAt: item.updatedAt,
+        });
+    }
+
+    return items.sort((left, right) => {
+      if (left.hasNewReleaseSignal !== right.hasNewReleaseSignal) {
+        return left.hasNewReleaseSignal ? -1 : 1;
+      }
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    });
+  }, [animeIdentityLookup, animeLookup, latestNotifiedEpisodeByAnimeId, libraryItems, watchHistory]);
 
   const seasonLabel = useMemo(() => {
     return `${getSeasonLabelUpper(activeSeasonMeta.season)} ${activeSeasonMeta.year}`;
@@ -543,13 +712,9 @@ export default function Home() {
 
   const playFromCard = async (item: ContinueWatchingItem | AnimeSummary, shelfKey: string) => {
     const anime = toAnimeSummary(item);
-    const canonicalAnimeId = anime.jikanId ?? anime.id;
-    const resumeEntry = watchProgress[canonicalAnimeId] ?? watchProgress[anime.id];
-    const hasResume =
-      !!resumeEntry &&
-      resumeEntry.progress > 0 &&
-      resumeEntry.progress < 100 &&
-      (Math.max(0, Math.floor(resumeEntry.lastPlaybackSeconds ?? 0)) > 0 || Math.max(1, resumeEntry.episode) > 1);
+    const resumePlan = getResumePlan(anime);
+    const resumeEntry = resumePlan?.entry;
+    const hasResume = Boolean(resumePlan);
 
     const fallbackDurationMinutes =
       resumeEntry?.episodeDurationSeconds && resumeEntry.episodeDurationSeconds > 0
@@ -569,10 +734,10 @@ export default function Home() {
       return;
     }
 
-    if (hasResume && resumeEntry) {
-      const resumeAt = Math.max(0, Math.floor(resumeEntry.lastPlaybackSeconds ?? 0));
-      const resumeDuration = Math.max(0, Math.floor(resumeEntry.episodeDurationSeconds ?? 0));
-      await playEpisode(resumeAnime, Math.max(1, resumeEntry.episode));
+    if (hasResume && resumePlan && resumeEntry) {
+      await playEpisode(resumeAnime, Math.max(1, resumePlan.episode));
+      const resumeAt = Math.max(0, resumePlan.resumeAt);
+      const resumeDuration = Math.max(0, resumePlan.resumeDuration);
       if (resumeDuration > 0) {
         setPlaybackDuration(resumeDuration);
       }
@@ -584,10 +749,10 @@ export default function Home() {
     }
 
     if (mode === 'episode') {
-      const episodeNumber = isContinueWatchingItem(item) ? item.episode : Math.max(1, anime.episodes ?? 1);
+      const episodeNumber = isContinueWatchingItem(item) ? item.resumeEpisode : await resolveLatestPlayableEpisode(anime);
       await playEpisode(anime, episodeNumber);
-      if (isContinueWatchingItem(item) && item.elapsedSeconds > 0) {
-        requestSeekTo(item.elapsedSeconds);
+      if (isContinueWatchingItem(item) && item.resumeAtSeconds > 0) {
+        requestSeekTo(item.resumeAtSeconds);
       }
       return;
     }
@@ -610,7 +775,7 @@ export default function Home() {
     }
 
     if (mode === 'episode') {
-      const episodeNumber = isContinueWatchingItem(item) ? item.episode : Math.max(1, anime.episodes ?? 1);
+      const episodeNumber = isContinueWatchingItem(item) ? item.resumeEpisode : await resolveLatestPlayableEpisode(anime);
       await playEpisode(anime, episodeNumber);
       setPlaybackTime(0);
       requestSeekTo(0);
@@ -630,7 +795,7 @@ export default function Home() {
     }
 
     if (mode === 'episode') {
-      const episodeNumber = isContinueWatchingItem(item) ? item.episode : Math.max(1, anime.episodes ?? 1);
+      const episodeNumber = isContinueWatchingItem(item) ? item.resumeEpisode : await resolveLatestPlayableEpisode(anime);
       await addEpisodeToQueue(anime, episodeNumber);
       return;
     }
@@ -658,15 +823,6 @@ export default function Home() {
     if (!libraryPickerAnime) return;
     await removeAnimeFromLibrary(libraryPickerAnime.jikanId ?? libraryPickerAnime.id);
     setLibraryPickerAnime(null);
-  };
-
-  const getResumeEntry = (anime: AnimeSummary) => {
-    const canonicalAnimeId = anime.jikanId ?? anime.id;
-    const entry = watchProgress[canonicalAnimeId] ?? watchProgress[anime.id];
-    if (!entry) return null;
-    if (entry.progress <= 0 || entry.progress >= 100) return null;
-    if (Math.max(0, Math.floor(entry.lastPlaybackSeconds ?? 0)) <= 0 && Math.max(1, entry.episode) <= 1) return null;
-    return entry;
   };
 
   const openSeeAll = (type: SeeAllType, sort?: SeeAllSort) => {
@@ -757,22 +913,22 @@ export default function Home() {
             resetKey={`${homeRefreshVersion}:${shelf.key}:${shelf.items.length}:${shelf.items[0]?.id ?? 'none'}`}
             trackClassName={`anime-shelf-track ${shelf.density === 5 ? 'anime-shelf-track-5' : 'anime-shelf-track-6'}`}
             renderItem={(item, index) => {
-              const episodes = isContinueWatchingItem(item) ? item.episode : item.episodes;
+              const episodes = isContinueWatchingItem(item) ? item.resumeEpisode : item.episodes;
               const previewAnime = toAnimeSummary(item);
               const displayTitle = getDisplayTitle(previewAnime, titleLanguage);
               const secondaryTitle = previewAnime.titleJapanese ?? '';
               const isRankedShelf = shelf.key === 'airing' || shelf.key === 'upcoming';
               const labelMode = getCardLabelMode(shelf.key);
-              const mediaLabel = getMediaLabel(labelMode, previewAnime, isContinueWatchingItem(item) ? item.episode : episodes ?? 1);
+              const mediaLabel = getMediaLabel(labelMode, previewAnime, isContinueWatchingItem(item) ? item.resumeEpisode : episodes ?? 1);
               const statusLabel = previewAnime.status?.trim() || 'Currently Airing';
               const mediaStatusLabel = `${mediaLabel} • ${statusLabel}`;
               const previewEpisodeLabel = getMetaLabel(item, shelf.key, previewAnime);
               const seasonMeta = resolveAnimeSeason(previewAnime);
-              const resumeEntry = getResumeEntry(previewAnime);
+              const resumePlan = getResumePlan(previewAnime);
               const canonicalAnimeId = previewAnime.jikanId ?? previewAnime.id;
               const watchEntry = watchProgress[canonicalAnimeId] ?? watchProgress[previewAnime.id];
               const isWatchedCompleted = Boolean(watchEntry?.completed || (watchEntry?.progress ?? 0) >= 100);
-              const isResumeAction = Boolean(resumeEntry);
+              const isResumeAction = Boolean(resumePlan);
               const canPlayAnime = shelf.key !== 'promo' && (isResumeAction || !isNotYetAired(previewAnime));
               const playLabel = isResumeAction ? 'Resume' : 'Play Now';
               const posterOverlayLabel = getPosterOverlayLabel(previewAnime, isWatchedCompleted);
