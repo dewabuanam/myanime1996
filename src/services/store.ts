@@ -72,10 +72,61 @@ type StoreShape = {
   aniSkipCache: Record<string, CachedPayload<unknown>>;
 };
 
+const PROFILE_SCOPED_KEYS: ReadonlySet<keyof StoreShape> = new Set<keyof StoreShape>([
+  'isSidebarCompact',
+  'isRightPanelHidden',
+  'isRightPanelFullpage',
+  'rightPanelView',
+  'rightPanelWidth',
+  'titleLanguage',
+  'shuffleEnabled',
+  'repeatMode',
+  'importedSourcePlugins',
+  'pluginPriority',
+  'pluginEnabled',
+  'preferredSourcePluginId',
+  'preferredAudioLanguage',
+  'autoSkipOpening',
+  'autoSkipEnding',
+  'autoSkipRecap',
+  'assumeEpisodeCountFromReleaseDate',
+  'allowNsfw',
+  'upcomingSeasonFilter',
+  'subtitleFontColor',
+  'subtitleFontSize',
+  'subtitleFontSizeDocked',
+  'subtitleFontSizeExpanded',
+  'subtitleFontSizeFullscreen',
+  'subtitleDropShadow',
+  'subtitleBackgroundHighlight',
+  'isTrailerMuted',
+  'trailerVolume',
+  'trailerLastNonZeroVolume',
+  'currentlyPlayingItem',
+  'queue',
+  'queueCursor',
+  'selectedSourceOptionId',
+  'selectedSubtitleId',
+  'playlists',
+  'watchHistory',
+  'favorites',
+  'libraryItems',
+  'libraryStatusNotificationSettings',
+  'libraryLastNotifiedEpisodeByAnimeId',
+  'libraryNotifications',
+  'libraryLastDailyEpisodeCheckDate',
+  'watchProgress',
+  'baseCatalogSource',
+  'animeScheduleApiToken',
+  'animeScheduleRateLimitGuideDismissedDate',
+]);
+
 const STORE_FILE = 'myanime1996.store.json';
 const browserPrefix = 'myanime1996:';
+const profilePrefix = 'profile:';
 let tauriStorePromise: Promise<unknown | null> | null = null;
 let tauriStoreDisabled = false;
+let activeProfileId: string | null = null;
 
 const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -111,29 +162,79 @@ function getMethod<T extends (...args: never[]) => unknown>(target: unknown, key
   return undefined;
 }
 
+function getStoreKey<K extends keyof StoreShape>(key: K, profileId = activeProfileId) {
+  if (PROFILE_SCOPED_KEYS.has(key) && profileId && profileId.trim().length > 0) {
+    return `${profilePrefix}${profileId}:${String(key)}`;
+  }
+  return String(key);
+}
+
+export function setActiveStoreProfile(profileId: string | null) {
+  const normalized = typeof profileId === 'string' && profileId.trim().length > 0 ? profileId.trim() : null;
+  activeProfileId = normalized;
+}
+
+export async function migrateLegacyStoreDataToProfile(profileId: string) {
+  const normalizedProfileId = profileId.trim();
+  if (!normalizedProfileId) return;
+
+  const store = await getTauriStore();
+
+  if (store) {
+    const get = getMethod<(key: string) => Promise<unknown | undefined>>(store, 'get');
+    const set = getMethod<(key: string, value: unknown) => Promise<void>>(store, 'set');
+    const save = getMethod<() => Promise<void>>(store, 'save');
+    if (!get || !set) return;
+
+    for (const scopedKey of PROFILE_SCOPED_KEYS) {
+      const profileKey = getStoreKey(scopedKey, normalizedProfileId);
+      const hasProfileValue = (await get(profileKey)) !== undefined;
+      if (hasProfileValue) continue;
+      const legacyValue = await get(String(scopedKey));
+      if (legacyValue === undefined) continue;
+      await set(profileKey, legacyValue);
+    }
+
+    await save?.();
+    return;
+  }
+
+  for (const scopedKey of PROFILE_SCOPED_KEYS) {
+    const profileKey = `${browserPrefix}${getStoreKey(scopedKey, normalizedProfileId)}`;
+    if (localStorage.getItem(profileKey) !== null) continue;
+
+    const legacyKey = `${browserPrefix}${String(scopedKey)}`;
+    const legacyRaw = localStorage.getItem(legacyKey);
+    if (legacyRaw === null) continue;
+    localStorage.setItem(profileKey, legacyRaw);
+  }
+}
+
 export async function getStoredValue<K extends keyof StoreShape>(key: K, fallback: StoreShape[K]): Promise<StoreShape[K]> {
+  const resolvedKey = getStoreKey(key);
   try {
     const store = await getTauriStore();
     if (store) {
       const get = getMethod<(key: string) => Promise<StoreShape[K] | undefined>>(store, 'get');
-      const value = await get?.(key);
+      const value = await get?.(resolvedKey);
       return value ?? fallback;
     }
   } catch (error) {
     console.warn(`Store read failed for key "${String(key)}", using fallback.`, error);
   }
 
-  const raw = localStorage.getItem(`${browserPrefix}${String(key)}`);
+  const raw = localStorage.getItem(`${browserPrefix}${resolvedKey}`);
   return raw ? (JSON.parse(raw) as StoreShape[K]) : fallback;
 }
 
 export async function setStoredValue<K extends keyof StoreShape>(key: K, value: StoreShape[K]): Promise<void> {
+  const resolvedKey = getStoreKey(key);
   try {
     const store = await getTauriStore();
     if (store) {
       const set = getMethod<(key: string, value: StoreShape[K]) => Promise<void>>(store, 'set');
       const save = getMethod<() => Promise<void>>(store, 'save');
-      await set?.(key, value);
+      await set?.(resolvedKey, value);
       await save?.();
       return;
     }
@@ -141,16 +242,17 @@ export async function setStoredValue<K extends keyof StoreShape>(key: K, value: 
     console.warn(`Store write failed for key "${String(key)}", using localStorage.`, error);
   }
 
-  localStorage.setItem(`${browserPrefix}${String(key)}`, JSON.stringify(value));
+  localStorage.setItem(`${browserPrefix}${resolvedKey}`, JSON.stringify(value));
 }
 
 export async function removeStoredValue<K extends keyof StoreShape>(key: K): Promise<void> {
+  const resolvedKey = getStoreKey(key);
   try {
     const store = await getTauriStore();
     if (store) {
       const deleteMethod = getMethod<(key: string) => Promise<boolean>>(store, 'delete');
       const save = getMethod<() => Promise<void>>(store, 'save');
-      await deleteMethod?.(key);
+      await deleteMethod?.(resolvedKey);
       await save?.();
       return;
     }
@@ -158,5 +260,5 @@ export async function removeStoredValue<K extends keyof StoreShape>(key: K): Pro
     console.warn(`Store delete failed for key "${String(key)}", using localStorage.`, error);
   }
 
-  localStorage.removeItem(`${browserPrefix}${String(key)}`);
+  localStorage.removeItem(`${browserPrefix}${resolvedKey}`);
 }

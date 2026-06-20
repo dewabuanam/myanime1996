@@ -19,7 +19,7 @@ import type { BaseCatalogSource } from '../services/catalogSource';
 import { DEFAULT_BASE_CATALOG_SOURCE, getAnimeTrailerUrl, resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { clearAnimeScheduleDataCache, DEFAULT_ANIMESCHEDULE_TOKEN, onAnimeScheduleRateLimit } from '../services/animeSchedule';
 import { clearJikanDataCache } from '../services/jikan';
-import { getStoredValue, removeStoredValue, setStoredValue } from '../services/store';
+import { getStoredValue, migrateLegacyStoreDataToProfile, removeStoredValue, setActiveStoreProfile, setStoredValue } from '../services/store';
 import { importSourcePluginFromPicker } from '../services/pluginImport';
 import { getAvailableSourcePlugins, getDefaultPluginPriority } from '../services/sourceResolver';
 import { clearSourceResolveCache } from '../services/sourceCache';
@@ -250,6 +250,7 @@ interface AppState {
   clearHistory: () => Promise<void>;
   clearJikanCache: () => Promise<void>;
   exportUserData: () => Promise<Record<string, unknown>>;
+  importUserData: (payload: unknown) => Promise<void>;
   factoryReset: () => Promise<void>;
 }
 
@@ -1098,6 +1099,44 @@ function normalizePlayableItemFromUnknown(value: unknown): PlayableItem | null {
   return null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeFavorites(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  const unique = new Set<number>();
+  for (const entry of value) {
+    const id = Math.max(1, Math.floor(Number(entry) || 0));
+    if (id > 0) unique.add(id);
+  }
+  return [...unique];
+}
+
+function normalizePlaylists(value: unknown): Playlist[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is Playlist => {
+    if (!entry || typeof entry !== 'object') return false;
+    const maybePlaylist = entry as { id?: unknown; name?: unknown; animeIds?: unknown };
+    return (
+      typeof maybePlaylist.id === 'string' &&
+      typeof maybePlaylist.name === 'string' &&
+      Array.isArray(maybePlaylist.animeIds)
+    );
+  });
+}
+
+function getImportPayloadSections(payload: unknown) {
+  if (!isRecord(payload)) {
+    return { settings: {}, userData: {} };
+  }
+
+  const settings = isRecord(payload.settings) ? payload.settings : {};
+  const userData = isRecord(payload.userData) ? payload.userData : {};
+
+  return { settings, userData };
+}
+
 async function readProfilePlayback(session: UserSession | null) {
   if (!session) return { watchHistory: [], watchProgress: {} as Record<number, WatchProgress> };
 
@@ -1226,6 +1265,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   initialize: async () => {
     try {
+      setActiveStoreProfile(null);
       const [
         session,
         isSidebarCompact,
@@ -1320,87 +1360,183 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('libraryNotifications', []),
         getStoredValue('libraryLastDailyEpisodeCheckDate', null),
       ]);
+
+      const scopedProfileId = session?.id ?? null;
+      if (scopedProfileId) {
+        await migrateLegacyStoreDataToProfile(scopedProfileId);
+      }
+      setActiveStoreProfile(scopedProfileId);
+
+      const [
+        scopedIsSidebarCompact,
+        scopedIsRightPanelHidden,
+        scopedIsRightPanelFullpage,
+        scopedRawRightPanelView,
+        scopedRightPanelWidth,
+        scopedRawTitleLanguage,
+        scopedRawShuffleEnabled,
+        scopedRawRepeatMode,
+        scopedRawImportedSourcePlugins,
+        scopedRawPluginPriority,
+        scopedRawPluginEnabled,
+        scopedRawPreferredSourcePluginId,
+        scopedRawPreferredAudioLanguage,
+        scopedRawAutoSkipOpening,
+        scopedRawAutoSkipEnding,
+        scopedRawAutoSkipRecap,
+        scopedRawAllowNsfw,
+        scopedRawUpcomingSeasonFilter,
+        scopedRawBaseCatalogSource,
+        scopedRawAnimeScheduleApiToken,
+        scopedAnimeScheduleRateLimitGuideDismissedDate,
+        scopedRawSubtitleFontColor,
+        scopedRawLegacySubtitleFontSize,
+        scopedRawSubtitleFontSizeDocked,
+        scopedRawSubtitleFontSizeExpanded,
+        scopedRawSubtitleFontSizeFullscreen,
+        scopedRawSubtitleDropShadow,
+        scopedRawSubtitleBackgroundHighlight,
+        scopedIsTrailerMuted,
+        scopedRawTrailerVolume,
+        scopedRawTrailerLastNonZeroVolume,
+        scopedRawSelectedSourceOptionId,
+        scopedRawSelectedSubtitleId,
+        scopedRawCurrentlyPlayingItem,
+        scopedRawQueue,
+        scopedRawQueueCursor,
+        scopedPlaylists,
+        scopedFavorites,
+        scopedRawLibraryItems,
+        scopedRawLibraryStatusNotificationSettings,
+        scopedRawLibraryLastNotifiedEpisodeByAnimeId,
+        scopedRawLibraryNotifications,
+        scopedRawLibraryLastDailyEpisodeCheckDate,
+      ] = await Promise.all([
+        getStoredValue('isSidebarCompact', isSidebarCompact),
+        getStoredValue('isRightPanelHidden', isRightPanelHidden),
+        getStoredValue('isRightPanelFullpage', isRightPanelFullpage),
+        getStoredValue('rightPanelView', rawRightPanelView),
+        getStoredValue('rightPanelWidth', rightPanelWidth),
+        getStoredValue('titleLanguage', rawTitleLanguage),
+        getStoredValue('shuffleEnabled', rawShuffleEnabled),
+        getStoredValue('repeatMode', rawRepeatMode),
+        getStoredValue('importedSourcePlugins', rawImportedSourcePlugins),
+        getStoredValue('pluginPriority', rawPluginPriority),
+        getStoredValue('pluginEnabled', rawPluginEnabled),
+        getStoredValue('preferredSourcePluginId', rawPreferredSourcePluginId),
+        getStoredValue('preferredAudioLanguage', rawPreferredAudioLanguage),
+        getStoredValue('autoSkipOpening', rawAutoSkipOpening),
+        getStoredValue('autoSkipEnding', rawAutoSkipEnding),
+        getStoredValue('autoSkipRecap', rawAutoSkipRecap),
+        getStoredValue('allowNsfw', rawAllowNsfw),
+        getStoredValue('upcomingSeasonFilter', rawUpcomingSeasonFilter),
+        getStoredValue('baseCatalogSource', rawBaseCatalogSource),
+        getStoredValue('animeScheduleApiToken', rawAnimeScheduleApiToken),
+        getStoredValue('animeScheduleRateLimitGuideDismissedDate', animeScheduleRateLimitGuideDismissedDate),
+        getStoredValue('subtitleFontColor', rawSubtitleFontColor),
+        getStoredValue('subtitleFontSize', rawLegacySubtitleFontSize),
+        getStoredValue('subtitleFontSizeDocked', rawSubtitleFontSizeDocked),
+        getStoredValue('subtitleFontSizeExpanded', rawSubtitleFontSizeExpanded),
+        getStoredValue('subtitleFontSizeFullscreen', rawSubtitleFontSizeFullscreen),
+        getStoredValue('subtitleDropShadow', rawSubtitleDropShadow),
+        getStoredValue('subtitleBackgroundHighlight', rawSubtitleBackgroundHighlight),
+        getStoredValue('isTrailerMuted', isTrailerMuted),
+        getStoredValue('trailerVolume', rawTrailerVolume),
+        getStoredValue('trailerLastNonZeroVolume', rawTrailerLastNonZeroVolume),
+        getStoredValue('selectedSourceOptionId', rawSelectedSourceOptionId),
+        getStoredValue('selectedSubtitleId', rawSelectedSubtitleId),
+        getStoredValue('currentlyPlayingItem', rawCurrentlyPlayingItem),
+        getStoredValue('queue', rawQueue),
+        getStoredValue('queueCursor', rawQueueCursor),
+        getStoredValue('playlists', playlists),
+        getStoredValue('favorites', favorites),
+        getStoredValue('libraryItems', rawLibraryItems),
+        getStoredValue('libraryStatusNotificationSettings', rawLibraryStatusNotificationSettings),
+        getStoredValue('libraryLastNotifiedEpisodeByAnimeId', rawLibraryLastNotifiedEpisodeByAnimeId),
+        getStoredValue('libraryNotifications', rawLibraryNotifications),
+        getStoredValue('libraryLastDailyEpisodeCheckDate', rawLibraryLastDailyEpisodeCheckDate),
+      ]);
       const { watchHistory, watchProgress } = await readProfilePlayback(session);
 
-      const titleLanguage = normalizeTitleLanguage(rawTitleLanguage);
-      if (rawTitleLanguage !== titleLanguage) {
+      const titleLanguage = normalizeTitleLanguage(scopedRawTitleLanguage);
+      if (scopedRawTitleLanguage !== titleLanguage) {
         await setStoredValue('titleLanguage', titleLanguage);
       }
 
-      const rightPanelView = normalizeRightPanelView(rawRightPanelView);
-      if (rawRightPanelView !== rightPanelView) {
+      const rightPanelView = normalizeRightPanelView(scopedRawRightPanelView);
+      if (scopedRawRightPanelView !== rightPanelView) {
         await setStoredValue('rightPanelView', rightPanelView);
       }
 
-      const repeatMode = normalizeRepeatMode(rawRepeatMode);
-      if (rawRepeatMode !== repeatMode) {
+      const repeatMode = normalizeRepeatMode(scopedRawRepeatMode);
+      if (scopedRawRepeatMode !== repeatMode) {
         await setStoredValue('repeatMode', repeatMode);
       }
 
-      const importedSourcePlugins = normalizeImportedSourcePlugins(rawImportedSourcePlugins);
-      if (JSON.stringify(rawImportedSourcePlugins) !== JSON.stringify(importedSourcePlugins)) {
+      const importedSourcePlugins = normalizeImportedSourcePlugins(scopedRawImportedSourcePlugins);
+      if (JSON.stringify(scopedRawImportedSourcePlugins) !== JSON.stringify(importedSourcePlugins)) {
         await setStoredValue('importedSourcePlugins', importedSourcePlugins);
       }
 
       const defaultPluginPriority = getDefaultPluginPriority(importedSourcePlugins);
       const defaultPluginEnabled = makeDefaultPluginEnabled(importedSourcePlugins);
 
-      const pluginPriority = normalizePluginPriority(rawPluginPriority, defaultPluginPriority);
-      if (JSON.stringify(rawPluginPriority) !== JSON.stringify(pluginPriority)) {
+      const pluginPriority = normalizePluginPriority(scopedRawPluginPriority, defaultPluginPriority);
+      if (JSON.stringify(scopedRawPluginPriority) !== JSON.stringify(pluginPriority)) {
         await setStoredValue('pluginPriority', pluginPriority);
       }
 
-      const pluginEnabled = normalizePluginEnabled(rawPluginEnabled, defaultPluginEnabled);
-      if (JSON.stringify(rawPluginEnabled) !== JSON.stringify(pluginEnabled)) {
+      const pluginEnabled = normalizePluginEnabled(scopedRawPluginEnabled, defaultPluginEnabled);
+      if (JSON.stringify(scopedRawPluginEnabled) !== JSON.stringify(pluginEnabled)) {
         await setStoredValue('pluginEnabled', pluginEnabled);
       }
 
       const preferredSourcePluginId =
-        typeof rawPreferredSourcePluginId === 'string' &&
-        rawPreferredSourcePluginId.trim().length > 0 &&
-        pluginPriority.includes(rawPreferredSourcePluginId) &&
-        pluginEnabled[rawPreferredSourcePluginId] !== false
-          ? rawPreferredSourcePluginId
+        typeof scopedRawPreferredSourcePluginId === 'string' &&
+        scopedRawPreferredSourcePluginId.trim().length > 0 &&
+        pluginPriority.includes(scopedRawPreferredSourcePluginId) &&
+        pluginEnabled[scopedRawPreferredSourcePluginId] !== false
+          ? scopedRawPreferredSourcePluginId
           : null;
-      if (rawPreferredSourcePluginId !== preferredSourcePluginId) {
+      if (scopedRawPreferredSourcePluginId !== preferredSourcePluginId) {
         await setStoredValue('preferredSourcePluginId', preferredSourcePluginId);
       }
 
-      const preferredAudioLanguage = normalizeSourceAudioLanguage(rawPreferredAudioLanguage);
-      if (rawPreferredAudioLanguage !== preferredAudioLanguage) {
+      const preferredAudioLanguage = normalizeSourceAudioLanguage(scopedRawPreferredAudioLanguage);
+      if (scopedRawPreferredAudioLanguage !== preferredAudioLanguage) {
         await setStoredValue('preferredAudioLanguage', preferredAudioLanguage);
       }
 
-      const baseCatalogSource = normalizeBaseCatalogSource(rawBaseCatalogSource);
-      if (rawBaseCatalogSource !== baseCatalogSource) {
+      const baseCatalogSource = normalizeBaseCatalogSource(scopedRawBaseCatalogSource);
+      if (scopedRawBaseCatalogSource !== baseCatalogSource) {
         await setStoredValue('baseCatalogSource', baseCatalogSource);
       }
 
-      const allowNsfw = Boolean(rawAllowNsfw);
-      if (rawAllowNsfw !== allowNsfw) {
+      const allowNsfw = Boolean(scopedRawAllowNsfw);
+      if (scopedRawAllowNsfw !== allowNsfw) {
         await setStoredValue('allowNsfw', allowNsfw);
       }
 
-      const upcomingSeasonFilter = normalizeUpcomingSeasonFilter(rawUpcomingSeasonFilter);
-      if (rawUpcomingSeasonFilter !== upcomingSeasonFilter) {
+      const upcomingSeasonFilter = normalizeUpcomingSeasonFilter(scopedRawUpcomingSeasonFilter);
+      if (scopedRawUpcomingSeasonFilter !== upcomingSeasonFilter) {
         await setStoredValue('upcomingSeasonFilter', upcomingSeasonFilter);
       }
 
-      const animeScheduleApiToken = normalizeAnimeScheduleApiToken(rawAnimeScheduleApiToken);
-      if (rawAnimeScheduleApiToken !== animeScheduleApiToken) {
+      const animeScheduleApiToken = normalizeAnimeScheduleApiToken(scopedRawAnimeScheduleApiToken);
+      if (scopedRawAnimeScheduleApiToken !== animeScheduleApiToken) {
         await setStoredValue('animeScheduleApiToken', animeScheduleApiToken);
       }
 
-      const subtitleFontColor = normalizeSubtitleColor(rawSubtitleFontColor);
-      if (rawSubtitleFontColor !== subtitleFontColor) {
+      const subtitleFontColor = normalizeSubtitleColor(scopedRawSubtitleFontColor);
+      if (scopedRawSubtitleFontColor !== subtitleFontColor) {
         await setStoredValue('subtitleFontColor', subtitleFontColor);
       }
 
-      let subtitleFontSizeDocked = normalizeSubtitleFontSize(rawSubtitleFontSizeDocked);
-      let subtitleFontSizeExpanded = normalizeSubtitleFontSize(rawSubtitleFontSizeExpanded);
-      let subtitleFontSizeFullscreen = normalizeSubtitleFontSize(rawSubtitleFontSizeFullscreen);
+      let subtitleFontSizeDocked = normalizeSubtitleFontSize(scopedRawSubtitleFontSizeDocked);
+      let subtitleFontSizeExpanded = normalizeSubtitleFontSize(scopedRawSubtitleFontSizeExpanded);
+      let subtitleFontSizeFullscreen = normalizeSubtitleFontSize(scopedRawSubtitleFontSizeFullscreen);
 
-      const legacySubtitleFontSize = normalizeSubtitleFontSize(rawLegacySubtitleFontSize);
+      const legacySubtitleFontSize = normalizeSubtitleFontSize(scopedRawLegacySubtitleFontSize);
       const looksLikeLegacyUniformMigration =
         subtitleFontSizeDocked === subtitleFontSizeExpanded &&
         subtitleFontSizeExpanded === subtitleFontSizeFullscreen &&
@@ -1413,95 +1549,95 @@ export const useAppStore = create<AppState>((set, get) => ({
         subtitleFontSizeFullscreen = 45;
       }
 
-      if (rawSubtitleFontSizeDocked !== subtitleFontSizeDocked) {
+      if (scopedRawSubtitleFontSizeDocked !== subtitleFontSizeDocked) {
         await setStoredValue('subtitleFontSizeDocked', subtitleFontSizeDocked);
       }
 
-      if (rawSubtitleFontSizeExpanded !== subtitleFontSizeExpanded) {
+      if (scopedRawSubtitleFontSizeExpanded !== subtitleFontSizeExpanded) {
         await setStoredValue('subtitleFontSizeExpanded', subtitleFontSizeExpanded);
       }
 
-      if (rawSubtitleFontSizeFullscreen !== subtitleFontSizeFullscreen) {
+      if (scopedRawSubtitleFontSizeFullscreen !== subtitleFontSizeFullscreen) {
         await setStoredValue('subtitleFontSizeFullscreen', subtitleFontSizeFullscreen);
       }
 
-      const subtitleDropShadow = Boolean(rawSubtitleDropShadow);
-      if (rawSubtitleDropShadow !== subtitleDropShadow) {
+      const subtitleDropShadow = Boolean(scopedRawSubtitleDropShadow);
+      if (scopedRawSubtitleDropShadow !== subtitleDropShadow) {
         await setStoredValue('subtitleDropShadow', subtitleDropShadow);
       }
 
-      const subtitleBackgroundHighlight = Boolean(rawSubtitleBackgroundHighlight);
-      if (rawSubtitleBackgroundHighlight !== subtitleBackgroundHighlight) {
+      const subtitleBackgroundHighlight = Boolean(scopedRawSubtitleBackgroundHighlight);
+      if (scopedRawSubtitleBackgroundHighlight !== subtitleBackgroundHighlight) {
         await setStoredValue('subtitleBackgroundHighlight', subtitleBackgroundHighlight);
       }
 
-      const trailerVolume = normalizeTrailerVolume(rawTrailerVolume);
-      if (rawTrailerVolume !== trailerVolume) {
+      const trailerVolume = normalizeTrailerVolume(scopedRawTrailerVolume);
+      if (scopedRawTrailerVolume !== trailerVolume) {
         await setStoredValue('trailerVolume', trailerVolume);
       }
 
       const trailerLastNonZeroVolume = normalizeTrailerLastNonZeroVolume(
-        rawTrailerLastNonZeroVolume,
+        scopedRawTrailerLastNonZeroVolume,
         trailerVolume > 0 ? trailerVolume : 72,
       );
-      if (rawTrailerLastNonZeroVolume !== trailerLastNonZeroVolume) {
+      if (scopedRawTrailerLastNonZeroVolume !== trailerLastNonZeroVolume) {
         await setStoredValue('trailerLastNonZeroVolume', trailerLastNonZeroVolume);
       }
 
-      const selectedSourceOptionId = normalizeOptionalText(rawSelectedSourceOptionId);
-      if (rawSelectedSourceOptionId !== selectedSourceOptionId) {
+      const selectedSourceOptionId = normalizeOptionalText(scopedRawSelectedSourceOptionId);
+      if (scopedRawSelectedSourceOptionId !== selectedSourceOptionId) {
         await setStoredValue('selectedSourceOptionId', selectedSourceOptionId);
       }
 
-      const selectedSubtitleId = normalizeOptionalText(rawSelectedSubtitleId);
-      if (rawSelectedSubtitleId !== selectedSubtitleId) {
+      const selectedSubtitleId = normalizeOptionalText(scopedRawSelectedSubtitleId);
+      if (scopedRawSelectedSubtitleId !== selectedSubtitleId) {
         await setStoredValue('selectedSubtitleId', selectedSubtitleId);
       }
 
-      const queue = (Array.isArray(rawQueue) ? rawQueue : [])
+      const queue = (Array.isArray(scopedRawQueue) ? scopedRawQueue : [])
         .map((item) => normalizePlayableItemFromUnknown(item))
         .filter((item): item is PlayableItem => Boolean(item));
 
-      const currentlyPlayingItem = normalizePlayableItemFromUnknown(rawCurrentlyPlayingItem);
+      const currentlyPlayingItem = normalizePlayableItemFromUnknown(scopedRawCurrentlyPlayingItem);
 
-      if (JSON.stringify(rawQueue) !== JSON.stringify(queue)) {
+      if (JSON.stringify(scopedRawQueue) !== JSON.stringify(queue)) {
         await setStoredValue('queue', queue);
       }
 
-      if (JSON.stringify(rawCurrentlyPlayingItem) !== JSON.stringify(currentlyPlayingItem)) {
+      if (JSON.stringify(scopedRawCurrentlyPlayingItem) !== JSON.stringify(currentlyPlayingItem)) {
         await setStoredValue('currentlyPlayingItem', currentlyPlayingItem);
       }
 
-      const queueCursor = queue.length > 0 ? Math.max(-1, Math.min(rawQueueCursor, queue.length - 1)) : -1;
-      if (queueCursor !== rawQueueCursor) {
+      const queueCursor = queue.length > 0 ? Math.max(-1, Math.min(scopedRawQueueCursor, queue.length - 1)) : -1;
+      if (queueCursor !== scopedRawQueueCursor) {
         await setStoredValue('queueCursor', queueCursor);
       }
 
-      const libraryItems = normalizeLibraryItems(rawLibraryItems);
-      if (JSON.stringify(rawLibraryItems) !== JSON.stringify(libraryItems)) {
+      const libraryItems = normalizeLibraryItems(scopedRawLibraryItems);
+      if (JSON.stringify(scopedRawLibraryItems) !== JSON.stringify(libraryItems)) {
         await setStoredValue('libraryItems', libraryItems);
       }
 
-      const libraryStatusNotificationSettings = normalizeLibraryStatusNotificationSettings(rawLibraryStatusNotificationSettings);
-      if (JSON.stringify(rawLibraryStatusNotificationSettings) !== JSON.stringify(libraryStatusNotificationSettings)) {
+      const libraryStatusNotificationSettings = normalizeLibraryStatusNotificationSettings(scopedRawLibraryStatusNotificationSettings);
+      if (JSON.stringify(scopedRawLibraryStatusNotificationSettings) !== JSON.stringify(libraryStatusNotificationSettings)) {
         await setStoredValue('libraryStatusNotificationSettings', libraryStatusNotificationSettings);
       }
 
-      const libraryLastNotifiedEpisodeByAnimeId = normalizeLibraryLastNotifiedEpisodeMap(rawLibraryLastNotifiedEpisodeByAnimeId);
-      if (JSON.stringify(rawLibraryLastNotifiedEpisodeByAnimeId) !== JSON.stringify(libraryLastNotifiedEpisodeByAnimeId)) {
+      const libraryLastNotifiedEpisodeByAnimeId = normalizeLibraryLastNotifiedEpisodeMap(scopedRawLibraryLastNotifiedEpisodeByAnimeId);
+      if (JSON.stringify(scopedRawLibraryLastNotifiedEpisodeByAnimeId) !== JSON.stringify(libraryLastNotifiedEpisodeByAnimeId)) {
         await setStoredValue('libraryLastNotifiedEpisodeByAnimeId', libraryLastNotifiedEpisodeByAnimeId);
       }
 
-      const libraryNotifications = normalizeLibraryNotifications(rawLibraryNotifications);
-      if (JSON.stringify(rawLibraryNotifications) !== JSON.stringify(libraryNotifications)) {
+      const libraryNotifications = normalizeLibraryNotifications(scopedRawLibraryNotifications);
+      if (JSON.stringify(scopedRawLibraryNotifications) !== JSON.stringify(libraryNotifications)) {
         await setStoredValue('libraryNotifications', libraryNotifications);
       }
 
       const libraryLastDailyEpisodeCheckDate =
-        typeof rawLibraryLastDailyEpisodeCheckDate === 'string' && rawLibraryLastDailyEpisodeCheckDate.trim().length > 0
-          ? rawLibraryLastDailyEpisodeCheckDate
+        typeof scopedRawLibraryLastDailyEpisodeCheckDate === 'string' && scopedRawLibraryLastDailyEpisodeCheckDate.trim().length > 0
+          ? scopedRawLibraryLastDailyEpisodeCheckDate
           : null;
-      if (rawLibraryLastDailyEpisodeCheckDate !== libraryLastDailyEpisodeCheckDate) {
+      if (scopedRawLibraryLastDailyEpisodeCheckDate !== libraryLastDailyEpisodeCheckDate) {
         await setStoredValue('libraryLastDailyEpisodeCheckDate', libraryLastDailyEpisodeCheckDate);
       }
 
@@ -1524,22 +1660,22 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         hydrated: true,
         session,
-        isSidebarCompact,
-        isRightPanelHidden,
-        isRightPanelFullpage,
+        isSidebarCompact: Boolean(scopedIsSidebarCompact),
+        isRightPanelHidden: Boolean(scopedIsRightPanelHidden),
+        isRightPanelFullpage: Boolean(scopedIsRightPanelFullpage),
         rightPanelView,
         rightPanelWidth,
         titleLanguage,
-        shuffleEnabled: Boolean(rawShuffleEnabled),
+        shuffleEnabled: Boolean(scopedRawShuffleEnabled),
         repeatMode,
         importedSourcePlugins,
         pluginPriority,
         pluginEnabled,
         preferredSourcePluginId,
         preferredAudioLanguage,
-        autoSkipOpening: Boolean(rawAutoSkipOpening),
-        autoSkipEnding: Boolean(rawAutoSkipEnding),
-        autoSkipRecap: Boolean(rawAutoSkipRecap),
+        autoSkipOpening: Boolean(scopedRawAutoSkipOpening),
+        autoSkipEnding: Boolean(scopedRawAutoSkipEnding),
+        autoSkipRecap: Boolean(scopedRawAutoSkipRecap),
         allowNsfw,
         upcomingSeasonFilter,
         animeSkipButtonSegment: null,
@@ -1555,18 +1691,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         isResolvingPlaybackSource: false,
         selectedSourceOptionId,
         selectedSubtitleId,
-        isTrailerMuted,
+        isTrailerMuted: Boolean(scopedIsTrailerMuted),
         isProfilePopupOpen: false,
         isSettingsOpen: false,
         isAnimeScheduleRateLimitGuideOpen: false,
-        animeScheduleRateLimitGuideDismissedDate,
+        animeScheduleRateLimitGuideDismissedDate: scopedAnimeScheduleRateLimitGuideDismissedDate,
         animeScheduleRateLimitGuideLastTriggeredAt: null,
         currentlyPlayingItem,
         queue,
         queueCursor,
-        playlists,
+        playlists: normalizePlaylists(scopedPlaylists),
         watchHistory: sortHistory(watchHistory),
-        favorites,
+        favorites: normalizeFavorites(scopedFavorites),
         libraryItems,
         libraryStatusNotificationSettings,
         libraryLastNotifiedEpisodeByAnimeId,
@@ -1696,8 +1832,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   continueAsGuest: async () => {
     const session: UserSession = { mode: 'guest', id: createId('guest'), createdAt: new Date().toISOString() };
     await setStoredValue('session', session);
+    await migrateLegacyStoreDataToProfile(session.id);
+    setActiveStoreProfile(session.id);
     const { watchHistory, watchProgress } = await readProfilePlayback(session);
-    set({ session, watchHistory, watchProgress });
+    const [
+      favorites,
+      libraryItems,
+      libraryStatusNotificationSettings,
+      libraryLastNotifiedEpisodeByAnimeId,
+      libraryNotifications,
+      libraryLastDailyEpisodeCheckDate,
+    ] = await Promise.all([
+      getStoredValue('favorites', []),
+      getStoredValue('libraryItems', {}),
+      getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
+      getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
+      getStoredValue('libraryNotifications', []),
+      getStoredValue('libraryLastDailyEpisodeCheckDate', null),
+    ]);
+    set({
+      session,
+      watchHistory,
+      watchProgress,
+      favorites: normalizeFavorites(favorites),
+      libraryItems: normalizeLibraryItems(libraryItems),
+      libraryStatusNotificationSettings: normalizeLibraryStatusNotificationSettings(libraryStatusNotificationSettings),
+      libraryLastNotifiedEpisodeByAnimeId: normalizeLibraryLastNotifiedEpisodeMap(libraryLastNotifiedEpisodeByAnimeId),
+      libraryNotifications: normalizeLibraryNotifications(libraryNotifications),
+      libraryLastDailyEpisodeCheckDate: typeof libraryLastDailyEpisodeCheckDate === 'string' ? libraryLastDailyEpisodeCheckDate : null,
+    });
   },
 
   loginWithEmail: async (email, password) => {
@@ -1711,11 +1874,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('session', session),
       setStoredValue('localCredentials', { email, passwordHint: password ? 'Stored locally for prototype UI only' : '', updatedAt: new Date().toISOString() }),
     ]);
+    await migrateLegacyStoreDataToProfile(session.id);
+    setActiveStoreProfile(session.id);
     const { watchHistory, watchProgress } = await readProfilePlayback(session);
-    set({ session, watchHistory, watchProgress });
+    const [
+      favorites,
+      libraryItems,
+      libraryStatusNotificationSettings,
+      libraryLastNotifiedEpisodeByAnimeId,
+      libraryNotifications,
+      libraryLastDailyEpisodeCheckDate,
+    ] = await Promise.all([
+      getStoredValue('favorites', []),
+      getStoredValue('libraryItems', {}),
+      getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
+      getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
+      getStoredValue('libraryNotifications', []),
+      getStoredValue('libraryLastDailyEpisodeCheckDate', null),
+    ]);
+    set({
+      session,
+      watchHistory,
+      watchProgress,
+      favorites: normalizeFavorites(favorites),
+      libraryItems: normalizeLibraryItems(libraryItems),
+      libraryStatusNotificationSettings: normalizeLibraryStatusNotificationSettings(libraryStatusNotificationSettings),
+      libraryLastNotifiedEpisodeByAnimeId: normalizeLibraryLastNotifiedEpisodeMap(libraryLastNotifiedEpisodeByAnimeId),
+      libraryNotifications: normalizeLibraryNotifications(libraryNotifications),
+      libraryLastDailyEpisodeCheckDate: typeof libraryLastDailyEpisodeCheckDate === 'string' ? libraryLastDailyEpisodeCheckDate : null,
+    });
   },
 
   logout: async () => {
+    setActiveStoreProfile(null);
     await Promise.all([
       removeStoredValue('session'),
       removeStoredValue('watchHistory'),
@@ -1735,6 +1926,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       queueCursor: -1,
       isRightPanelFullpage: false,
       watchHistory: [],
+      favorites: [],
+      libraryItems: {},
+      libraryStatusNotificationSettings: getDefaultLibraryStatusNotificationSettings(),
+      libraryLastNotifiedEpisodeByAnimeId: {},
+      libraryNotifications: [],
+      libraryLastDailyEpisodeCheckDate: null,
       watchProgress: {},
       playbackTime: 0,
       playbackDuration: 0,
@@ -3092,6 +3289,171 @@ export const useAppStore = create<AppState>((set, get) => ({
         watchProgress: current.watchProgress,
       },
     };
+  },
+
+  importUserData: async (payload) => {
+    const current = get();
+    if (!current.session) {
+      throw new Error('Login required before import.');
+    }
+
+    const { settings, userData } = getImportPayloadSections(payload);
+
+    const importedIsSidebarCompact = Boolean(settings.isSidebarCompact ?? current.isSidebarCompact);
+    const importedIsRightPanelHidden = Boolean(settings.isRightPanelHidden ?? current.isRightPanelHidden);
+    const importedIsRightPanelFullpage = Boolean(settings.isRightPanelFullpage ?? current.isRightPanelFullpage);
+    const importedRightPanelWidth = Math.max(260, Math.min(560, Math.round(Number(settings.rightPanelWidth ?? current.rightPanelWidth) || 320)));
+    const importedTitleLanguage = normalizeTitleLanguage(settings.titleLanguage ?? current.titleLanguage);
+    const importedShuffleEnabled = Boolean(settings.shuffleEnabled ?? current.shuffleEnabled);
+    const importedRepeatMode = normalizeRepeatMode(settings.repeatMode ?? current.repeatMode);
+    const importedPlugins = normalizeImportedSourcePlugins(settings.importedSourcePlugins ?? current.importedSourcePlugins);
+    const defaultPluginPriority = getDefaultPluginPriority(importedPlugins);
+    const defaultPluginEnabled = makeDefaultPluginEnabled(importedPlugins);
+    const importedPluginPriority = normalizePluginPriority(settings.pluginPriority ?? current.pluginPriority, defaultPluginPriority);
+    const importedPluginEnabled = normalizePluginEnabled(settings.pluginEnabled ?? current.pluginEnabled, defaultPluginEnabled);
+    const importedPreferredSourcePluginId =
+      typeof settings.preferredSourcePluginId === 'string' &&
+      importedPluginPriority.includes(settings.preferredSourcePluginId) &&
+      importedPluginEnabled[settings.preferredSourcePluginId] !== false
+        ? settings.preferredSourcePluginId
+        : null;
+    const importedPreferredAudioLanguage = normalizeSourceAudioLanguage(settings.preferredAudioLanguage ?? current.preferredAudioLanguage);
+    const importedAutoSkipOpening = Boolean(settings.autoSkipOpening ?? current.autoSkipOpening);
+    const importedAutoSkipEnding = Boolean(settings.autoSkipEnding ?? current.autoSkipEnding);
+    const importedAutoSkipRecap = Boolean(settings.autoSkipRecap ?? current.autoSkipRecap);
+    const importedAllowNsfw = Boolean(settings.allowNsfw ?? current.allowNsfw);
+    const importedUpcomingSeasonFilter = normalizeUpcomingSeasonFilter(settings.upcomingSeasonFilter ?? current.upcomingSeasonFilter);
+    const importedBaseCatalogSource = normalizeBaseCatalogSource(settings.baseCatalogSource ?? current.baseCatalogSource);
+    const importedAnimeScheduleApiToken = normalizeAnimeScheduleApiToken(settings.animeScheduleApiToken ?? current.animeScheduleApiToken);
+    const importedSubtitleFontColor = normalizeSubtitleColor(settings.subtitleFontColor ?? current.subtitleFontColor);
+    const importedSubtitleFontSizeDocked = normalizeSubtitleFontSize(settings.subtitleFontSizeDocked ?? current.subtitleFontSizeDocked);
+    const importedSubtitleFontSizeExpanded = normalizeSubtitleFontSize(settings.subtitleFontSizeExpanded ?? current.subtitleFontSizeExpanded);
+    const importedSubtitleFontSizeFullscreen = normalizeSubtitleFontSize(settings.subtitleFontSizeFullscreen ?? current.subtitleFontSizeFullscreen);
+    const importedSubtitleDropShadow = Boolean(settings.subtitleDropShadow ?? current.subtitleDropShadow);
+    const importedSubtitleBackgroundHighlight = Boolean(settings.subtitleBackgroundHighlight ?? current.subtitleBackgroundHighlight);
+    const importedIsTrailerMuted = Boolean(settings.isTrailerMuted ?? current.isTrailerMuted);
+    const importedTrailerVolume = normalizeTrailerVolume(settings.trailerVolume ?? current.trailerVolume);
+    const importedTrailerLastNonZeroVolume = normalizeTrailerLastNonZeroVolume(
+      settings.trailerLastNonZeroVolume ?? current.trailerLastNonZeroVolume,
+      importedTrailerVolume > 0 ? importedTrailerVolume : 72,
+    );
+
+    const importedCurrentlyPlayingItem = normalizePlayableItemFromUnknown(userData.currentlyPlayingItem);
+    const importedQueue = (Array.isArray(userData.queue) ? userData.queue : [])
+      .map((entry) => normalizePlayableItemFromUnknown(entry))
+      .filter((entry): entry is PlayableItem => Boolean(entry));
+    const rawQueueCursor = Math.floor(Number(userData.queueCursor ?? -1) || -1);
+    const importedQueueCursor = importedQueue.length > 0 ? Math.max(-1, Math.min(rawQueueCursor, importedQueue.length - 1)) : -1;
+    const importedPlaylists = normalizePlaylists(userData.playlists ?? []);
+    const importedWatchHistory = normalizeWatchHistoryEntries(Array.isArray(userData.watchHistory) ? userData.watchHistory as WatchProgress[] : []);
+    const importedFavorites = normalizeFavorites(userData.favorites ?? []);
+    const importedLibraryItems = normalizeLibraryItems(userData.libraryItems ?? {});
+    const importedLibraryStatusNotificationSettings = normalizeLibraryStatusNotificationSettings(
+      userData.libraryStatusNotificationSettings ?? {},
+    );
+    const importedLibraryLastNotifiedEpisodeByAnimeId = normalizeLibraryLastNotifiedEpisodeMap(
+      userData.libraryLastNotifiedEpisodeByAnimeId ?? {},
+    );
+    const importedLibraryNotifications = normalizeLibraryNotifications(userData.libraryNotifications ?? []);
+    const importedLibraryLastDailyEpisodeCheckDate =
+      typeof userData.libraryLastDailyEpisodeCheckDate === 'string' && userData.libraryLastDailyEpisodeCheckDate.trim().length > 0
+        ? userData.libraryLastDailyEpisodeCheckDate
+        : null;
+    const importedWatchProgress = normalizeWatchProgressMap(isRecord(userData.watchProgress) ? userData.watchProgress as Record<number, WatchProgress> : {});
+
+    await Promise.all([
+      setStoredValue('isSidebarCompact', importedIsSidebarCompact),
+      setStoredValue('isRightPanelHidden', importedIsRightPanelHidden),
+      setStoredValue('isRightPanelFullpage', importedIsRightPanelFullpage),
+      setStoredValue('rightPanelView', normalizeRightPanelView(settings.rightPanelView ?? current.rightPanelView)),
+      setStoredValue('rightPanelWidth', importedRightPanelWidth),
+      setStoredValue('titleLanguage', importedTitleLanguage),
+      setStoredValue('shuffleEnabled', importedShuffleEnabled),
+      setStoredValue('repeatMode', importedRepeatMode),
+      setStoredValue('importedSourcePlugins', importedPlugins),
+      setStoredValue('pluginPriority', importedPluginPriority),
+      setStoredValue('pluginEnabled', importedPluginEnabled),
+      setStoredValue('preferredSourcePluginId', importedPreferredSourcePluginId),
+      setStoredValue('preferredAudioLanguage', importedPreferredAudioLanguage),
+      setStoredValue('autoSkipOpening', importedAutoSkipOpening),
+      setStoredValue('autoSkipEnding', importedAutoSkipEnding),
+      setStoredValue('autoSkipRecap', importedAutoSkipRecap),
+      setStoredValue('allowNsfw', importedAllowNsfw),
+      setStoredValue('upcomingSeasonFilter', importedUpcomingSeasonFilter),
+      setStoredValue('baseCatalogSource', importedBaseCatalogSource),
+      setStoredValue('animeScheduleApiToken', importedAnimeScheduleApiToken),
+      setStoredValue('subtitleFontColor', importedSubtitleFontColor),
+      setStoredValue('subtitleFontSizeDocked', importedSubtitleFontSizeDocked),
+      setStoredValue('subtitleFontSizeExpanded', importedSubtitleFontSizeExpanded),
+      setStoredValue('subtitleFontSizeFullscreen', importedSubtitleFontSizeFullscreen),
+      setStoredValue('subtitleDropShadow', importedSubtitleDropShadow),
+      setStoredValue('subtitleBackgroundHighlight', importedSubtitleBackgroundHighlight),
+      setStoredValue('isTrailerMuted', importedIsTrailerMuted),
+      setStoredValue('trailerVolume', importedTrailerVolume),
+      setStoredValue('trailerLastNonZeroVolume', importedTrailerLastNonZeroVolume),
+      setStoredValue('currentlyPlayingItem', importedCurrentlyPlayingItem),
+      setStoredValue('queue', importedQueue),
+      setStoredValue('queueCursor', importedQueueCursor),
+      setStoredValue('playlists', importedPlaylists),
+      setStoredValue('favorites', importedFavorites),
+      setStoredValue('libraryItems', importedLibraryItems),
+      setStoredValue('libraryStatusNotificationSettings', importedLibraryStatusNotificationSettings),
+      setStoredValue('libraryLastNotifiedEpisodeByAnimeId', importedLibraryLastNotifiedEpisodeByAnimeId),
+      setStoredValue('libraryNotifications', importedLibraryNotifications),
+      setStoredValue('libraryLastDailyEpisodeCheckDate', importedLibraryLastDailyEpisodeCheckDate),
+      writeProfilePlayback(current.session, importedWatchHistory, importedWatchProgress),
+    ]);
+
+    set({
+      isSidebarCompact: importedIsSidebarCompact,
+      isRightPanelHidden: importedIsRightPanelHidden,
+      isRightPanelFullpage: importedIsRightPanelFullpage,
+      rightPanelWidth: importedRightPanelWidth,
+      titleLanguage: importedTitleLanguage,
+      shuffleEnabled: importedShuffleEnabled,
+      repeatMode: importedRepeatMode,
+      importedSourcePlugins: importedPlugins,
+      pluginPriority: importedPluginPriority,
+      pluginEnabled: importedPluginEnabled,
+      preferredSourcePluginId: importedPreferredSourcePluginId,
+      preferredAudioLanguage: importedPreferredAudioLanguage,
+      autoSkipOpening: importedAutoSkipOpening,
+      autoSkipEnding: importedAutoSkipEnding,
+      autoSkipRecap: importedAutoSkipRecap,
+      allowNsfw: importedAllowNsfw,
+      upcomingSeasonFilter: importedUpcomingSeasonFilter,
+      baseCatalogSource: importedBaseCatalogSource,
+      animeScheduleApiToken: importedAnimeScheduleApiToken,
+      subtitleFontColor: importedSubtitleFontColor,
+      subtitleFontSizeDocked: importedSubtitleFontSizeDocked,
+      subtitleFontSizeExpanded: importedSubtitleFontSizeExpanded,
+      subtitleFontSizeFullscreen: importedSubtitleFontSizeFullscreen,
+      subtitleDropShadow: importedSubtitleDropShadow,
+      subtitleBackgroundHighlight: importedSubtitleBackgroundHighlight,
+      isTrailerMuted: importedIsTrailerMuted,
+      trailerVolume: importedTrailerVolume,
+      trailerLastNonZeroVolume: importedTrailerLastNonZeroVolume,
+      currentlyPlayingItem: importedCurrentlyPlayingItem,
+      queue: importedQueue,
+      queueCursor: importedQueueCursor,
+      playlists: importedPlaylists,
+      watchHistory: importedWatchHistory,
+      favorites: importedFavorites,
+      libraryItems: importedLibraryItems,
+      libraryStatusNotificationSettings: importedLibraryStatusNotificationSettings,
+      libraryLastNotifiedEpisodeByAnimeId: importedLibraryLastNotifiedEpisodeByAnimeId,
+      libraryNotifications: importedLibraryNotifications,
+      libraryLastDailyEpisodeCheckDate: importedLibraryLastDailyEpisodeCheckDate,
+      watchProgress: importedWatchProgress,
+      playbackTime: 0,
+      playbackDuration: 0,
+      activePlaybackUrl: null,
+      pendingSeekTo: null,
+      isTrailerPlayerReady: false,
+      selectedSourceOptionId: null,
+      selectedSubtitleId: null,
+      homeRefreshVersion: current.homeRefreshVersion + 1,
+    });
   },
 
   factoryReset: async () => {

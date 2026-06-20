@@ -1,8 +1,8 @@
 import { Download, Search, ToggleLeft, ToggleRight, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { save } from '@tauri-apps/plugin-dialog';
-import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { open, save } from '@tauri-apps/plugin-dialog';
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { clearAniSkipDataCache } from '../services/aniSkip';
 import { DEFAULT_ANIMESCHEDULE_TOKEN } from '../services/animeSchedule';
 import { clearPluginResolverCacheByKey, getPluginResolverCacheSnapshot, replacePluginResolverCacheByKey } from '../services/pluginExecutor';
@@ -214,6 +214,7 @@ export default function SettingsModal() {
   const setProfilePopupOpen = useAppStore((state) => state.setProfilePopupOpen);
   const clearJikanCache = useAppStore((state) => state.clearJikanCache);
   const exportUserData = useAppStore((state) => state.exportUserData);
+  const importUserData = useAppStore((state) => state.importUserData);
   const factoryReset = useAppStore((state) => state.factoryReset);
   const animeScheduleApiToken = useAppStore((state) => state.animeScheduleApiToken);
   const setAnimeScheduleApiToken = useAppStore((state) => state.setAnimeScheduleApiToken);
@@ -510,6 +511,33 @@ export default function SettingsModal() {
         },
       },
       {
+        id: 'import-json',
+        title: 'Import User Data (JSON)',
+        description: 'Import profile settings, library, history, and notifications for the current user from a JSON export.',
+        actionLabel: 'Import JSON',
+        onAction: async () => {
+          const filePath = await open({
+            multiple: false,
+            filters: [
+              {
+                name: 'JSON',
+                extensions: ['json'],
+              },
+            ],
+          });
+
+          if (!filePath || Array.isArray(filePath)) {
+            setStatusMessage('Import canceled.');
+            return;
+          }
+
+          const raw = await readTextFile(filePath);
+          const payload = JSON.parse(raw) as unknown;
+          await importUserData(payload);
+          setStatusMessage('Import completed for current user.');
+        },
+      },
+      {
         id: 'factory-reset',
         title: 'Factory Reset',
         description: 'Reset UI settings, library data, and history while keeping the current login session.',
@@ -527,7 +555,7 @@ export default function SettingsModal() {
         },
       },
     ],
-    [clearJikanCache, exportUserData, factoryReset, setProfilePopupOpen, setSettingsOpen],
+    [clearJikanCache, exportUserData, factoryReset, importUserData, setProfilePopupOpen, setSettingsOpen],
   );
 
   const filteredActions = useMemo(() => {
