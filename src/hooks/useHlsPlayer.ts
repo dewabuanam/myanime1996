@@ -5,6 +5,31 @@ import type { ResolvedSource, ResolvedSubtitleTrack } from '../types/plugin';
 
 const SUBTITLE_OFF_ID = '__off__';
 
+type HlsLoaderContext = {
+  url: string;
+  responseType?: string;
+};
+
+type HlsLoaderStats = {
+  aborted: boolean;
+  loaded: number;
+  retry: number;
+  tfirst: number;
+  tload: number;
+  total: number;
+  trequest: number;
+};
+
+type HlsLoaderCallbacks = {
+  onSuccess: (response: { data: string | ArrayBuffer; url: string }, stats: HlsLoaderStats, context: HlsLoaderContext) => void;
+  onError: (
+    error: { code: number; text: string },
+    context: HlsLoaderContext,
+    _networkDetails: unknown,
+    stats: HlsLoaderStats,
+  ) => void;
+};
+
 type UseHlsPlayerOptions = {
   sourceVideoRef: RefObject<HTMLVideoElement>;
   activeResolvedSource: ResolvedSource | null;
@@ -40,6 +65,140 @@ export function useHlsPlayer({
 
   const isDashUrl = (url: string) => /\.mpd(?:$|\?)/i.test(url);
   const isHlsUrl = (url: string) => /\.m3u8(?:$|\?)/i.test(url);
+
+  const normalizeRequestHeaders = (value?: Record<string, string>) => {
+    if (!value) return undefined;
+    const out: Record<string, string> = {};
+    for (const [key, raw] of Object.entries(value)) {
+      const name = String(key || '').trim();
+      const text = String(raw || '').trim();
+      if (!name || !text) continue;
+      out[name] = text;
+    }
+    return Object.keys(out).length ? out : undefined;
+  };
+
+  const createNativeAwareHlsLoaderClass = (requestHeaders?: Record<string, string>) => {
+    const normalizedHeaders = normalizeRequestHeaders(requestHeaders);
+
+    return class NativeAwareHlsLoader {
+      private abortController: AbortController | null = null;
+      private destroyed = false;
+
+      destroy() {
+        this.destroyed = true;
+        this.abort();
+      }
+
+      abort() {
+        if (this.abortController) {
+          try {
+            this.abortController.abort();
+          } catch {
+            // Ignore abort races.
+          }
+        }
+        this.abortController = null;
+      }
+
+      load(context: HlsLoaderContext, _config: unknown, callbacks: HlsLoaderCallbacks) {
+        this.abort();
+        this.abortController = new AbortController();
+        const signal = this.abortController.signal;
+        const startedAt = performance.now();
+
+        const stats: HlsLoaderStats = {
+          aborted: false,
+          loaded: 0,
+          retry: 0,
+          tfirst: 0,
+          tload: 0,
+          total: 0,
+          trequest: startedAt,
+        };
+
+        const finalizeSuccess = (data: string | ArrayBuffer, finalUrl: string) => {
+          if (this.destroyed) return;
+          const endedAt = performance.now();
+          const size = typeof data === 'string' ? data.length : data.byteLength;
+          stats.tfirst = endedAt;
+          stats.tload = endedAt;
+          stats.loaded = size;
+          stats.total = size;
+          callbacks.onSuccess({ data, url: finalUrl || context.url }, stats, context);
+        };
+
+        const finalizeError = (code: number, text: string) => {
+          if (this.destroyed) return;
+          const endedAt = performance.now();
+          stats.tfirst = endedAt;
+          stats.tload = endedAt;
+          callbacks.onError({ code, text }, context, null, stats);
+        };
+
+        const loadViaBrowserFetch = async () => {
+          const response = await fetch(context.url, {
+            method: 'GET',
+            headers: normalizedHeaders,
+            signal,
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const responseType = String(context.responseType || '').toLowerCase();
+          if (responseType === 'arraybuffer') {
+            return {
+              data: await response.arrayBuffer(),
+              url: response.url || context.url,
+            };
+          }
+          return {
+            data: await response.text(),
+            url: response.url || context.url,
+          };
+        };
+
+        const loadViaNativeHttp = async () => {
+          const { fetch: nativeFetch } = await import('@tauri-apps/plugin-http');
+          const response = await nativeFetch(context.url, {
+            method: 'GET',
+            headers: normalizedHeaders,
+            signal,
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const responseType = String(context.responseType || '').toLowerCase();
+          if (responseType === 'arraybuffer') {
+            return {
+              data: await response.arrayBuffer(),
+              url: response.url || context.url,
+            };
+          }
+          return {
+            data: await response.text(),
+            url: response.url || context.url,
+          };
+        };
+
+        void (async () => {
+          try {
+            const nativeResult = await loadViaNativeHttp();
+            finalizeSuccess(nativeResult.data, nativeResult.url);
+          } catch {
+            try {
+              const fallbackResult = await loadViaBrowserFetch();
+              finalizeSuccess(fallbackResult.data, fallbackResult.url);
+            } catch (error) {
+              const detail = error instanceof Error ? error.message : String(error);
+              const code = /HTTP\s+(\d+)/i.exec(detail)?.[1];
+              finalizeError(code ? Number(code) : 0, detail || 'HLS request failed');
+            }
+          }
+        })();
+      }
+    };
+  };
 
   const applySelectedTextTrackMode = (
     video: HTMLVideoElement,
@@ -135,6 +294,7 @@ export function useHlsPlayer({
     if (!video) return;
 
     const url = activeResolvedSource?.type === 'direct' ? (activeResolvedSource.url || '').trim() : '';
+    const requestHeaders = normalizeRequestHeaders(activeResolvedSource?.requestHeaders);
 
     // Guard against empty/blanks URLs and non-http schemes.
     if (!url || !/^https?:\/\//.test(url)) return;
@@ -196,12 +356,22 @@ export function useHlsPlayer({
     }
 
     if (isHlsUrl(url) && Hls.isSupported()) {
+      const NativeAwareLoader = createNativeAwareHlsLoaderClass(requestHeaders);
       const hls = new Hls({
         enableWorker: false,
         lowLatencyMode: false,
         debug: false,
+        loader: NativeAwareLoader as typeof Hls.DefaultConfig.loader,
         xhrSetup: (xhr) => {
           xhr.withCredentials = false;
+          if (!requestHeaders) return;
+          for (const [name, value] of Object.entries(requestHeaders)) {
+            try {
+              xhr.setRequestHeader(name, value);
+            } catch {
+              // Ignore forbidden browser-managed header names.
+            }
+          }
         },
       });
 
@@ -276,7 +446,14 @@ export function useHlsPlayer({
         video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
       }
     }
-  }, [activeResolvedSource?.type, activeResolvedSource?.url, pendingAutoPlayAfterResolveRef, setPlaying, sourceVideoRef]);
+  }, [
+    activeResolvedSource?.type,
+    activeResolvedSource?.url,
+    JSON.stringify(activeResolvedSource?.requestHeaders || {}),
+    pendingAutoPlayAfterResolveRef,
+    setPlaying,
+    sourceVideoRef,
+  ]);
 
   useEffect(() => {
     applySubtitleStyle();

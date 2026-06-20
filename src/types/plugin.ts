@@ -101,6 +101,7 @@ export interface ResolvedSource {
   label?: string;
   language?: SourceAudioLanguage;
   server?: string;
+  requestHeaders?: Record<string, string>;
   selectedOptionId?: string;
   options?: ResolvedSourceOption[];
   controllable?: boolean;
@@ -122,6 +123,7 @@ export interface ResolvedSourceOption {
   label?: string;
   language?: SourceAudioLanguage;
   server?: string;
+  requestHeaders?: Record<string, string>;
   controllable?: boolean;
   subtitles?: ResolvedSubtitleTrack[];
   optionMeta?: unknown;

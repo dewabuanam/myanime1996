@@ -209,6 +209,7 @@ export async function resolveSourceForPlayableWithTrace(
 
       const execution = await executeImportedPluginResolver(plugin, resolverItem, {
         audioLanguage: options.preferredAudioLanguage,
+        sourceOptionId: options.selectedSourceOptionId,
       });
       if (execution.resolved) {
         await setCachedResolvedSource(identity, execution.resolved);

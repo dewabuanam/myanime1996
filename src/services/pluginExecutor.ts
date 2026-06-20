@@ -11,6 +11,7 @@ import type {
 
 type ResolvePreferences = {
   audioLanguage?: SourceAudioLanguage;
+  sourceOptionId?: string;
 };
 
 type PluginResolverFunction = (
@@ -389,6 +390,21 @@ function normalizeServer(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function normalizeRequestHeaders(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+
+  const headers: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const name = String(key || '').trim();
+    if (!name) continue;
+    const text = String(rawValue ?? '').trim();
+    if (!text) continue;
+    headers[name] = text;
+  }
+
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
 function normalizeSubtitleTrack(value: unknown): ResolvedSubtitleTrack | null {
   if (!value || typeof value !== 'object') return null;
 
@@ -441,6 +457,7 @@ function normalizeSourceOption(
   const rawId = typeof candidate.id === 'string' ? candidate.id.trim() : '';
   const language = normalizeAudioLanguage(candidate.language);
   const server = normalizeServer(candidate.server);
+  const requestHeaders = normalizeRequestHeaders(candidate.requestHeaders ?? (candidate as { headers?: unknown }).headers);
   const subtitles = normalizeSubtitleTracks(candidate.subtitles);
 
   return {
@@ -450,6 +467,7 @@ function normalizeSourceOption(
     label: typeof candidate.label === 'string' && candidate.label.trim().length > 0 ? candidate.label : plugin.name,
     language,
     server,
+    requestHeaders,
     controllable: typeof candidate.controllable === 'boolean' ? candidate.controllable : type === 'direct',
     subtitles,
     optionMeta: candidate.optionMeta,
@@ -508,6 +526,7 @@ function buildResolvedFromOption(
     label: selected.label,
     language: selected.language,
     server: selected.server,
+    requestHeaders: selected.requestHeaders,
     selectedOptionId: selected.id,
     options,
     controllable: selected.controllable,
@@ -524,6 +543,7 @@ function normalizeResolvedSource(plugin: ImportedSourcePluginDefinition, value: 
   const type = candidate.type === 'direct' ? 'direct' : 'embed';
   const language = normalizeAudioLanguage(candidate.language);
   const server = normalizeServer(candidate.server);
+  const requestHeaders = normalizeRequestHeaders(candidate.requestHeaders ?? (candidate as { headers?: unknown }).headers);
   const subtitles = normalizeSubtitleTracks(candidate.subtitles);
 
   return {
@@ -533,6 +553,7 @@ function normalizeResolvedSource(plugin: ImportedSourcePluginDefinition, value: 
     label: typeof candidate.label === 'string' && candidate.label.trim().length > 0 ? candidate.label : plugin.name,
     language,
     server,
+    requestHeaders,
     controllable: typeof candidate.controllable === 'boolean' ? candidate.controllable : type === 'direct',
     subtitles,
   };
@@ -670,7 +691,10 @@ export async function executeImportedPluginResolver(
       episodeNumber: item.episodeNumber ?? 1,
       kind: item.kind,
     },
-    preferences,
+    preferences: {
+      audioLanguage: preferences?.audioLanguage,
+      sourceOptionId: preferences?.sourceOptionId,
+    },
   };
 
   const runtimeSteps: string[] = [];

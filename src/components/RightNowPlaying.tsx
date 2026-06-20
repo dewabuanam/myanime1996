@@ -261,6 +261,7 @@ export default function RightNowPlaying() {
     baseCatalogSource,
     preferredSourcePluginId,
     preferredAudioLanguage,
+    selectedSourceOptionId,
     setResolvingPlaybackSource,
     setSelectedSourceOptionId,
     onPrimeResolvedEpisode: async (playable, isCancelled) => {
@@ -970,19 +971,6 @@ export default function RightNowPlaying() {
       cancelled = true;
     };
   }, [detailEpisodePage, detailTargetAnimeId, rightPanelView]);
-
-  useEffect(() => {
-    if (!activeResolvedSource?.selectedOptionId) {
-      if (selectedSourceOptionId) {
-        setSelectedSourceOptionId(null);
-      }
-      return;
-    }
-
-    if (selectedSourceOptionId !== activeResolvedSource.selectedOptionId) {
-      setSelectedSourceOptionId(activeResolvedSource.selectedOptionId);
-    }
-  }, [activeResolvedSource?.selectedOptionId, selectedSourceOptionId, setSelectedSourceOptionId]);
 
   useEffect(() => {
     if (!activeSubtitleTracks.length) {
