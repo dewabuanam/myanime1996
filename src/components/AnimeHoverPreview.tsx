@@ -356,7 +356,15 @@ export default function AnimeHoverPreview({
             <Tv2 size={14} />
           </button>
         ) : null}
-        {episodeLabel ? <span className="anime-hover-preview-episode-overlay">{episodeLabel}</span> : null}
+        {episodeLabel ? (
+          <span
+            className="anime-hover-preview-episode-overlay retro-tooltip"
+            data-tooltip={`Progress ${episodeLabel}`}
+            aria-label={`Progress ${episodeLabel}`}
+          >
+            {episodeLabel}
+          </span>
+        ) : null}
         {posterOverlayLabel ? <span className="anime-card-poster-overlay-badge">{posterOverlayLabel}</span> : null}
       </div>
 

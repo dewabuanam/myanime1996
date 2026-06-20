@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, BellOff, RefreshCcw } from 'lucide-react';
+import { Bell, BellOff } from 'lucide-react';
 import { BookMarked, Info, Trash2, X } from 'lucide-react';
 import AnimeHoverPreview from '../components/AnimeHoverPreview';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -64,8 +64,6 @@ export default function Library() {
   const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
   const libraryStatusNotificationSettings = useAppStore((state) => state.libraryStatusNotificationSettings);
   const setLibraryStatusNotificationEnabled = useAppStore((state) => state.setLibraryStatusNotificationEnabled);
-  const libraryLastDailyEpisodeCheckDate = useAppStore((state) => state.libraryLastDailyEpisodeCheckDate);
-  const runLibraryEpisodeDailyCheck = useAppStore((state) => state.runLibraryEpisodeDailyCheck);
   const playAnimeSeries = useAppStore((state) => state.playAnimeSeries);
   const playEpisode = useAppStore((state) => state.playEpisode);
   const addAnimeSeriesToQueue = useAppStore((state) => state.addAnimeSeriesToQueue);
@@ -81,7 +79,6 @@ export default function Library() {
   const [undoRemovedItem, setUndoRemovedItem] = useState<LibraryAnimeItem | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeTab, setActiveTab] = useState<LibraryStatus>('watching');
-  const [isCheckingNow, setCheckingNow] = useState(false);
 
   const groupedByStatus = useMemo(() => {
     const grouped: Record<LibraryStatus, LibraryAnimeItem[]> = {
@@ -118,16 +115,6 @@ export default function Library() {
   const visibleItems = groupedByStatus[activeTab];
   const isActiveStatusNotificationEnabled = Boolean(libraryStatusNotificationSettings[activeTab]);
   const activeStatusTooltip = `${formatStatus(activeTab)} alerts are ${isActiveStatusNotificationEnabled ? 'enabled' : 'disabled'}`;
-
-  const handleRunCheckNow = async () => {
-    if (isCheckingNow) return;
-    setCheckingNow(true);
-    try {
-      await runLibraryEpisodeDailyCheck(true);
-    } finally {
-      setCheckingNow(false);
-    }
-  };
 
   useEffect(() => {
     return () => {
@@ -180,6 +167,27 @@ export default function Library() {
       : animeSummary;
     await selectAnime(selected);
     await openRightPanelWithView('detail');
+  };
+
+  const getEpisodeProgressLabel = (item: LibraryAnimeItem) => {
+    const animeId = Math.max(1, Math.floor(item.animeId));
+    const canonicalAnimeId = Math.max(1, Math.floor(item.jikanId ?? animeId));
+    const progressEntry = watchProgress[canonicalAnimeId] ?? watchProgress[animeId];
+
+    const watchedEpisode = progressEntry && progressEntry.progress > 0
+      ? Math.max(1, Math.floor(progressEntry.episode || 1))
+      : 0;
+
+    const availableEpisode = Math.max(
+      0,
+      Math.floor(Number(item.currentEpisode) || 0),
+      Math.floor(Number(item.episodes) || 0),
+      Math.floor(Number(progressEntry?.totalEpisodes) || 0),
+    );
+
+    if (availableEpisode <= 0 && watchedEpisode <= 0) return 'N/A';
+    if (availableEpisode <= 0) return `${watchedEpisode}/?`;
+    return `${Math.min(watchedEpisode, availableEpisode)}/${availableEpisode}`;
   };
 
   const getResumePlan = (item: LibraryAnimeItem) => {
@@ -250,9 +258,9 @@ export default function Library() {
   };
 
   return (
-    <div className="space-y-2 px-6 pb-6 pt-4">
-      <div className="sticky top-2 z-30 space-y-2">
-        <section className="hero-band relative overflow-hidden rounded-2xl border border-amberline/35 px-6 pb-3 pt-5 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
+    <div className="seeall-page space-y-4 pb-8">
+      <div className="sticky top-0 z-30 space-y-2">
+        <section className="seeall-header library-header relative overflow-hidden border border-amberline/35 px-6 pb-3 pt-5 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
           <div className="absolute inset-0 bg-gradient-to-r from-[#100b08]/96 via-[#1a120c]/86 to-[#2e2016]/46" />
           <div className="pointer-events-none absolute inset-0 opacity-35 [background-image:linear-gradient(rgba(252,214,148,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(252,214,148,0.04)_1px,transparent_1px)] [background-size:3px_3px]" />
           <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
@@ -273,20 +281,6 @@ export default function Library() {
               <p className="mt-2 max-w-2xl font-mono text-[11px] uppercase tracking-[0.08em] text-cream/68">
                 Manage your {formatStatus(activeTab).toLowerCase()} shelf and alert behavior from here.
               </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="vhs-button-ghost px-3 py-2 text-xs"
-                onClick={handleRunCheckNow}
-                disabled={isCheckingNow}
-              >
-                <RefreshCcw size={14} className={isCheckingNow ? 'animate-spin' : ''} />
-                {isCheckingNow ? 'Checking...' : 'Check Now'}
-              </button>
-              <span className="rounded-md border border-cream/20 bg-black/20 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-cream/62">
-                Last: {libraryLastDailyEpisodeCheckDate ?? 'Never'}
-              </span>
             </div>
           </div>
 
@@ -327,7 +321,7 @@ export default function Library() {
         ) : null}
       </div>
 
-      <section>
+      <section className="px-6">
         {visibleItems.length === 0 ? (
           <div className="app-card border border-cream/20 bg-black/22 p-8 text-center font-mono text-[11px] uppercase tracking-[0.08em] text-cream/70">
             No anime in this tab yet. Add anime from cards and detail panels.
@@ -339,6 +333,7 @@ export default function Library() {
                 .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index);
               const unreadCount = unreadAnimeIds.reduce((total, animeId) => total + (unreadNotificationCountByAnimeId.get(animeId) ?? 0), 0);
               const resumePlan = getResumePlan(item);
+              const episodeProgressLabel = getEpisodeProgressLabel(item);
               const isResumeAction = Boolean(resumePlan);
               const playLabel = isResumeAction ? 'Resume' : 'Play Now';
               const canPlayAnime = canPlayLibraryItem(item, isResumeAction);
@@ -346,7 +341,7 @@ export default function Library() {
                 <AnimeHoverPreview
                   key={item.animeId}
                   anime={toAnimeSummaryFromLibraryItem(item)}
-                  episodeLabel={`Episodes: ${item.currentEpisode ?? item.episodes ?? 'N/A'}`}
+                  episodeLabel={episodeProgressLabel}
                   mediaLabel={item.mediaType?.toUpperCase() ?? 'ANIME'}
                   playLabel={playLabel}
                   isResumeAction={isResumeAction}
@@ -356,12 +351,19 @@ export default function Library() {
                   onAddToQueue={() => void addAnimeSeriesToQueue(toAnimeSummaryFromLibraryItem(item))}
                   onOpenDetail={() => void openLibraryDetailPanel(item)}
                 >
-                  <article className="anime-card media-thumb-card rounded-lg border border-cream/12 bg-black/18 p-2">
+                  <article className="anime-card media-thumb-card library-row-card border border-cream/12 bg-black/18 p-2">
                     <div className="anime-card-poster-wrap">
                       <img src={item.image} alt="" className="anime-card-poster" loading="lazy" />
+                      <span
+                        className="anime-hover-preview-episode-overlay retro-tooltip"
+                        data-tooltip={`Progress ${episodeProgressLabel}`}
+                        aria-label={`Progress ${episodeProgressLabel}`}
+                      >
+                        {episodeProgressLabel}
+                      </span>
                       {unreadCount > 0 ? (
                         <span
-                          className="absolute right-2 top-2 inline-flex min-h-[1rem] min-w-[1rem] items-center justify-center rounded-full border border-amberline/65 bg-amberline/18 px-1 font-mono text-[10px] leading-none text-amberline"
+                          className="absolute right-2 top-2 z-[2] inline-flex min-h-[1rem] min-w-[1rem] items-center justify-center rounded-full border border-amberline/65 bg-amberline/18 px-1 font-mono text-[10px] leading-none text-amberline"
                           title={`${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}`}
                         >
                           {unreadCount}
@@ -373,7 +375,6 @@ export default function Library() {
                       <p className="anime-card-title anime-card-title-slot line-clamp-2">{getLibraryDisplayTitle(item, preferEnglish)}</p>
                       <p className="anime-card-jp anime-card-jp-slot line-clamp-1">{item.titleJapanese || '\u3000'}</p>
                       <p className="anime-card-jp">{item.mediaType ?? 'anime'} • {item.year ?? 'tba'}</p>
-                      <p className="anime-card-meta">Episodes: {item.currentEpisode ?? item.episodes ?? 'N/A'}</p>
                     </div>
 
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">

@@ -242,18 +242,20 @@ export default function History() {
   };
 
   return (
-    <div className="history-page-shell space-y-5 px-6 pb-5 pt-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="seeall-page space-y-4 pb-8">
+      <section className="seeall-header history-header px-6 py-5">
         <div>
           <p className="eyebrow">Playback log</p>
           <h1 className="section-title">History</h1>
+          <p className="seeall-subtitle">Track playback progress and quickly resume where you left off.</p>
         </div>
         <button type="button" className="see-all-link retro-tooltip" onClick={() => void handleClearAll()} disabled={!history.length} data-tooltip="Clear All History">
           Clear all
         </button>
-      </div>
+      </section>
 
-      <section className="history-stats-grid">
+      <section className="history-content space-y-5 px-6">
+        <section className="history-stats-grid">
         <article className="history-stat-card">
           <p>Total entries</p>
           <strong>{history.length}</strong>
@@ -266,9 +268,9 @@ export default function History() {
           <p>Latest activity</p>
           <strong>{newestEntry ? formatRelativeTime(newestEntry.updatedAt) : 'No activity'}</strong>
         </article>
-      </section>
+        </section>
 
-      <section className="history-controls">
+        <section className="history-controls">
         <label className="history-search" htmlFor="history-search">
           <Search size={14} />
           <input
@@ -302,51 +304,52 @@ export default function History() {
             <option value="nearly-done">Nearly done (80%+)</option>
           </select>
         </label>
-      </section>
+        </section>
 
-      <section className="history-list">
-        {!filteredHistory.length && (
-          <div className="app-card p-6 font-mono text-sm uppercase tracking-[0.12em] text-cream/50">
-            No history matched this filter.
-          </div>
-        )}
+        <section className="history-list">
+          {!filteredHistory.length && (
+            <div className="app-card p-6 font-mono text-sm uppercase tracking-[0.12em] text-cream/50">
+              No history matched this filter.
+            </div>
+          )}
 
-        {filteredHistory.map((item) => (
-          <article key={item.animeId} className="history-item">
-            <img src={item.image} alt="" className="history-item-image" />
-            <div className="history-item-copy">
-              <p className="history-item-title">{getDisplayTitle(item, titleLanguage)}</p>
-              <p className="history-item-meta">
-                EP {String(item.episode).padStart(2, '0')}
-                {item.totalEpisodes && item.totalEpisodes > 0 ? `/${String(item.totalEpisodes).padStart(2, '0')}` : ''} · {formatElapsed(item.lastPlaybackSeconds ?? 0)} · Updated{' '}
-                {formatRelativeTime(item.updatedAt)}
-              </p>
-              <div className="stream-progress">
-                <span style={{ width: `${item.progress}%` }} />
+          {filteredHistory.map((item) => (
+            <article key={item.animeId} className="history-item">
+              <img src={item.image} alt="" className="history-item-image" />
+              <div className="history-item-copy">
+                <p className="history-item-title">{getDisplayTitle(item, titleLanguage)}</p>
+                <p className="history-item-meta">
+                  EP {String(item.episode).padStart(2, '0')}
+                  {item.totalEpisodes && item.totalEpisodes > 0 ? `/${String(item.totalEpisodes).padStart(2, '0')}` : ''} · {formatElapsed(item.lastPlaybackSeconds ?? 0)} · Updated{' '}
+                  {formatRelativeTime(item.updatedAt)}
+                </p>
+                <div className="stream-progress">
+                  <span style={{ width: `${item.progress}%` }} />
+                </div>
               </div>
-            </div>
-            <div className="history-item-actions">
-              {isStartOverAvailable(item.animeId) ? (
-                <button type="button" className="vhs-button px-3 py-1.5 retro-tooltip" onClick={() => void handleStartOver(item.animeId)} data-tooltip="Start Over Playback">
-                  <Play size={13} /> Start Over
+              <div className="history-item-actions">
+                {isStartOverAvailable(item.animeId) ? (
+                  <button type="button" className="history-action-btn history-action-btn-startover retro-tooltip" onClick={() => void handleStartOver(item.animeId)} data-tooltip="Start Over Playback">
+                    <Play size={13} /> Start Over
+                  </button>
+                ) : null}
+                <button type="button" className="history-action-btn history-action-btn-resume retro-tooltip" onClick={() => void handleResume(item.animeId)} data-tooltip="Resume Playback">
+                  <HistoryIcon size={13} /> Resume
                 </button>
-              ) : null}
-              <button type="button" className="vhs-button px-3 py-1.5 retro-tooltip" onClick={() => void handleResume(item.animeId)} data-tooltip="Resume Playback">
-                <HistoryIcon size={13} /> Resume
-              </button>
-              <button
-                type="button"
-                className="history-remove-btn retro-tooltip"
-                onClick={() => setPendingAction({ type: 'remove-item', animeId: item.animeId, title: getDisplayTitle(item, titleLanguage) })}
-                aria-label="Remove from history"
-                data-tooltip="Remove from History"
-              >
-                <Trash2 size={13} />
-                Remove
-              </button>
-            </div>
-          </article>
-        ))}
+                <button
+                  type="button"
+                  className="history-action-btn history-action-btn-remove retro-tooltip"
+                  onClick={() => setPendingAction({ type: 'remove-item', animeId: item.animeId, title: getDisplayTitle(item, titleLanguage) })}
+                  aria-label="Remove from history"
+                  data-tooltip="Remove from History"
+                >
+                  <Trash2 size={13} />
+                  Remove
+                </button>
+              </div>
+            </article>
+          ))}
+        </section>
       </section>
       <ConfirmDialog
         open={!!pendingAction}
