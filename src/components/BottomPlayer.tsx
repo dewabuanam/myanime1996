@@ -908,7 +908,7 @@ export default function BottomPlayer() {
             className="accent-amberline flex-1 min-w-0 retro-tooltip tooltip-left"
             type="range"
             min="0"
-            max="100"
+            max="200"
             value={trailerVolume}
             onChange={(event) => {
               const next = Number(event.target.value);
@@ -916,7 +916,7 @@ export default function BottomPlayer() {
               void setTrailerMuted(next <= 0);
             }}
             aria-label="Volume"
-            data-tooltip={`Volume: ${Math.max(0, Math.min(100, Math.round(trailerVolume)))}%`}
+            data-tooltip={`Volume: ${Math.max(0, Math.min(200, Math.round(trailerVolume)))}%`}
           />
         </div>
       </div>

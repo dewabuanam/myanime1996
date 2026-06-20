@@ -254,15 +254,15 @@ function normalizeSubtitleFontSize(value: unknown): number {
 function normalizeTrailerVolume(value: unknown): number {
   const volume = Number(value);
   if (!Number.isFinite(volume)) return 72;
-  return Math.max(0, Math.min(100, Math.round(volume)));
+  return Math.max(0, Math.min(200, Math.round(volume)));
 }
 
 function normalizeTrailerLastNonZeroVolume(value: unknown, fallback = 72): number {
   const volume = Number(value);
   if (!Number.isFinite(volume) || volume <= 0) {
-    return Math.max(1, Math.min(100, Math.round(fallback)));
+    return Math.max(1, Math.min(200, Math.round(fallback)));
   }
-  return Math.max(1, Math.min(100, Math.round(volume)));
+  return Math.max(1, Math.min(200, Math.round(volume)));
 }
 
 function normalizePluginPriority(value: unknown, defaults: string[]) {
@@ -1668,7 +1668,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setTrailerVolume: (volume) => {
-    const safe = Math.max(0, Math.min(100, Math.round(volume)));
+    const safe = Math.max(0, Math.min(200, Math.round(volume)));
     if (safe > 0) {
       void Promise.all([
         setStoredValue('trailerVolume', safe),

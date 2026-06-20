@@ -294,7 +294,7 @@ export function useYouTubeTrailerPlayer({
     const player = trailerPlayerRef.current;
     if (!player) return;
     try {
-      player.setVolume(volume);
+      player.setVolume(Math.max(0, Math.min(100, Math.round(volume))));
     } catch {
       // Ignore transient player errors while switching playback modes.
     }

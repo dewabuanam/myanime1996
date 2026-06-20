@@ -32,6 +32,7 @@ const WATCH_PROGRESS_SAVE_INTERVAL_SECONDS = 5;
 const FULLSCREEN_OVERLAY_HIDE_MS = 2000;
 const MAX_REASONABLE_MAL_ID = 2_000_000;
 const VOLUME_STEP = 5;
+const MAX_TRAILER_VOLUME = 200;
 const SUBTITLE_OFF_ID = '__off__';
 const TRAILER_FINDING_SIGNAL_TIMEOUT_MS = 30_000;
 
@@ -104,6 +105,10 @@ export default function RightNowPlaying() {
   const logToggleRef = useRef<HTMLButtonElement | null>(null);
   const paneLayoutMenuRef = useRef<HTMLDivElement | null>(null);
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
+  const sourceVideoAudioContextRef = useRef<AudioContext | null>(null);
+  const sourceVideoAudioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const sourceVideoGainRef = useRef<GainNode | null>(null);
+  const sourceVideoGainTargetRef = useRef<HTMLVideoElement | null>(null);
   const pendingAutoPlayAfterResolveRef = useRef(false);
   const autoAdvanceHandledItemIdRef = useRef<string | null>(null);
   const fullscreenOverlayHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -370,6 +375,91 @@ export default function RightNowPlaying() {
     playNextInQueue,
     resetPlaybackTransport,
   });
+
+  const teardownSourceVideoGainGraph = useCallback(() => {
+    if (sourceVideoAudioSourceRef.current) {
+      try {
+        sourceVideoAudioSourceRef.current.disconnect();
+      } catch {
+        // Ignore disconnect errors from partially-initialized nodes.
+      }
+      sourceVideoAudioSourceRef.current = null;
+    }
+
+    if (sourceVideoGainRef.current) {
+      try {
+        sourceVideoGainRef.current.disconnect();
+      } catch {
+        // Ignore disconnect errors from partially-initialized nodes.
+      }
+      sourceVideoGainRef.current = null;
+    }
+
+    if (sourceVideoAudioContextRef.current) {
+      void sourceVideoAudioContextRef.current.close().catch(() => {
+        // Ignore context close failures.
+      });
+      sourceVideoAudioContextRef.current = null;
+    }
+
+    sourceVideoGainTargetRef.current = null;
+  }, []);
+
+  const applyDirectPluginVolume = useCallback(
+    (video: HTMLVideoElement | null) => {
+      if (!video) return;
+
+      const clampedPercent = Math.max(0, Math.min(MAX_TRAILER_VOLUME, trailerVolume));
+      const normalized = clampedPercent / 100;
+      video.volume = Math.max(0, Math.min(1, normalized));
+
+      if (normalized <= 1) {
+        if (sourceVideoGainRef.current) {
+          sourceVideoGainRef.current.gain.value = 1;
+        }
+        return;
+      }
+
+      if (typeof window === 'undefined') return;
+      const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextCtor) return;
+
+      try {
+        let context = sourceVideoAudioContextRef.current;
+        if (!context || context.state === 'closed') {
+          context = new AudioContextCtor();
+          sourceVideoAudioContextRef.current = context;
+          sourceVideoAudioSourceRef.current = null;
+          sourceVideoGainRef.current = null;
+          sourceVideoGainTargetRef.current = null;
+        }
+
+        const sameTarget = sourceVideoGainTargetRef.current === video;
+        if (!sameTarget) {
+          sourceVideoAudioSourceRef.current?.disconnect();
+          sourceVideoGainRef.current?.disconnect();
+          sourceVideoAudioSourceRef.current = context.createMediaElementSource(video);
+          sourceVideoGainRef.current = context.createGain();
+          sourceVideoAudioSourceRef.current.connect(sourceVideoGainRef.current);
+          sourceVideoGainRef.current.connect(context.destination);
+          sourceVideoGainTargetRef.current = video;
+        }
+
+        if (sourceVideoGainRef.current) {
+          sourceVideoGainRef.current.gain.value = normalized;
+        }
+
+        if (context.state === 'suspended') {
+          void context.resume().catch(() => {
+            // Browser may require an explicit user gesture before resume.
+          });
+        }
+      } catch {
+        // Fall back to native element volume when WebAudio graph cannot be attached.
+      }
+    },
+    [trailerVolume],
+  );
 
   const sourceSelectorItems = useMemo<LogoSelectItem[]>(() => {
     const items: LogoSelectItem[] = [
@@ -1046,9 +1136,17 @@ export default function RightNowPlaying() {
 
     if (!isDirectPluginPlayback) return;
     const video = sourceVideoRef.current;
-    if (!video) return;
-    video.volume = Math.max(0, Math.min(1, trailerVolume / 100));
-  }, [hasTrailerPlayback, isDirectPluginPlayback, trailerVolume, syncTrailerVolume]);
+    applyDirectPluginVolume(video);
+  }, [applyDirectPluginVolume, hasTrailerPlayback, isDirectPluginPlayback, trailerVolume, syncTrailerVolume]);
+
+  useEffect(() => {
+    if (isDirectPluginPlayback) return;
+    teardownSourceVideoGainGraph();
+  }, [isDirectPluginPlayback, teardownSourceVideoGainGraph]);
+
+  useEffect(() => () => {
+    teardownSourceVideoGainGraph();
+  }, [teardownSourceVideoGainGraph]);
 
   useEffect(() => {
     if (pendingSeekTo === null) return;
@@ -1224,7 +1322,7 @@ export default function RightNowPlaying() {
           return;
         case 'ArrowUp':
           event.preventDefault();
-          setTrailerVolume(Math.min(100, trailerVolume + VOLUME_STEP));
+          setTrailerVolume(Math.min(MAX_TRAILER_VOLUME, trailerVolume + VOLUME_STEP));
           return;
         case 'ArrowDown':
           event.preventDefault();
@@ -1430,7 +1528,7 @@ export default function RightNowPlaying() {
                       setPlaybackTime(nextCurrentTime);
                     }
                     setTrailerPlayerReady(true);
-                    video.volume = Math.max(0, Math.min(1, trailerVolume / 100));
+                    applyDirectPluginVolume(video);
                     if (isPlaying || pendingAutoPlayAfterResolveRef.current) {
                       void video.play().then(() => {
                         pendingAutoPlayAfterResolveRef.current = false;
@@ -1441,6 +1539,7 @@ export default function RightNowPlaying() {
                   }}
                   onCanPlay={(event) => {
                     const video = event.currentTarget;
+                    applyDirectPluginVolume(video);
                     if (!(isPlaying || pendingAutoPlayAfterResolveRef.current)) return;
                     void video.play().then(() => {
                       pendingAutoPlayAfterResolveRef.current = false;
