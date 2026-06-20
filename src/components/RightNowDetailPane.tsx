@@ -5,6 +5,7 @@ import type { AnimeDetail, AnimeEpisode, AnimeEpisodePagination, TitleLanguage }
 import { formatEpisodeDuration, formatEpisodeScoreOutOfTen } from '../utils/episodeFormatters';
 import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
+import { parseReleaseTimestamp } from '../utils/releaseTime';
 import { resolveAnimeSeason } from '../utils/season';
 import SeasonLinkBadge from './SeasonLinkBadge';
 
@@ -71,6 +72,11 @@ export default function RightNowDetailPane({
   const popularityLabel = detailAnimeView?.popularity ? String(detailAnimeView.popularity) : 'N/A';
   const episodeTotalLabel = formatEpisodeTotalLabel(detailAnimeView?.currentEpisode, detailAnimeView?.episodes);
   const genreList = detailAnimeView?.genres?.filter(Boolean) ?? [];
+  const rawReleaseDate = detailAnimeView?.airingDate || detailAnimeView?.aired;
+  const parsedReleaseTimestamp = parseReleaseTimestamp(rawReleaseDate);
+  const releaseDateLabel = parsedReleaseTimestamp !== null
+    ? new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(parsedReleaseTimestamp))
+    : rawReleaseDate?.split('to')[0]?.trim() || 'TBA';
 
   useEffect(() => {
     const root = rootRef.current;
@@ -210,7 +216,7 @@ export default function RightNowDetailPane({
                     <List size={9} className="text-amberline" /> {episodeTotalLabel}
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-md border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
-                    <CalendarDays size={9} className="text-amberline" /> {detailYearLabel}
+                    <CalendarDays size={9} className="text-amberline" /> {releaseDateLabel}
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-md border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
                     <Clock3 size={9} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
@@ -290,8 +296,8 @@ export default function RightNowDetailPane({
               <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Episodes">
                 <List size={11} className="text-amberline" /> {episodeTotalLabel}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Year">
-                <CalendarDays size={11} className="text-amberline" /> {detailYearLabel}
+              <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Release Date">
+                <CalendarDays size={11} className="text-amberline" /> {releaseDateLabel}
               </span>
               <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Status">
                 <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
