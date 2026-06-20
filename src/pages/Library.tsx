@@ -100,6 +100,21 @@ export default function Library() {
     return grouped;
   }, [libraryItems]);
 
+  const statusCounts = useMemo(
+    () =>
+      LIBRARY_STATUS_ORDER.reduce<Record<LibraryStatus, number>>((counts, status) => {
+        counts[status] = groupedByStatus[status].length;
+        return counts;
+      }, {
+        watching: 0,
+        'plan-to-watch': 0,
+        'on-hold': 0,
+        dropped: 0,
+        completed: 0,
+      }),
+    [groupedByStatus],
+  );
+
   const unreadNotificationCountByAnimeId = useMemo(() => {
     const counts = new Map<number, number>();
     for (const notification of libraryNotifications) {
@@ -297,7 +312,7 @@ export default function Library() {
                   }`}
                   onClick={() => setActiveTab(tab.key)}
                 >
-                  {tab.label}
+                  {`${tab.label} (${statusCounts[tab.key]})`}
                 </button>
               ))}
             </div>

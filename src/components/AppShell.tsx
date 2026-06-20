@@ -115,10 +115,14 @@ export default function AppShell() {
       }
 
       const committedWidth = liveRightPanelWidthRef.current ?? pendingWidth ?? startWidth;
-      setLiveRightPanelWidth(null);
-      liveRightPanelWidthRef.current = null;
       isResizingRightPanelRef.current = false;
-      void setRightPanelWidth(committedWidth);
+      setLiveRightPanelWidth(committedWidth);
+      liveRightPanelWidthRef.current = committedWidth;
+
+      void setRightPanelWidth(committedWidth).finally(() => {
+        setLiveRightPanelWidth(null);
+        liveRightPanelWidthRef.current = null;
+      });
     };
 
     window.addEventListener('mousemove', onMouseMove);

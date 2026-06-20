@@ -88,7 +88,7 @@ export default function BottomPlayer() {
   const safeTime = Math.min(Math.max(0, playbackTime), safeDuration || Number.MAX_SAFE_INTEGER);
 
   const japaneseTitle = currentlyPlayingItem?.titleJapanese?.trim() || currentlyPlayingItem?.anime.titleJapanese?.trim() || '';
-  const displayAnimeTitle = currentlyPlayingItem ? getDisplayTitle(currentlyPlayingItem.anime, titleLanguage) : 'Kimi no Shiranai Monogatari';
+  const displayAnimeTitle = currentlyPlayingItem ? getDisplayTitle(currentlyPlayingItem.anime, titleLanguage) : 'No media selected';
   const episodeDisplayTitle =
     titleLanguage === 'english'
       ? episodeMetadata?.title?.trim() || episodeMetadata?.titleRomanji?.trim() || ''

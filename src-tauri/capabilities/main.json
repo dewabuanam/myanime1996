@@ -20,6 +20,10 @@
     "core:webview:allow-create-webview-window",
     "store:default",
     "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:read-files",
+    "fs:write-files",
     "opener:default",
     {
       "identifier": "http:default",

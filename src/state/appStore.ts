@@ -19,7 +19,14 @@ import type { BaseCatalogSource } from '../services/catalogSource';
 import { DEFAULT_BASE_CATALOG_SOURCE, getAnimeTrailerUrl, resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { clearAnimeScheduleDataCache, DEFAULT_ANIMESCHEDULE_TOKEN, onAnimeScheduleRateLimit } from '../services/animeSchedule';
 import { clearJikanDataCache } from '../services/jikan';
-import { getStoredValue, migrateLegacyStoreDataToProfile, removeStoredValue, setActiveStoreProfile, setStoredValue } from '../services/store';
+import {
+  getStoredValue,
+  migrateLegacyStoreDataToProfile,
+  migrateProfileScopedKeysToGlobal,
+  removeStoredValue,
+  setActiveStoreProfile,
+  setStoredValue,
+} from '../services/store';
 import { importSourcePluginFromPicker } from '../services/pluginImport';
 import { getAvailableSourcePlugins, getDefaultPluginPriority } from '../services/sourceResolver';
 import { clearSourceResolveCache } from '../services/sourceCache';
@@ -29,6 +36,7 @@ import { clearPluginResolverCaches } from '../services/pluginExecutor';
 const WATCH_HISTORY_PROFILE_KEY = 'watchHistoryByProfile';
 const WATCH_PROGRESS_PROFILE_KEY = 'watchProgressByProfile';
 const LEGACY_PLAYBACK_MIGRATED_KEY = 'legacyPlaybackMigrated';
+const GLOBAL_LAYOUT_CACHE_KEYS = ['isRightPanelHidden', 'isRightPanelFullpage', 'rightPanelView', 'rightPanelWidth'] as const;
 const WATCH_COMPLETE_THRESHOLD_PERCENT = 90;
 let animeScheduleRateLimitListenerBound = false;
 
@@ -1364,6 +1372,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const scopedProfileId = session?.id ?? null;
       if (scopedProfileId) {
         await migrateLegacyStoreDataToProfile(scopedProfileId);
+        await migrateProfileScopedKeysToGlobal(scopedProfileId, GLOBAL_LAYOUT_CACHE_KEYS);
       }
       setActiveStoreProfile(scopedProfileId);
 
@@ -1833,6 +1842,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const session: UserSession = { mode: 'guest', id: createId('guest'), createdAt: new Date().toISOString() };
     await setStoredValue('session', session);
     await migrateLegacyStoreDataToProfile(session.id);
+    await migrateProfileScopedKeysToGlobal(session.id, GLOBAL_LAYOUT_CACHE_KEYS);
     setActiveStoreProfile(session.id);
     const { watchHistory, watchProgress } = await readProfilePlayback(session);
     const [
@@ -1875,6 +1885,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('localCredentials', { email, passwordHint: password ? 'Stored locally for prototype UI only' : '', updatedAt: new Date().toISOString() }),
     ]);
     await migrateLegacyStoreDataToProfile(session.id);
+    await migrateProfileScopedKeysToGlobal(session.id, GLOBAL_LAYOUT_CACHE_KEYS);
     setActiveStoreProfile(session.id);
     const { watchHistory, watchProgress } = await readProfilePlayback(session);
     const [

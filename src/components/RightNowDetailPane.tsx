@@ -16,6 +16,13 @@ type DetailEpisodeIcon = {
 
 const MIN_POSTER_ZOOM = 1;
 const MAX_POSTER_ZOOM = 4;
+const RIGHT_PANEL_MIN_WIDTH_PX = 260;
+const RIGHT_PANEL_MAX_WIDTH_PX = 560;
+const COMPACT_DETAIL_PANE_RANGE_RATIO = 0.2;
+const COMPACT_DETAIL_PANE_HYSTERESIS_PX = 18;
+const COMPACT_DETAIL_PANE_MAX_WIDTH = Math.round(
+  RIGHT_PANEL_MIN_WIDTH_PX + (RIGHT_PANEL_MAX_WIDTH_PX - RIGHT_PANEL_MIN_WIDTH_PX) * COMPACT_DETAIL_PANE_RANGE_RATIO,
+);
 
 type RightNowDetailPaneProps = {
   detailAnimeView: AnimeDetail | null;
@@ -83,7 +90,16 @@ export default function RightNowDetailPane({
     if (!root) return;
 
     const updateCompactState = () => {
-      setIsCompactPane(root.clientWidth <= 430);
+      const compactEnterThreshold = COMPACT_DETAIL_PANE_MAX_WIDTH - COMPACT_DETAIL_PANE_HYSTERESIS_PX / 2;
+      const compactExitThreshold = COMPACT_DETAIL_PANE_MAX_WIDTH + COMPACT_DETAIL_PANE_HYSTERESIS_PX / 2;
+      const width = root.clientWidth;
+
+      setIsCompactPane((current) => {
+        if (current) {
+          return width <= compactExitThreshold;
+        }
+        return width <= compactEnterThreshold;
+      });
     };
 
     updateCompactState();

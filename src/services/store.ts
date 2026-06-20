@@ -74,10 +74,6 @@ type StoreShape = {
 
 const PROFILE_SCOPED_KEYS: ReadonlySet<keyof StoreShape> = new Set<keyof StoreShape>([
   'isSidebarCompact',
-  'isRightPanelHidden',
-  'isRightPanelFullpage',
-  'rightPanelView',
-  'rightPanelWidth',
   'titleLanguage',
   'shuffleEnabled',
   'repeatMode',
@@ -207,6 +203,47 @@ export async function migrateLegacyStoreDataToProfile(profileId: string) {
     const legacyRaw = localStorage.getItem(legacyKey);
     if (legacyRaw === null) continue;
     localStorage.setItem(profileKey, legacyRaw);
+  }
+}
+
+export async function migrateProfileScopedKeysToGlobal<K extends keyof StoreShape>(
+  profileId: string,
+  keys: readonly K[],
+) {
+  const normalizedProfileId = profileId.trim();
+  if (!normalizedProfileId || keys.length === 0) return;
+
+  const store = await getTauriStore();
+
+  if (store) {
+    const get = getMethod<(key: string) => Promise<unknown | undefined>>(store, 'get');
+    const set = getMethod<(key: string, value: unknown) => Promise<void>>(store, 'set');
+    const save = getMethod<() => Promise<void>>(store, 'save');
+    if (!get || !set) return;
+
+    for (const key of keys) {
+      const globalKey = String(key);
+      const profileKey = `${profilePrefix}${normalizedProfileId}:${String(key)}`;
+      const hasGlobalValue = (await get(globalKey)) !== undefined;
+      if (hasGlobalValue) continue;
+
+      const profileValue = await get(profileKey);
+      if (profileValue === undefined) continue;
+      await set(globalKey, profileValue);
+    }
+
+    await save?.();
+    return;
+  }
+
+  for (const key of keys) {
+    const globalKey = `${browserPrefix}${String(key)}`;
+    if (localStorage.getItem(globalKey) !== null) continue;
+
+    const profileKey = `${browserPrefix}${profilePrefix}${normalizedProfileId}:${String(key)}`;
+    const profileRaw = localStorage.getItem(profileKey);
+    if (profileRaw === null) continue;
+    localStorage.setItem(globalKey, profileRaw);
   }
 }
 
