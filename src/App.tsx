@@ -44,6 +44,8 @@ export default function App() {
   }, [initialize]);
 
   useEffect(() => {
+    const isDev = import.meta.env.DEV;
+
     const onContextMenu = (event: MouseEvent) => {
       event.preventDefault();
     };
@@ -51,11 +53,14 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
-      const blockedShortcut =
+      const isInspectShortcut =
         key === 'f12' ||
+        (ctrlOrMeta && event.shiftKey && (key === 'i' || key === 'j' || key === 'c'));
+      const blockedShortcut =
+        (!isDev && isInspectShortcut) ||
         (ctrlOrMeta && key === 'p') ||
         (ctrlOrMeta && key === 'u') ||
-        (ctrlOrMeta && event.shiftKey && (key === 'i' || key === 'j' || key === 'c'));
+        false;
 
       if (blockedShortcut) {
         event.preventDefault();
