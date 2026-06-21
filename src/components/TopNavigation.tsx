@@ -2,7 +2,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
 import { Bell, ChevronDown, ChevronLeft, ChevronRight, Languages, LogOut, Search, Settings } from 'lucide-react';
 import { useEffect, useState, useRef, type MouseEvent as ReactMouseEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../state/appStore';
 import SearchDropdown from './SearchDropdown';
@@ -13,6 +13,8 @@ const DRAG_START_DISTANCE_PX = 4;
 
 export default function TopNavigation() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigationType = useNavigationType();
   const session = useAppStore((state) => state.session);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
   const allowNsfw = useAppStore((state) => state.allowNsfw);
@@ -35,6 +37,7 @@ export default function TopNavigation() {
   const [isNotificationPopupOpen, setNotificationPopupOpen] = useState(false);
   const [isSearchOpen, setSearchOpen] = useState(false);
   const [isAdvancedOpen, setAdvancedOpen] = useState(false);
+  const [navigationStack, setNavigationStack] = useState<{ stack: string[]; index: number }>({ stack: [], index: -1 });
 
   const {
     query,
@@ -55,6 +58,8 @@ export default function TopNavigation() {
   } = useAnimeSearch();
 
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
+  const canGoBack = navigationStack.index > 0;
+  const canGoForward = navigationStack.index >= 0 && navigationStack.index < navigationStack.stack.length - 1;
   const topNotifications = [...notifications]
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .slice(0, 5);
@@ -78,6 +83,46 @@ export default function TopNavigation() {
     const nextTop = Math.min(window.innerHeight - 8, rect.bottom + 6);
     setNotificationPopupPosition({ top: Math.round(nextTop), left: Math.round(nextLeft) });
   };
+
+  useEffect(() => {
+    const routeEntry = `${location.pathname}${location.search}${location.hash}`;
+
+    setNavigationStack((previous) => {
+      if (previous.index < 0 || previous.stack.length === 0) {
+        return { stack: [routeEntry], index: 0 };
+      }
+
+      if (navigationType === 'PUSH') {
+        if (previous.stack[previous.index] === routeEntry) return previous;
+        const baseStack = previous.stack.slice(0, previous.index + 1);
+        return { stack: [...baseStack, routeEntry], index: baseStack.length };
+      }
+
+      if (navigationType === 'REPLACE') {
+        if (previous.stack[previous.index] === routeEntry) return previous;
+        const nextStack = [...previous.stack];
+        nextStack[previous.index] = routeEntry;
+        return { stack: nextStack, index: previous.index };
+      }
+
+      if (previous.stack[previous.index] === routeEntry) return previous;
+
+      for (let index = previous.index - 1; index >= 0; index -= 1) {
+        if (previous.stack[index] === routeEntry) {
+          return { stack: previous.stack, index };
+        }
+      }
+
+      for (let index = previous.index + 1; index < previous.stack.length; index += 1) {
+        if (previous.stack[index] === routeEntry) {
+          return { stack: previous.stack, index };
+        }
+      }
+
+      const appendedStack = [...previous.stack, routeEntry];
+      return { stack: appendedStack, index: appendedStack.length - 1 };
+    });
+  }, [location.hash, location.pathname, location.search, navigationType]);
 
   useEffect(() => {
     if (!isProfilePopupOpen) return;
@@ -239,10 +284,34 @@ export default function TopNavigation() {
       >
         <Settings size={16} />
       </button>
-      <button type="button" className="top-icon-btn retro-tooltip tooltip-down" aria-label="Back" data-tooltip="Back" data-tauri-drag-region="false">
+      <button
+        type="button"
+        className="top-icon-btn retro-tooltip tooltip-down"
+        aria-label="Back"
+        aria-disabled={!canGoBack}
+        data-tooltip="Back"
+        data-tauri-drag-region="false"
+        disabled={!canGoBack}
+        onClick={() => {
+          if (!canGoBack) return;
+          navigate(-1);
+        }}
+      >
         <ChevronLeft size={16} />
       </button>
-      <button type="button" className="top-icon-btn retro-tooltip tooltip-down" aria-label="Forward" data-tooltip="Forward" data-tauri-drag-region="false">
+      <button
+        type="button"
+        className="top-icon-btn retro-tooltip tooltip-down"
+        aria-label="Forward"
+        aria-disabled={!canGoForward}
+        data-tooltip="Forward"
+        data-tauri-drag-region="false"
+        disabled={!canGoForward}
+        onClick={() => {
+          if (!canGoForward) return;
+          navigate(1);
+        }}
+      >
         <ChevronRight size={16} />
       </button>
 
