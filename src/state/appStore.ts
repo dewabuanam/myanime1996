@@ -6,6 +6,8 @@ import type {
   LibraryNotificationFeedItem,
   LibraryStatus,
   LibraryStatusNotificationSettings,
+  PlaylistConvertStrategy,
+  PlaylistType,
   PlayableItem,
   PlayableKind,
   Playlist,
@@ -121,6 +123,7 @@ interface AppState {
   queue: PlayableItem[];
   queueCursor: number;
   playlists: Playlist[];
+  activePlaylistId: string | null;
   watchHistory: WatchProgress[];
   favorites: number[];
   libraryItems: Record<number, LibraryAnimeItem>;
@@ -176,6 +179,24 @@ interface AppState {
   addAnimeSeriesToQueue: (anime: AnimeSummary) => Promise<void>;
   addEpisodeToQueue: (anime: AnimeSummary, episodeNumber: number) => Promise<void>;
   addTrailerToQueue: (anime: AnimeSummary) => Promise<void>;
+  createPlaylistImmediate: (seed?: Partial<Pick<Playlist, 'name' | 'description' | 'image' | 'type'>>) => Promise<string>;
+  setActivePlaylist: (playlistId: string | null) => Promise<void>;
+  updatePlaylistMeta: (
+    playlistId: string,
+    patch: Partial<Pick<Playlist, 'name' | 'description' | 'image' | 'type'>>,
+  ) => Promise<void>;
+  deletePlaylist: (playlistId: string) => Promise<void>;
+  addAnimeToPlaylist: (playlistId: string, anime: AnimeSummary) => Promise<void>;
+  addVideoToPlaylist: (playlistId: string, item: PlayableItem) => Promise<void>;
+  removePlaylistAnime: (playlistId: string, animeId: number) => Promise<void>;
+  removePlaylistVideo: (playlistId: string, queueItemId: string) => Promise<void>;
+  addPlaylistToQueue: (playlistId: string) => Promise<void>;
+  playPlaylist: (playlistId: string) => Promise<void>;
+  convertPlaylistType: (
+    playlistId: string,
+    targetType: PlaylistType,
+    strategy: PlaylistConvertStrategy,
+  ) => Promise<void>;
   replaceQueueAndPlay: (items: PlayableItem[], startIndex: number) => Promise<void>;
   startPlayingAnime: (anime: AnimeSummary) => Promise<void>;
   addToQueue: (anime: AnimeSummary) => Promise<void>;
@@ -273,6 +294,7 @@ function normalizeTitleLanguage(value: unknown): TitleLanguage {
 
 function normalizeRightPanelView(value: unknown): RightPanelView {
   if (value === 'detail') return 'detail';
+  if (value === 'playlist') return 'playlist';
   if (value === 'plugins') return 'plugins';
   return 'now-playing';
 }
@@ -612,6 +634,120 @@ function buildQueuePlayableItems(anime: AnimeSummary): PlayableItem[] {
 
   const latestEpisode = Math.max(1, anime.currentEpisode ?? 1);
   return Array.from({ length: latestEpisode }, (_, index) => makeEpisodeItem(anime, index + 1, 'anime-card'));
+}
+
+function animeMatchesCanonicalId(anime: Pick<AnimeSummary, 'id' | 'jikanId'> | null | undefined, targetAnimeId: number) {
+  if (!anime) return false;
+  const canonicalId = getCanonicalAnimeId(anime);
+  if (canonicalId === targetAnimeId) return true;
+  const rawId = Math.floor(Number(anime.id) || 0);
+  if (rawId > 0 && rawId === targetAnimeId) return true;
+  const rawJikanId = Math.floor(Number(anime.jikanId) || 0);
+  return rawJikanId > 0 && rawJikanId === targetAnimeId;
+}
+
+function animeSummaryFromLibraryItem(item: LibraryAnimeItem): AnimeSummary {
+  const canonicalAnimeId = resolveLibraryAnimeId(item.animeId, item.jikanId);
+  return {
+    id: canonicalAnimeId,
+    jikanId: item.jikanId,
+    animeScheduleRoute: item.animeScheduleRoute,
+    title: item.title,
+    titleEnglish: item.titleEnglish,
+    titleJapanese: item.titleJapanese,
+    image: item.image || DEFAULT_NOTIFICATION_POSTER,
+    synopsis: '',
+    studios: [],
+    genres: [],
+    mediaType: item.mediaType,
+    year: item.year,
+    episodes: item.episodes,
+    currentEpisode: item.currentEpisode,
+  };
+}
+
+function animeSummaryFromWatchProgress(entry: WatchProgress): AnimeSummary {
+  const canonicalAnimeId = resolveLibraryAnimeId(entry.animeId, entry.jikanId);
+  return {
+    id: canonicalAnimeId,
+    jikanId: entry.jikanId,
+    animeScheduleRoute: entry.animeScheduleRoute,
+    title: entry.title,
+    titleEnglish: entry.titleEnglish,
+    titleJapanese: entry.titleJapanese,
+    image: entry.image || DEFAULT_NOTIFICATION_POSTER,
+    synopsis: '',
+    studios: [],
+    genres: [],
+    episodes: entry.totalEpisodes,
+    currentEpisode: entry.episode,
+  };
+}
+
+function resolvePlaylistAnimeSummary(current: AppState, animeId: number): AnimeSummary {
+  const queueMatch = current.queue.find((item) => animeMatchesCanonicalId(item.anime, animeId))?.anime;
+  const selectedAnimeMatch = animeMatchesCanonicalId(current.selectedAnime, animeId) ? current.selectedAnime : null;
+  const currentPlayingMatch = animeMatchesCanonicalId(current.currentlyPlayingItem?.anime, animeId)
+    ? current.currentlyPlayingItem?.anime
+    : null;
+  const directLibrary = current.libraryItems[animeId];
+  const matchedLibrary = directLibrary
+    ?? Object.values(current.libraryItems).find((item) => resolveLibraryAnimeId(item.animeId, item.jikanId) === animeId)
+    ?? null;
+  const directProgress = current.watchProgress[animeId];
+  const matchedProgress = directProgress
+    ?? Object.values(current.watchProgress).find((entry) => resolveLibraryAnimeId(entry.animeId, entry.jikanId) === animeId)
+    ?? null;
+
+  if (currentPlayingMatch) return currentPlayingMatch;
+  if (queueMatch) return queueMatch;
+  if (selectedAnimeMatch) return selectedAnimeMatch;
+  if (matchedLibrary) return animeSummaryFromLibraryItem(matchedLibrary);
+  if (matchedProgress) return animeSummaryFromWatchProgress(matchedProgress);
+
+  return {
+    id: animeId,
+    jikanId: animeId,
+    title: `Anime #${animeId}`,
+    image: DEFAULT_NOTIFICATION_POSTER,
+    synopsis: '',
+    studios: [],
+    genres: [],
+  };
+}
+
+async function buildPlayableItemsForAnimePlaylist(current: AppState, animeIds: number[]): Promise<PlayableItem[]> {
+  const uniqueAnimeIds: number[] = [];
+  const seen = new Set<number>();
+
+  for (const rawAnimeId of animeIds) {
+    const safeAnimeId = Math.max(1, Math.floor(Number(rawAnimeId) || 0));
+    if (safeAnimeId <= 0 || seen.has(safeAnimeId)) continue;
+    seen.add(safeAnimeId);
+    uniqueAnimeIds.push(safeAnimeId);
+  }
+
+  const resolvedAnimeItems = await Promise.all(
+    uniqueAnimeIds.map(async (animeId) => {
+      const resolvedAnime = resolvePlaylistAnimeSummary(current, animeId);
+      if (inferMediaKindFromAnime(resolvedAnime) !== 'episode') {
+        return resolvedAnime;
+      }
+
+      const episodeResolution = await resolveQueueEpisodeResolution(resolvedAnime).catch(() => ({
+        latestEpisode: Math.max(1, Math.floor(Number(resolvedAnime.currentEpisode) || 0) || 1),
+        resolvedJikanId: resolvedAnime.jikanId,
+      }));
+
+      return {
+        ...resolvedAnime,
+        jikanId: resolvedAnime.jikanId ?? episodeResolution.resolvedJikanId,
+        currentEpisode: Math.max(1, episodeResolution.latestEpisode),
+      } as AnimeSummary;
+    }),
+  );
+
+  return resolvedAnimeItems.flatMap((anime) => buildQueuePlayableItems(anime));
 }
 
 async function resolveQueueEpisodeResolution(anime: AnimeSummary): Promise<{ latestEpisode: number; resolvedJikanId?: number }> {
@@ -1125,15 +1261,139 @@ function normalizeFavorites(value: unknown): number[] {
 
 function normalizePlaylists(value: unknown): Playlist[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is Playlist => {
-    if (!entry || typeof entry !== 'object') return false;
-    const maybePlaylist = entry as { id?: unknown; name?: unknown; animeIds?: unknown };
-    return (
-      typeof maybePlaylist.id === 'string' &&
-      typeof maybePlaylist.name === 'string' &&
-      Array.isArray(maybePlaylist.animeIds)
-    );
-  });
+  return value
+    .map((entry): Playlist | null => {
+      if (!entry || typeof entry !== 'object') return null;
+      const maybePlaylist = entry as {
+        id?: unknown;
+        name?: unknown;
+        description?: unknown;
+        image?: unknown;
+        type?: unknown;
+        animeIds?: unknown;
+        animeItems?: unknown;
+        videoItems?: unknown;
+        createdAt?: unknown;
+        updatedAt?: unknown;
+      };
+      if (typeof maybePlaylist.id !== 'string' || maybePlaylist.id.trim().length === 0) return null;
+      if (typeof maybePlaylist.name !== 'string' || maybePlaylist.name.trim().length === 0) return null;
+
+      const image = typeof maybePlaylist.image === 'string' && maybePlaylist.image.trim().length > 0
+        ? maybePlaylist.image.trim()
+        : DEFAULT_NOTIFICATION_POSTER;
+      const description = typeof maybePlaylist.description === 'string'
+        ? maybePlaylist.description.trim()
+        : '';
+      const type: PlaylistType = maybePlaylist.type === 'video' ? 'video' : 'anime';
+      const animeIds = Array.isArray(maybePlaylist.animeIds)
+        ? Array.from(
+            new Set(
+              maybePlaylist.animeIds
+                .map((id) => Math.max(1, Math.floor(Number(id) || 0)))
+                .filter((id) => id > 0),
+            ),
+          )
+        : [];
+      const animeItems = Array.isArray(maybePlaylist.animeItems)
+        ? maybePlaylist.animeItems
+            .map((entry) => {
+              if (!entry || typeof entry !== 'object') return null;
+              const maybeEntry = entry as {
+                animeId?: unknown;
+                jikanId?: unknown;
+                animeScheduleRoute?: unknown;
+                title?: unknown;
+                titleEnglish?: unknown;
+                titleJapanese?: unknown;
+                image?: unknown;
+                mediaType?: unknown;
+                currentEpisode?: unknown;
+              };
+              const animeId = Math.max(1, Math.floor(Number(maybeEntry.animeId) || 0));
+              if (animeId <= 0) return null;
+              const jikanIdRaw = Math.floor(Number(maybeEntry.jikanId) || 0);
+              const jikanId = jikanIdRaw > 0 ? jikanIdRaw : undefined;
+              const currentEpisodeRaw = Math.floor(Number(maybeEntry.currentEpisode) || 0);
+              const currentEpisode = currentEpisodeRaw > 0 ? currentEpisodeRaw : undefined;
+              return {
+                animeId,
+                jikanId,
+                animeScheduleRoute: typeof maybeEntry.animeScheduleRoute === 'string' ? maybeEntry.animeScheduleRoute : undefined,
+                title: typeof maybeEntry.title === 'string' && maybeEntry.title.trim().length > 0 ? maybeEntry.title.trim() : `Anime #${animeId}`,
+                titleEnglish: typeof maybeEntry.titleEnglish === 'string' ? maybeEntry.titleEnglish : undefined,
+                titleJapanese: typeof maybeEntry.titleJapanese === 'string' ? maybeEntry.titleJapanese : undefined,
+                image: typeof maybeEntry.image === 'string' && maybeEntry.image.trim().length > 0 ? maybeEntry.image.trim() : DEFAULT_NOTIFICATION_POSTER,
+                mediaType: typeof maybeEntry.mediaType === 'string' ? maybeEntry.mediaType : undefined,
+                currentEpisode,
+              };
+            })
+            .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+        : [];
+      const videoItems = Array.isArray(maybePlaylist.videoItems)
+        ? maybePlaylist.videoItems
+            .map((item) => normalizePlayableItemFromUnknown(item))
+            .filter((item): item is PlayableItem => Boolean(item))
+        : [];
+      const createdAt = typeof maybePlaylist.createdAt === 'string' ? maybePlaylist.createdAt : new Date().toISOString();
+      const updatedAt = typeof maybePlaylist.updatedAt === 'string' ? maybePlaylist.updatedAt : createdAt;
+
+      return {
+        id: maybePlaylist.id,
+        name: maybePlaylist.name.trim(),
+        description,
+        image,
+        type,
+        animeIds,
+        animeItems,
+        videoItems,
+        createdAt,
+        updatedAt,
+      };
+    })
+    .filter((entry): entry is Playlist => Boolean(entry));
+}
+
+function nextPlaylistName(playlists: Playlist[]) {
+  let index = 1;
+  const names = new Set(playlists.map((playlist) => playlist.name.trim().toLowerCase()));
+  while (names.has(`playlist ${index}`)) {
+    index += 1;
+  }
+  return `Playlist ${index}`;
+}
+
+function normalizePlaylistType(value: unknown): PlaylistType {
+  return value === 'video' ? 'video' : 'anime';
+}
+
+function toPlaylistVideoFromAnime(anime: AnimeSummary): PlayableItem {
+  return buildSeriesPlayableItems(anime)[0] ?? makeEpisodeItem(anime, 1, 'anime-card');
+}
+
+function toPlaylistAnimeEntry(anime: AnimeSummary, canonicalAnimeId: number, currentEpisode?: number) {
+  const safeEpisode = Math.max(0, Math.floor(Number(currentEpisode ?? anime.currentEpisode) || 0)) || undefined;
+  return {
+    animeId: canonicalAnimeId,
+    jikanId: anime.jikanId,
+    animeScheduleRoute: anime.animeScheduleRoute,
+    title: anime.title,
+    titleEnglish: anime.titleEnglish,
+    titleJapanese: anime.titleJapanese,
+    image: anime.image || DEFAULT_NOTIFICATION_POSTER,
+    mediaType: anime.mediaType,
+    currentEpisode: safeEpisode,
+  };
+}
+
+function samePlayableItemIdentity(left: PlayableItem, right: PlayableItem) {
+  if (left.kind !== right.kind) return false;
+  if ((left.episodeNumber ?? null) !== (right.episodeNumber ?? null)) return false;
+  return getCanonicalAnimeId(left.anime) === getCanonicalAnimeId(right.anime);
+}
+
+function extractPlaylistAnimeIdFromVideo(item: PlayableItem) {
+  return getCanonicalAnimeId(item.anime);
 }
 
 function getImportPayloadSections(payload: unknown) {
@@ -1228,6 +1488,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   queue: [],
   queueCursor: -1,
   playlists: [],
+  activePlaylistId: null,
   watchHistory: [],
   favorites: [],
   libraryItems: {},
@@ -1712,6 +1973,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         queue,
         queueCursor,
         playlists: normalizePlaylists(scopedPlaylists),
+        activePlaylistId: null,
         watchHistory: sortHistory(watchHistory),
         favorites: normalizeFavorites(scopedFavorites),
         libraryItems,
@@ -1798,6 +2060,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         queue: [],
         queueCursor: -1,
         playlists: [],
+        activePlaylistId: null,
         watchHistory: [],
         favorites: [],
         libraryItems: {},
@@ -1937,6 +2200,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       currentlyPlayingItem: null,
       queue: [],
       queueCursor: -1,
+      playlists: [],
+      activePlaylistId: null,
       isRightPanelFullpage: false,
       watchHistory: [],
       favorites: [],
@@ -2124,6 +2389,307 @@ export const useAppStore = create<AppState>((set, get) => ({
     const mergedQueue = [...existingQueue, item];
     await setStoredValue('queue', mergedQueue);
     set({ queue: mergedQueue });
+  },
+
+  createPlaylistImmediate: async (seed) => {
+    const current = get();
+    const now = new Date().toISOString();
+    const name = typeof seed?.name === 'string' && seed.name.trim().length > 0
+      ? seed.name.trim()
+      : nextPlaylistName(current.playlists);
+    const image = typeof seed?.image === 'string' && seed.image.trim().length > 0
+      ? seed.image.trim()
+      : DEFAULT_NOTIFICATION_POSTER;
+    const description = typeof seed?.description === 'string' ? seed.description.trim() : '';
+    const type = normalizePlaylistType(seed?.type);
+    const created: Playlist = {
+      id: createId('playlist'),
+      name,
+      description,
+      image,
+      type,
+      animeIds: [],
+      animeItems: [],
+      videoItems: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    const playlists = [...current.playlists, created];
+    await Promise.all([
+      setStoredValue('playlists', playlists),
+      setStoredValue('rightPanelView', 'playlist' as RightPanelView),
+      setStoredValue('isRightPanelHidden', false),
+    ]);
+    set({
+      playlists,
+      activePlaylistId: created.id,
+      rightPanelView: 'playlist',
+      isRightPanelHidden: false,
+    });
+    return created.id;
+  },
+
+  setActivePlaylist: async (playlistId) => {
+    await Promise.all([
+      setStoredValue('rightPanelView', 'playlist' as RightPanelView),
+      setStoredValue('isRightPanelHidden', false),
+    ]);
+    set({
+      activePlaylistId: playlistId,
+      rightPanelView: 'playlist',
+      isRightPanelHidden: false,
+    });
+  },
+
+  updatePlaylistMeta: async (playlistId, patch) => {
+    const current = get();
+    const nextPlaylists = current.playlists.map((playlist) => {
+      if (playlist.id !== playlistId) return playlist;
+      const nextType = patch.type ? normalizePlaylistType(patch.type) : playlist.type;
+      return {
+        ...playlist,
+        name: typeof patch.name === 'string' && patch.name.trim().length > 0 ? patch.name.trim() : playlist.name,
+        description: typeof patch.description === 'string' ? patch.description.trim() : playlist.description,
+        image: typeof patch.image === 'string' && patch.image.trim().length > 0 ? patch.image.trim() : playlist.image,
+        type: nextType,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+    await setStoredValue('playlists', nextPlaylists);
+    set({ playlists: nextPlaylists });
+  },
+
+  deletePlaylist: async (playlistId) => {
+    const current = get();
+    const nextPlaylists = current.playlists.filter((playlist) => playlist.id !== playlistId);
+    const nextActivePlaylistId =
+      current.activePlaylistId === playlistId ? (nextPlaylists[0]?.id ?? null) : current.activePlaylistId;
+    await setStoredValue('playlists', nextPlaylists);
+    set({ playlists: nextPlaylists, activePlaylistId: nextActivePlaylistId });
+  },
+
+  addAnimeToPlaylist: async (playlistId, anime) => {
+    const resolvedJikanId = anime.jikanId ?? await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
+    const canonicalId = resolvedJikanId && resolvedJikanId > 0
+      ? Math.floor(resolvedJikanId)
+      : getCanonicalAnimeId(anime);
+    const episodeResolution = await resolveQueueEpisodeResolution({
+      ...anime,
+      jikanId: resolvedJikanId ?? anime.jikanId,
+    }).catch(() => null);
+    const queueAnime: AnimeSummary = {
+      ...anime,
+      jikanId: resolvedJikanId ?? anime.jikanId,
+      currentEpisode: episodeResolution?.latestEpisode ?? anime.currentEpisode,
+    };
+    const videoAdditions = buildQueuePlayableItems(queueAnime);
+    const now = new Date().toISOString();
+    const nextPlaylists = get().playlists.map((playlist): Playlist => {
+      if (playlist.id !== playlistId) return playlist;
+
+      if (playlist.type === 'video') {
+        const mergedVideoItems = [...playlist.videoItems];
+        for (const addition of videoAdditions) {
+          const exists = mergedVideoItems.some((entry) => samePlayableItemIdentity(entry, addition));
+          if (!exists) {
+            mergedVideoItems.push(addition);
+          }
+        }
+        return {
+          ...playlist,
+          videoItems: mergedVideoItems,
+          updatedAt: now,
+        };
+      }
+
+      const nextAnimeIds = playlist.animeIds.includes(canonicalId)
+        ? playlist.animeIds
+        : [...playlist.animeIds, canonicalId];
+      const nextAnimeItems = [...playlist.animeItems];
+      const nextEntry = toPlaylistAnimeEntry(queueAnime, canonicalId, episodeResolution?.latestEpisode);
+      const existingIndex = nextAnimeItems.findIndex((entry) => entry.animeId === canonicalId);
+      if (existingIndex >= 0) {
+        nextAnimeItems[existingIndex] = {
+          ...nextAnimeItems[existingIndex],
+          ...nextEntry,
+        };
+      } else {
+        nextAnimeItems.push(nextEntry);
+      }
+      return {
+        ...playlist,
+        animeIds: nextAnimeIds,
+        animeItems: nextAnimeItems,
+        updatedAt: now,
+      };
+    });
+    await setStoredValue('playlists', nextPlaylists);
+    set({ playlists: nextPlaylists });
+  },
+
+  addVideoToPlaylist: async (playlistId, item) => {
+    const normalized = normalizePlayableItemFromUnknown(item);
+    if (!normalized) return;
+    const now = new Date().toISOString();
+    const normalizedAnimeId = getCanonicalAnimeId(normalized.anime);
+    const nextPlaylists = get().playlists.map((playlist): Playlist => {
+      if (playlist.id !== playlistId) return playlist;
+
+      if (playlist.type === 'anime') {
+        const nextAnimeIds = playlist.animeIds.includes(normalizedAnimeId)
+          ? playlist.animeIds
+          : [...playlist.animeIds, normalizedAnimeId];
+        const nextAnimeItems = [...playlist.animeItems];
+        const nextEntry = toPlaylistAnimeEntry(normalized.anime, normalizedAnimeId, normalized.episodeNumber);
+        const existingIndex = nextAnimeItems.findIndex((entry) => entry.animeId === normalizedAnimeId);
+        if (existingIndex >= 0) {
+          nextAnimeItems[existingIndex] = {
+            ...nextAnimeItems[existingIndex],
+            ...nextEntry,
+          };
+        } else {
+          nextAnimeItems.push(nextEntry);
+        }
+        return {
+          ...playlist,
+          animeIds: nextAnimeIds,
+          animeItems: nextAnimeItems,
+          updatedAt: now,
+        };
+      }
+
+      if (playlist.videoItems.some((entry) => samePlayableItemIdentity(entry, normalized))) {
+        return playlist;
+      }
+      return {
+        ...playlist,
+        videoItems: [...playlist.videoItems, normalized],
+        updatedAt: now,
+      };
+    });
+    await setStoredValue('playlists', nextPlaylists);
+    set({ playlists: nextPlaylists });
+  },
+
+  removePlaylistAnime: async (playlistId, animeId) => {
+    const safeAnimeId = Math.max(1, Math.floor(Number(animeId) || 0));
+    if (safeAnimeId <= 0) return;
+    const now = new Date().toISOString();
+    const nextPlaylists = get().playlists.map((playlist) => {
+      if (playlist.id !== playlistId) return playlist;
+      return {
+        ...playlist,
+        animeIds: playlist.animeIds.filter((id) => id !== safeAnimeId),
+        animeItems: playlist.animeItems.filter((entry) => entry.animeId !== safeAnimeId),
+        updatedAt: now,
+      };
+    });
+    await setStoredValue('playlists', nextPlaylists);
+    set({ playlists: nextPlaylists });
+  },
+
+  removePlaylistVideo: async (playlistId, queueItemId) => {
+    const targetId = queueItemId.trim();
+    if (!targetId) return;
+    const now = new Date().toISOString();
+    const nextPlaylists = get().playlists.map((playlist) => {
+      if (playlist.id !== playlistId) return playlist;
+      return {
+        ...playlist,
+        videoItems: playlist.videoItems.filter((item) => item.id !== targetId),
+        updatedAt: now,
+      };
+    });
+    await setStoredValue('playlists', nextPlaylists);
+    set({ playlists: nextPlaylists });
+  },
+
+  addPlaylistToQueue: async (playlistId) => {
+    const current = get();
+    const playlist = current.playlists.find((entry) => entry.id === playlistId);
+    if (!playlist) return;
+    const nextItems = playlist.type === 'video'
+      ? playlist.videoItems
+      : await buildPlayableItemsForAnimePlaylist(current, playlist.animeIds);
+    if (!nextItems.length) return;
+    const mergedQueue = [...current.queue, ...nextItems];
+    const nextCursor = current.queueCursor >= 0 ? current.queueCursor : 0;
+    await Promise.all([
+      setStoredValue('queue', mergedQueue),
+      setStoredValue('queueCursor', nextCursor),
+    ]);
+    set({ queue: mergedQueue, queueCursor: nextCursor });
+    get().pushActionToast({
+      kind: 'queue',
+      message: `Added ${nextItems.length} item${nextItems.length > 1 ? 's' : ''} from ${playlist.name} to queue.`,
+    });
+  },
+
+  playPlaylist: async (playlistId) => {
+    const current = get();
+    const playlist = current.playlists.find((entry) => entry.id === playlistId);
+    if (!playlist) return;
+    const items = playlist.type === 'video'
+      ? playlist.videoItems
+      : await buildPlayableItemsForAnimePlaylist(current, playlist.animeIds);
+    if (!items.length) return;
+    await get().replaceQueueAndPlay(items, 0);
+  },
+
+  convertPlaylistType: async (playlistId, targetType, strategy) => {
+    const safeTarget = normalizePlaylistType(targetType);
+    const nextPlaylists = get().playlists.map((playlist): Playlist => {
+      if (playlist.id !== playlistId) return playlist;
+      if (strategy === 'clear-all') {
+        return {
+          ...playlist,
+          type: safeTarget,
+          animeIds: [],
+          animeItems: [],
+          videoItems: [],
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      if (strategy === 'to-video') {
+        const convertedVideoItems = playlist.animeIds.map((animeId) =>
+          toPlaylistVideoFromAnime({
+            id: animeId,
+            jikanId: animeId,
+            title: `Anime #${animeId}`,
+            image: playlist.image || DEFAULT_NOTIFICATION_POSTER,
+            synopsis: '',
+            studios: [],
+            genres: [],
+          }),
+        );
+        return {
+          ...playlist,
+          type: 'video',
+          videoItems: convertedVideoItems,
+          animeItems: [],
+          updatedAt: new Date().toISOString(),
+        };
+      }
+
+      const convertedAnimeIds = Array.from(new Set(playlist.videoItems.map((item) => extractPlaylistAnimeIdFromVideo(item))));
+      const convertedAnimeItems = convertedAnimeIds.map((animeId) => ({
+        animeId,
+        jikanId: animeId,
+        title: `Anime #${animeId}`,
+        image: playlist.image || DEFAULT_NOTIFICATION_POSTER,
+      }));
+      return {
+        ...playlist,
+        type: 'anime',
+        animeIds: convertedAnimeIds,
+        animeItems: convertedAnimeItems,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+
+    await setStoredValue('playlists', nextPlaylists);
+    set({ playlists: nextPlaylists });
   },
 
   startPlayingAnime: async (anime) => {
@@ -3459,6 +4025,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       queue: importedQueue,
       queueCursor: importedQueueCursor,
       playlists: importedPlaylists,
+      activePlaylistId: importedPlaylists[0]?.id ?? null,
       watchHistory: importedWatchHistory,
       favorites: importedFavorites,
       libraryItems: importedLibraryItems,
@@ -3599,6 +4166,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       queue: [],
       queueCursor: -1,
       playlists: [],
+      activePlaylistId: null,
       watchHistory: [],
       favorites: [],
       libraryItems: {},

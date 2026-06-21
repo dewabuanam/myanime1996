@@ -1,4 +1,4 @@
-import { BookmarkPlus, History, Info, ListPlus, Play, RotateCcw, Star, Tv2, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { BookmarkPlus, FolderPlus, History, Info, ListPlus, Play, RotateCcw, Star, Tv2, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import SeasonLinkBadge from './SeasonLinkBadge';
@@ -21,7 +21,9 @@ type AnimeHoverPreviewProps = {
   onStartOver?: () => void;
   onAddToQueue?: () => void;
   onAddToLibrary?: (anchorElement?: HTMLElement | null) => void;
+  onAddToPlaylist?: (anchorElement?: HTMLElement | null) => void;
   isLibraryModalOpen?: boolean;
+  isPlaylistModalOpen?: boolean;
   onRemove?: () => void;
   onOpenDetail?: () => void;
   children: ReactNode;
@@ -108,7 +110,9 @@ export default function AnimeHoverPreview({
   onStartOver,
   onAddToQueue,
   onAddToLibrary,
+  onAddToPlaylist,
   isLibraryModalOpen = false,
+  isPlaylistModalOpen = false,
   onRemove,
   onOpenDetail,
   children,
@@ -196,7 +200,7 @@ export default function AnimeHoverPreview({
   };
 
   const scheduleHide = () => {
-    if (isPinnedOpen || isLibraryModalOpen) return;
+    if (isPinnedOpen || isLibraryModalOpen || isPlaylistModalOpen) return;
     clearShowTimer();
     clearHideTimer();
     hideTimerRef.current = setTimeout(() => {
@@ -205,11 +209,11 @@ export default function AnimeHoverPreview({
   };
 
   useEffect(() => {
-    if (isLibraryModalOpen) return;
+    if (isLibraryModalOpen || isPlaylistModalOpen) return;
     if (!isPinnedOpen) return;
     setPinnedOpen(false);
     setVisible(false);
-  }, [isLibraryModalOpen, isPinnedOpen]);
+  }, [isLibraryModalOpen, isPinnedOpen, isPlaylistModalOpen]);
 
   useEffect(() => {
     return () => {
@@ -416,6 +420,20 @@ export default function AnimeHoverPreview({
               data-tooltip="Add to Library"
             >
               <BookmarkPlus size={14} />
+            </button>
+          ) : null}
+          {onAddToPlaylist ? (
+            <button
+              type="button"
+              className="anime-hover-btn anime-hover-btn-add retro-tooltip"
+              aria-label="Add to playlist"
+              onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+                setPinnedOpen(true);
+                onAddToPlaylist(event.currentTarget);
+              }}
+              data-tooltip="Add to Playlist"
+            >
+              <FolderPlus size={14} />
             </button>
           ) : null}
           {onRemove ? (

@@ -1,6 +1,8 @@
-import { History, Home, Library, ListMusic, Plus } from 'lucide-react';
+import { History, Home, Library, ListMusic, Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAppStore } from '../state/appStore';
+import ConfirmDialog from './ConfirmDialog';
 import WindowControls from './WindowControls';
 
 const navItems = [
@@ -9,23 +11,23 @@ const navItems = [
   { to: '/history', label: 'History', icon: History },
 ];
 
-const playlistEntries = [
-  { id: '90s', name: '90s Classics', count: 42 },
-  { id: 'movie-night', name: 'Movie Night', count: 31 },
-  { id: 'mecha', name: 'Mecha Collection', count: 28 },
-  { id: 'chill', name: 'Chill Anime', count: 35 },
-  { id: 'op-ed', name: 'Opening & Ending', count: 64 },
-  { id: 'favorites', name: 'All Time Favorites', count: 102 },
-];
-
 export default function Sidebar() {
   const playlists = useAppStore((state) => state.playlists);
+  const activePlaylistId = useAppStore((state) => state.activePlaylistId);
   const isSidebarCompact = useAppStore((state) => state.isSidebarCompact);
   const isRightPanelFullpage = useAppStore((state) => state.isRightPanelFullpage);
   const toggleSidebarCompact = useAppStore((state) => state.toggleSidebarCompact);
-  const sidebarPlaylists = playlists.length
-    ? playlists.map((playlist) => ({ id: playlist.id, name: playlist.name, count: playlist.animeIds.length }))
-    : playlistEntries;
+  const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
+  const setActivePlaylist = useAppStore((state) => state.setActivePlaylist);
+  const deletePlaylist = useAppStore((state) => state.deletePlaylist);
+  const [pendingDeletePlaylist, setPendingDeletePlaylist] = useState<{ id: string; name: string } | null>(null);
+  const sidebarPlaylists = playlists.map((playlist) => ({
+    id: playlist.id,
+    name: playlist.name,
+    count: playlist.type === 'video' ? playlist.videoItems.length : playlist.animeIds.length,
+    image: playlist.image,
+    type: playlist.type,
+  }));
 
   return (
     <aside className="vhs-panel jb-sidebar flex h-full min-h-0 flex-col p-3">
@@ -65,6 +67,9 @@ export default function Sidebar() {
               className="jb-rail-btn jb-rail-btn-add retro-tooltip tooltip-right h-10 w-10"
               aria-label="Add playlist"
               data-tooltip="Add Playlist"
+              onClick={() => {
+                void createPlaylistImmediate();
+              }}
             >
               <Plus size={15} />
             </button>
@@ -76,9 +81,12 @@ export default function Sidebar() {
                 className="jb-rail-btn retro-tooltip tooltip-right h-10 w-10 text-cream/75 transition hover:text-cream focus:outline-none focus-visible:outline-none"
                 data-tooltip={`${playlist.name} (${playlist.count})`}
                 aria-label={playlist.name}
+                onClick={() => {
+                  void setActivePlaylist(playlist.id);
+                }}
               >
                 <span className="block h-full w-full overflow-hidden rounded-sm">
-                  <img src="/assets/logo.png" alt="" className="h-full w-full object-cover opacity-90" />
+                  <img src={playlist.image || '/assets/logo.png'} alt="" className="h-full w-full object-cover opacity-90" />
                 </span>
               </button>
             ))}
@@ -113,23 +121,50 @@ export default function Sidebar() {
                 className="jb-mini-icon-btn retro-tooltip tooltip-left"
                 aria-label="Add playlist"
                 data-tooltip="Add Playlist"
+                onClick={() => {
+                  void createPlaylistImmediate();
+                }}
               >
                 <Plus size={15} />
               </button>
             </div>
             <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden pr-1 text-sm text-cream/65">
+              {!sidebarPlaylists.length ? (
+                <div className="app-card p-3 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/50">
+                  No playlists yet.
+                </div>
+              ) : null}
               {sidebarPlaylists.map((playlist) => (
                 <button
                   key={playlist.id}
                   type="button"
-                  className="jb-playlist-item retro-tooltip tooltip-left flex w-full items-center gap-2.5 px-2 py-1.5 text-left"
+                  className={`jb-playlist-item jb-playlist-item-row retro-tooltip tooltip-left flex w-full items-center gap-2.5 px-2 py-1.5 text-left ${activePlaylistId === playlist.id ? 'is-active' : ''}`}
                   data-tooltip={`${playlist.name} (${playlist.count})`}
+                  onClick={() => {
+                    void setActivePlaylist(playlist.id);
+                  }}
                 >
-                  <img src="/assets/logo.png" alt="" className="h-9 w-9 rounded-md object-cover opacity-90" />
-                  <div className="min-w-0">
+                  <img src={playlist.image || '/assets/logo.png'} alt="" className="h-9 w-9 rounded-md object-cover opacity-90" />
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-cream/90">{playlist.name}</p>
                     <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/50">{playlist.count} titles</p>
+                    <span className={`jb-playlist-type-badge ${playlist.type === 'video' ? 'is-video' : 'is-anime'}`}>
+                      {playlist.type}
+                    </span>
                   </div>
+                  <button
+                    type="button"
+                    className="jb-playlist-delete-btn retro-tooltip tooltip-left"
+                    aria-label={`Delete ${playlist.name}`}
+                    data-tooltip="Delete Playlist"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setPendingDeletePlaylist({ id: playlist.id, name: playlist.name });
+                    }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </button>
               ))}
             </div>
@@ -164,6 +199,21 @@ export default function Sidebar() {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(pendingDeletePlaylist)}
+        title="Delete Playlist"
+        message={pendingDeletePlaylist ? `Delete ${pendingDeletePlaylist.name}? This action cannot be undone.` : 'Delete this playlist?'}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        tone="danger"
+        onCancel={() => setPendingDeletePlaylist(null)}
+        onConfirm={() => {
+          if (!pendingDeletePlaylist) return;
+          void deletePlaylist(pendingDeletePlaylist.id);
+          setPendingDeletePlaylist(null);
+        }}
+      />
     </aside>
   );
 }

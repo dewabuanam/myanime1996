@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { CalendarDays, ChevronDown, Clock3, List, ListPlus, Minus, Play, Plus, RotateCcw, X } from 'lucide-react';
+import { CalendarDays, ChevronDown, Clock3, FolderPlus, List, ListPlus, Minus, Play, Plus, RotateCcw, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import type { AnimeDetail, AnimeEpisode, AnimeEpisodePagination, TitleLanguage } from '../types/anime';
+import type { AnimeDetail, AnimeEpisode, AnimeEpisodePagination, PlayableItem, TitleLanguage } from '../types/anime';
 import { useAppStore } from '../state/appStore';
 import { formatEpisodeDuration, formatEpisodeScoreOutOfTen } from '../utils/episodeFormatters';
 import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
@@ -43,6 +43,8 @@ type RightNowDetailPaneProps = {
   onToggleEpisodeExpand: (episodeNumber: number) => void;
   onAddEpisodeToQueue?: (episodeNumber: number) => void;
   onAddToLibrary?: (anchorElement?: HTMLElement | null) => void;
+  onAddToPlaylist?: (anchorElement?: HTMLElement | null) => void;
+  onAddEpisodeToPlaylist?: (episode: AnimeEpisode, anchorElement?: HTMLElement | null, item?: PlayableItem) => void;
   isInLibrary?: boolean;
 };
 
@@ -63,6 +65,8 @@ export default function RightNowDetailPane({
   onToggleEpisodeExpand,
   onAddEpisodeToQueue,
   onAddToLibrary,
+  onAddToPlaylist,
+  onAddEpisodeToPlaylist,
   isInLibrary = false,
 }: RightNowDetailPaneProps) {
   const navigate = useNavigate();
@@ -463,6 +467,17 @@ export default function RightNowDetailPane({
         <div className="flex flex-wrap items-center justify-between gap-1.5">
           <p className="font-mono text-[10px] uppercase tracking-[0.13em] text-amberline/75">Episodes</p>
           <div className="inline-flex flex-wrap items-center gap-1.5">
+            {onAddToPlaylist ? (
+              <button
+                type="button"
+                className="vhs-button-ghost p-1.5 text-[10px] retro-tooltip"
+                onClick={(event) => onAddToPlaylist(event.currentTarget)}
+                data-tooltip="Add to Playlist"
+                aria-label="Add to playlist"
+              >
+                <FolderPlus size={12} />
+              </button>
+            ) : null}
             <input
               type="search"
               value={detailEpisodeSearchQuery}
@@ -540,6 +555,35 @@ export default function RightNowDetailPane({
                         aria-label={`Add episode ${episode.episodeNumber} to queue`}
                       >
                         <ListPlus size={12} />
+                      </button>
+                    ) : null}
+                    {onAddEpisodeToPlaylist ? (
+                      <button
+                        type="button"
+                        className="vhs-button-ghost p-1.5 text-[10px] opacity-0 transition-opacity duration-150 group-hover/episode:opacity-100 group-focus-within/episode:opacity-100"
+                        onClick={(event) => {
+                          const safeEpisode = Math.max(1, Math.floor(episode.episodeNumber || 1));
+                          const playlistItem: PlayableItem = {
+                            id: `detail-episode:${detailAnimeView.id}:${safeEpisode}`,
+                            anime: {
+                              ...detailAnimeView,
+                              currentEpisode: safeEpisode,
+                            },
+                            kind: 'episode',
+                            sourceKind: 'episode-card',
+                            title: detailAnimeView.title,
+                            titleJapanese: detailAnimeView.titleJapanese,
+                            durationMinutes: detailAnimeView.durationMinutes,
+                            episodeNumber: safeEpisode,
+                            typeLabel: `Episode ${safeEpisode}`,
+                            createdAt: new Date().toISOString(),
+                          };
+                          onAddEpisodeToPlaylist(episode, event.currentTarget, playlistItem);
+                        }}
+                        aria-label={`Add episode ${episode.episodeNumber} to playlist`}
+                        data-tooltip="Add to Playlist"
+                      >
+                        <FolderPlus size={12} />
                       </button>
                     ) : null}
                     <button

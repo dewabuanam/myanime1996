@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import HeroSeeAllMenu from '../components/HeroSeeAllMenu';
 import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
+import PlaylistPickerModal from '../components/PlaylistPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
 import {
   getLatestPromoAnime,
@@ -220,6 +221,10 @@ export default function SeeAll() {
   const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
   const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
   const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
+  const playlists = useAppStore((state) => state.playlists);
+  const addAnimeToPlaylist = useAppStore((state) => state.addAnimeToPlaylist);
+  const addVideoToPlaylist = useAppStore((state) => state.addVideoToPlaylist);
+  const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
 
   const [items, setItems] = useState<AnimeSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,6 +240,8 @@ export default function SeeAll() {
   const [seasonContinuingEnabled, setSeasonContinuingEnabled] = useState(true);
   const [libraryPickerAnime, setLibraryPickerAnime] = useState<AnimeSummary | null>(null);
   const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
+  const [playlistPickerAnime, setPlaylistPickerAnime] = useState<AnimeSummary | null>(null);
+  const [playlistPickerAnchorElement, setPlaylistPickerAnchorElement] = useState<HTMLElement | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -586,6 +593,11 @@ export default function SeeAll() {
   const openLibraryPicker = (anime: AnimeSummary, anchorElement?: HTMLElement | null) => {
     setLibraryPickerAnime(anime);
     setLibraryPickerAnchorElement(anchorElement ?? null);
+  };
+
+  const openPlaylistPicker = (anime: AnimeSummary, anchorElement?: HTMLElement | null) => {
+    setPlaylistPickerAnime(anime);
+    setPlaylistPickerAnchorElement(anchorElement ?? null);
   };
 
   const handleLibraryStatusConfirm = async (status: LibraryStatus) => {
@@ -941,6 +953,13 @@ export default function SeeAll() {
                   >
                     <BookmarkPlus size={14} /> Add to Library
                   </button>
+                  <button
+                    type="button"
+                    className="vhs-button-ghost seeall-row-action-btn"
+                    onClick={(event) => openPlaylistPicker(anime, event.currentTarget)}
+                  >
+                    <ListPlus size={14} /> Add to Playlist
+                  </button>
                   <button type="button" className="vhs-button-ghost seeall-row-action-btn" onClick={() => void openDetails(anime)}>
                     <Info size={14} /> Info
                   </button>
@@ -984,6 +1003,53 @@ export default function SeeAll() {
               }
             : undefined
         }
+      />
+
+      <PlaylistPickerModal
+        open={Boolean(playlistPickerAnime)}
+        title={playlistPickerAnime ? getDisplayTitle(playlistPickerAnime, titleLanguage) : 'Anime'}
+        subjectImage={playlistPickerAnime?.image}
+        anchorElement={playlistPickerAnchorElement}
+        playlists={playlists
+          .map((playlist) => ({
+            id: playlist.id,
+            name: playlist.name,
+            image: playlist.image,
+            type: playlist.type,
+          }))}
+        selectedPlaylistIds={[]}
+        onClose={() => {
+          setPlaylistPickerAnime(null);
+          setPlaylistPickerAnchorElement(null);
+        }}
+        onConfirm={(playlistIds) => {
+          if (!playlistPickerAnime) return;
+          playlistIds.forEach((playlistId) => {
+            const targetPlaylist = playlists.find((playlist) => playlist.id === playlistId);
+            if (targetPlaylist?.type === 'video') {
+              void addVideoToPlaylist(playlistId, {
+                id: `seeall-anime:${playlistPickerAnime.id}`,
+                anime: playlistPickerAnime,
+                kind: 'episode',
+                sourceKind: 'anime-card',
+                title: playlistPickerAnime.title,
+                titleJapanese: playlistPickerAnime.titleJapanese,
+                durationMinutes: playlistPickerAnime.durationMinutes,
+                episodeNumber: Math.max(1, Math.floor(Number(playlistPickerAnime.currentEpisode) || 1)),
+                typeLabel: `Episode ${Math.max(1, Math.floor(Number(playlistPickerAnime.currentEpisode) || 1))}`,
+                createdAt: new Date().toISOString(),
+              });
+              return;
+            }
+            void addAnimeToPlaylist(playlistId, playlistPickerAnime);
+          });
+        }}
+        onCreatePlaylist={() => {
+          if (!playlistPickerAnime) return;
+          void createPlaylistImmediate({ type: 'anime' }).then((playlistId) => {
+            void addAnimeToPlaylist(playlistId, playlistPickerAnime);
+          });
+        }}
       />
     </div>
   );

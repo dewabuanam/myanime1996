@@ -5,6 +5,7 @@ import HeroSeeAllMenu from '../components/HeroSeeAllMenu';
 import AnimeHoverPreview from '../components/AnimeHoverPreview';
 import AnimeShelfScrollable from '../components/AnimeShelfScrollable';
 import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
+import PlaylistPickerModal from '../components/PlaylistPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
 import {
   getLatestPromoAnime,
@@ -224,9 +225,16 @@ export default function Home() {
   const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
   const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
   const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
+  const playlists = useAppStore((state) => state.playlists);
+  const addAnimeToPlaylist = useAppStore((state) => state.addAnimeToPlaylist);
+  const addVideoToPlaylist = useAppStore((state) => state.addVideoToPlaylist);
+  const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
   const [libraryPickerAnime, setLibraryPickerAnime] = useState<AnimeSummary | null>(null);
   const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
   const [libraryPickerAllowRemove, setLibraryPickerAllowRemove] = useState(true);
+  const [playlistPickerAnime, setPlaylistPickerAnime] = useState<AnimeSummary | null>(null);
+  const [playlistPickerItem, setPlaylistPickerItem] = useState<import('../types/anime').PlayableItem | null>(null);
+  const [playlistPickerAnchorElement, setPlaylistPickerAnchorElement] = useState<HTMLElement | null>(null);
 
   const getCardActionMode = (shelfKey: string): ShelfPlayableMode => {
     if (shelfKey === 'latest' || shelfKey === 'upcoming-update' || shelfKey === 'continue') return 'episode';
@@ -799,6 +807,44 @@ export default function Home() {
     setLibraryPickerAllowRemove(!(shelfKey === 'continue' || shelfKey === 'history'));
   };
 
+  const openPlaylistPickerFromCard = async (item: ContinueWatchingItem | AnimeSummary, shelfKey: string, anchorElement?: HTMLElement | null) => {
+    const anime = toAnimeSummary(item);
+    const mode = getCardActionMode(shelfKey);
+    setPlaylistPickerAnime(anime);
+
+    if (mode === 'trailer') {
+      setPlaylistPickerItem({
+        id: `home-trailer:${anime.id}`,
+        anime,
+        kind: 'trailer',
+        sourceKind: 'trailer-card',
+        title: anime.title,
+        titleJapanese: anime.titleJapanese,
+        durationMinutes: anime.durationMinutes,
+        typeLabel: 'Trailer',
+        createdAt: new Date().toISOString(),
+      });
+    } else if (mode === 'episode') {
+      const episodeNumber = isContinueWatchingItem(item) ? item.resumeEpisode : await resolveLatestPlayableEpisode(anime);
+      setPlaylistPickerItem({
+        id: `home-episode:${anime.id}:${episodeNumber}`,
+        anime,
+        kind: 'episode',
+        sourceKind: 'episode-card',
+        title: anime.title,
+        titleJapanese: anime.titleJapanese,
+        durationMinutes: anime.durationMinutes,
+        episodeNumber,
+        typeLabel: `Episode ${episodeNumber}`,
+        createdAt: new Date().toISOString(),
+      });
+    } else {
+      setPlaylistPickerItem(null);
+    }
+
+    setPlaylistPickerAnchorElement(anchorElement ?? null);
+  };
+
   const handleLibraryStatusConfirm = async (status: LibraryStatus) => {
     if (!libraryPickerAnime) return;
     await setAnimeLibraryStatus(libraryPickerAnime, status);
@@ -933,7 +979,11 @@ export default function Home() {
                   onPlayTrailer={() => void playTrailerFromCard(item)}
                   onAddToQueue={() => void addToQueueFromCard(item, shelf.key)}
                   onAddToLibrary={(anchorElement) => openLibraryPickerFromCard(item, shelf.key, anchorElement)}
+                  onAddToPlaylist={(anchorElement) => {
+                    void openPlaylistPickerFromCard(item, shelf.key, anchorElement);
+                  }}
                   isLibraryModalOpen={Boolean(libraryPickerAnime)}
+                  isPlaylistModalOpen={Boolean(playlistPickerAnime)}
                   onRemove={
                     shelf.key === 'continue' && isContinueWatchingItem(item)
                       ? () => {
@@ -1006,6 +1056,48 @@ export default function Home() {
               }
             : undefined
         }
+      />
+
+      <PlaylistPickerModal
+        open={Boolean(playlistPickerAnime)}
+        title={playlistPickerAnime ? getDisplayTitle(playlistPickerAnime, titleLanguage) : 'Anime'}
+        subjectImage={playlistPickerAnime?.image}
+        anchorElement={playlistPickerAnchorElement}
+        playlists={playlists
+          .map((playlist) => ({
+            id: playlist.id,
+            name: playlist.name,
+            image: playlist.image,
+            type: playlist.type,
+          }))}
+        selectedPlaylistIds={[]}
+        onClose={() => {
+          setPlaylistPickerAnime(null);
+          setPlaylistPickerItem(null);
+          setPlaylistPickerAnchorElement(null);
+        }}
+        onConfirm={(playlistIds) => {
+          if (!playlistPickerAnime) return;
+          playlistIds.forEach((playlistId) => {
+            const targetPlaylist = playlists.find((playlist) => playlist.id === playlistId);
+            if (targetPlaylist?.type === 'video') {
+              if (playlistPickerItem) {
+                void addVideoToPlaylist(playlistId, playlistPickerItem);
+              } else {
+                void addAnimeToPlaylist(playlistId, playlistPickerAnime);
+              }
+              return;
+            }
+            void addAnimeToPlaylist(playlistId, playlistPickerAnime);
+          });
+          setPlaylistPickerItem(null);
+        }}
+        onCreatePlaylist={() => {
+          if (!playlistPickerAnime) return;
+          void createPlaylistImmediate({ type: 'anime' }).then((playlistId) => {
+            void addAnimeToPlaylist(playlistId, playlistPickerAnime);
+          });
+        }}
       />
     </div>
   );

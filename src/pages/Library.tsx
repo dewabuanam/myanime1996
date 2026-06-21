@@ -4,6 +4,7 @@ import { BookMarked, Info, Trash2, X } from 'lucide-react';
 import AnimeHoverPreview from '../components/AnimeHoverPreview';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
+import PlaylistPickerModal from '../components/PlaylistPickerModal';
 import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
 import type { LibraryAnimeItem, LibraryStatus } from '../types/anime';
@@ -73,8 +74,14 @@ export default function Library() {
   const watchProgress = useAppStore((state) => state.watchProgress);
   const selectAnime = useAppStore((state) => state.selectAnime);
   const openRightPanelWithView = useAppStore((state) => state.openRightPanelWithView);
+  const playlists = useAppStore((state) => state.playlists);
+  const addAnimeToPlaylist = useAppStore((state) => state.addAnimeToPlaylist);
+  const addVideoToPlaylist = useAppStore((state) => state.addVideoToPlaylist);
+  const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
   const [editingItem, setEditingItem] = useState<LibraryAnimeItem | null>(null);
   const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
+  const [playlistPickerItem, setPlaylistPickerItem] = useState<LibraryAnimeItem | null>(null);
+  const [playlistPickerAnchorElement, setPlaylistPickerAnchorElement] = useState<HTMLElement | null>(null);
   const [pendingRemoveItem, setPendingRemoveItem] = useState<LibraryAnimeItem | null>(null);
   const [undoRemovedItem, setUndoRemovedItem] = useState<LibraryAnimeItem | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -362,6 +369,10 @@ export default function Library() {
                   onPlay={() => void playFromLibraryCard(item)}
                   onStartOver={isResumeAction ? () => void startOverFromLibraryCard(item) : undefined}
                   onAddToQueue={() => void addAnimeSeriesToQueue(toAnimeSummaryFromLibraryItem(item))}
+                  onAddToPlaylist={(anchorElement) => {
+                    setPlaylistPickerItem(item);
+                    setPlaylistPickerAnchorElement(anchorElement ?? null);
+                  }}
                   onOpenDetail={() => void openLibraryDetailPanel(item)}
                 >
                   <article className="anime-card media-thumb-card library-row-card border border-cream/12 bg-black/18 p-2">
@@ -457,6 +468,54 @@ export default function Library() {
               }
             : undefined
         }
+      />
+
+      <PlaylistPickerModal
+        open={Boolean(playlistPickerItem)}
+        title={playlistPickerItem ? getLibraryDisplayTitle(playlistPickerItem, preferEnglish) : 'Anime'}
+        subjectImage={playlistPickerItem?.image}
+        anchorElement={playlistPickerAnchorElement}
+        playlists={playlists
+          .map((playlist) => ({
+            id: playlist.id,
+            name: playlist.name,
+            image: playlist.image,
+            type: playlist.type,
+          }))}
+        selectedPlaylistIds={[]}
+        onClose={() => {
+          setPlaylistPickerItem(null);
+          setPlaylistPickerAnchorElement(null);
+        }}
+        onConfirm={(playlistIds) => {
+          if (!playlistPickerItem) return;
+          const anime = toAnimeSummaryFromLibraryItem(playlistPickerItem);
+          playlistIds.forEach((playlistId) => {
+            const targetPlaylist = playlists.find((playlist) => playlist.id === playlistId);
+            if (targetPlaylist?.type === 'video') {
+              void addVideoToPlaylist(playlistId, {
+                id: `library-anime:${anime.id}`,
+                anime,
+                kind: 'episode',
+                sourceKind: 'anime-card',
+                title: anime.title,
+                titleJapanese: anime.titleJapanese,
+                episodeNumber: Math.max(1, Math.floor(Number(anime.currentEpisode) || 1)),
+                typeLabel: `Episode ${Math.max(1, Math.floor(Number(anime.currentEpisode) || 1))}`,
+                createdAt: new Date().toISOString(),
+              });
+              return;
+            }
+            void addAnimeToPlaylist(playlistId, anime);
+          });
+        }}
+        onCreatePlaylist={() => {
+          if (!playlistPickerItem) return;
+          const anime = toAnimeSummaryFromLibraryItem(playlistPickerItem);
+          void createPlaylistImmediate({ type: 'anime' }).then((playlistId) => {
+            void addAnimeToPlaylist(playlistId, anime);
+          });
+        }}
       />
 
       <ConfirmDialog

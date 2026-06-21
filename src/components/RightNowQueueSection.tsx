@@ -1,4 +1,5 @@
 import { EllipsisVertical, ListX, Play, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { PlayableItem, TitleLanguage } from '../types/anime';
 import { getDisplayTitle } from '../utils/title';
 
@@ -21,6 +22,15 @@ export default function RightNowQueueSection({
   onPlayFromQueue,
   onRemoveFromQueue,
 }: RightNowQueueSectionProps) {
+  const PAGE_SIZE = 12;
+  const [queuePage, setQueuePage] = useState(1);
+  const totalQueuePages = Math.max(1, Math.ceil(queueUpcoming.length / PAGE_SIZE));
+  const safeQueuePage = Math.max(1, Math.min(queuePage, totalQueuePages));
+  const pagedQueueItems = useMemo(() => {
+    const start = (safeQueuePage - 1) * PAGE_SIZE;
+    return queueUpcoming.slice(start, start + PAGE_SIZE);
+  }, [queueUpcoming, safeQueuePage]);
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
@@ -38,7 +48,7 @@ export default function RightNowQueueSection({
 
       {queueUpcoming.length > 0 ? (
         <div className="space-y-1.5">
-          {queueUpcoming.map((queueItem) => (
+          {pagedQueueItems.map((queueItem) => (
             <div key={queueItem.id} className="right-queue-item group">
               <img src={queueItem.anime.image} alt="" className="right-queue-item-thumb" />
               <div className="min-w-0 flex-1">
@@ -83,6 +93,25 @@ export default function RightNowQueueSection({
               ) : null}
             </div>
           ))}
+          <div className="mt-1.5 flex items-center justify-end gap-1.5">
+            <button
+              type="button"
+              className="vhs-button-ghost px-2 py-1 text-[10px]"
+              disabled={safeQueuePage <= 1}
+              onClick={() => setQueuePage((value) => Math.max(1, value - 1))}
+            >
+              Prev
+            </button>
+            <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-cream/60">{safeQueuePage}/{totalQueuePages}</span>
+            <button
+              type="button"
+              className="vhs-button-ghost px-2 py-1 text-[10px]"
+              disabled={safeQueuePage >= totalQueuePages}
+              onClick={() => setQueuePage((value) => Math.min(totalQueuePages, value + 1))}
+            >
+              Next
+            </button>
+          </div>
         </div>
       ) : (
         <p className="text-cream/72">Queue is empty. Use Add to Queue on cards or hover preview.</p>

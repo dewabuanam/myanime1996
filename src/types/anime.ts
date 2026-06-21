@@ -1,9 +1,23 @@
 export type SessionMode = 'guest' | 'email';
 export type TitleLanguage = 'japanese' | 'english';
-export type RightPanelView = 'now-playing' | 'detail' | 'plugins';
+export type RightPanelView = 'now-playing' | 'detail' | 'playlist' | 'plugins';
 export type PlayableKind = 'episode' | 'movie' | 'ova' | 'ona' | 'special' | 'trailer';
 export type PlayableSourceKind = 'anime-card' | 'episode-card' | 'trailer-card';
 export type LibraryStatus = 'plan-to-watch' | 'watching' | 'on-hold' | 'dropped' | 'completed';
+export type PlaylistType = 'anime' | 'video';
+export type PlaylistConvertStrategy = 'to-anime' | 'to-video' | 'clear-all';
+
+export interface PlaylistAnimeEntry {
+  animeId: number;
+  jikanId?: number;
+  animeScheduleRoute?: string;
+  title: string;
+  titleEnglish?: string;
+  titleJapanese?: string;
+  image: string;
+  mediaType?: string;
+  currentEpisode?: number;
+}
 
 export interface AnimeTaxonomyItem {
   id: number;
@@ -109,8 +123,14 @@ export interface AnimeDetailEpisodeBundle {
 export interface Playlist {
   id: string;
   name: string;
+  description: string;
+  image: string;
+  type: PlaylistType;
   animeIds: number[];
+  animeItems: PlaylistAnimeEntry[];
+  videoItems: PlayableItem[];
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface WatchProgress {

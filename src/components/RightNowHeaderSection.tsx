@@ -1,4 +1,4 @@
-import { BookmarkPlus, History, List, ListPlus, Play, RotateCcw, ScrollText, Tv2 } from 'lucide-react';
+import { BookmarkPlus, Check, FolderPlus, History, List, ListPlus, Pencil, Play, RotateCcw, ScrollText, Trash2, Tv2 } from 'lucide-react';
 import type { ReactNode, Ref } from 'react';
 import type { AnimeSummary, PlayableKind } from '../types/anime';
 import type { SourceResolveTrace } from '../types/plugin';
@@ -8,6 +8,7 @@ import WindowControls from './WindowControls';
 type RightNowHeaderSectionProps = {
   isRightPanelFullpage: boolean;
   isPluginsView: boolean;
+  isPlaylistView: boolean;
   showNowPlayingPane: boolean;
   isPlaying: boolean;
   isFullNowPlayingView: boolean;
@@ -31,11 +32,19 @@ type RightNowHeaderSectionProps = {
   onClearRateLimit: (pluginId: string) => void;
   detailAnimeView: AnimeSummary | null;
   detailDisplayTitle: string;
+  playlistDisplayTitle?: string;
+  playlistMetaLabel?: string;
+  onPlaylistPlay?: () => void;
+  onPlaylistAddToQueue?: () => void;
+  onPlaylistToggleEdit?: () => void;
+  onPlaylistDelete?: () => void;
+  isPlaylistEditing?: boolean;
   onDetailPlayAnime?: () => void;
   onDetailStartOverAnime?: () => void;
   onDetailPlayTrailer?: () => void;
   onDetailAddToQueue?: () => void;
   onDetailAddToLibrary?: (anchorElement?: HTMLElement | null) => void;
+  onDetailAddToPlaylist?: (anchorElement?: HTMLElement | null) => void;
   isDetailResumeAction?: boolean;
   isDetailInLibrary?: boolean;
 };
@@ -43,6 +52,7 @@ type RightNowHeaderSectionProps = {
 export default function RightNowHeaderSection({
   isRightPanelFullpage,
   isPluginsView,
+  isPlaylistView,
   showNowPlayingPane,
   isPlaying,
   isFullNowPlayingView,
@@ -66,11 +76,19 @@ export default function RightNowHeaderSection({
   onClearRateLimit,
   detailAnimeView,
   detailDisplayTitle,
+  playlistDisplayTitle = 'Playlist',
+  playlistMetaLabel = '',
+  onPlaylistPlay,
+  onPlaylistAddToQueue,
+  onPlaylistToggleEdit,
+  onPlaylistDelete,
+  isPlaylistEditing = false,
   onDetailPlayAnime,
   onDetailStartOverAnime,
   onDetailPlayTrailer,
   onDetailAddToQueue,
   onDetailAddToLibrary,
+  onDetailAddToPlaylist,
   isDetailResumeAction = false,
   isDetailInLibrary = false,
 }: RightNowHeaderSectionProps) {
@@ -79,7 +97,7 @@ export default function RightNowHeaderSection({
       <div className="flex items-center justify-between gap-2">
         <div className="inline-flex items-center gap-2">
           {isRightPanelFullpage ? <WindowControls /> : null}
-          <p className="eyebrow">{isPluginsView ? 'Plugins' : showNowPlayingPane ? 'Now Playing' : 'Anime Detail'}</p>
+          <p className="eyebrow">{isPluginsView ? 'Plugins' : showNowPlayingPane ? 'Now Playing' : isPlaylistView ? 'Playlist' : 'Anime Detail'}</p>
           {showNowPlayingPane ? (
             <span className={`right-now-indicator ${isPlaying ? 'is-playing' : ''}`} aria-hidden="true">
               <span />
@@ -136,7 +154,7 @@ export default function RightNowHeaderSection({
               <ScrollText size={12} />
             </button>
           ) : null}
-          {!showNowPlayingPane && !isPluginsView ? (
+          {!showNowPlayingPane && !isPluginsView && !isPlaylistView ? (
             <>
               {onDetailPlayAnime ? (
                 <button
@@ -193,6 +211,65 @@ export default function RightNowHeaderSection({
                   <BookmarkPlus size={13} />
                 </button>
               ) : null}
+              {onDetailAddToPlaylist ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={(event) => onDetailAddToPlaylist(event.currentTarget)}
+                  aria-label="Add to playlist"
+                  data-tooltip="Add to Playlist"
+                >
+                  <FolderPlus size={13} />
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {isPlaylistView ? (
+            <>
+              {onPlaylistPlay ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={onPlaylistPlay}
+                  aria-label="Play playlist"
+                  data-tooltip="Play Playlist"
+                >
+                  <Play size={13} />
+                </button>
+              ) : null}
+              {onPlaylistAddToQueue ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={onPlaylistAddToQueue}
+                  aria-label="Add playlist to queue"
+                  data-tooltip="Add Playlist to Queue"
+                >
+                  <ListPlus size={13} />
+                </button>
+              ) : null}
+              {onPlaylistToggleEdit ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={onPlaylistToggleEdit}
+                  aria-label={isPlaylistEditing ? 'Save playlist edits' : 'Edit playlist'}
+                  data-tooltip={isPlaylistEditing ? 'Save Playlist Edits' : 'Edit Playlist'}
+                >
+                  {isPlaylistEditing ? <Check size={13} /> : <Pencil size={13} />}
+                </button>
+              ) : null}
+              {onPlaylistDelete ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={onPlaylistDelete}
+                  aria-label="Delete playlist"
+                  data-tooltip="Delete Playlist"
+                >
+                  <Trash2 size={13} />
+                </button>
+              ) : null}
             </>
           ) : null}
         </div>
@@ -228,6 +305,12 @@ export default function RightNowHeaderSection({
         <>
           <h2 className="line-clamp-2 font-display text-xl font-semibold uppercase text-cream">Plugin Sources</h2>
           <p className="mt-0.5 text-xs text-cream/68">Manage source priority and preferred plugin.</p>
+        </>
+      ) : isPlaylistView ? (
+        <>
+          {!isPlaylistEditing ? (
+            <h2 className="line-clamp-2 font-display text-xl font-semibold uppercase text-cream">{playlistDisplayTitle}</h2>
+          ) : null}
         </>
       ) : (
         <>

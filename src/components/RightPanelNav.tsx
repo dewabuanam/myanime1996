@@ -1,4 +1,4 @@
-import { Info, Plug } from 'lucide-react';
+import { Info, ListMusic, Plug } from 'lucide-react';
 import type { RightPanelView } from '../types/anime';
 import { useAppStore } from '../state/appStore';
 
@@ -41,6 +41,15 @@ export default function RightPanelNav() {
           onClick={() => handleViewButtonClick('detail')}
         >
           <Info size={13} />
+        </button>
+        <button
+          type="button"
+          className={`right-panel-mini-btn retro-tooltip ${!isRightPanelHidden && rightPanelView === 'playlist' ? 'is-active' : ''}`}
+          aria-label="Open playlist panel"
+          data-tooltip={!isRightPanelHidden && rightPanelView === 'playlist' ? 'Hide Right Panel' : 'Playlist'}
+          onClick={() => handleViewButtonClick('playlist')}
+        >
+          <ListMusic size={13} />
         </button>
         <button
           type="button"

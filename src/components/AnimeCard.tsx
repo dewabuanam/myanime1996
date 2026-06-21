@@ -2,6 +2,7 @@ import { BookmarkPlus, Info, ListPlus, Play, Star } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import LibraryStatusPickerModal from './LibraryStatusPickerModal';
+import PlaylistPickerModal from './PlaylistPickerModal';
 import SeasonLinkBadge from './SeasonLinkBadge';
 import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
@@ -26,8 +27,14 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
   const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
   const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
   const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
+  const playlists = useAppStore((state) => state.playlists);
+  const addAnimeToPlaylist = useAppStore((state) => state.addAnimeToPlaylist);
+  const addVideoToPlaylist = useAppStore((state) => state.addVideoToPlaylist);
+  const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
   const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
+  const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
   const libraryButtonRef = useRef<HTMLButtonElement | null>(null);
+  const playlistButtonRef = useRef<HTMLButtonElement | null>(null);
   const displayTitle = getDisplayTitle(anime, titleLanguage);
   const detailAnimeId = anime.jikanId;
   const mediaType = anime.mediaType?.trim().toLowerCase() ?? '';
@@ -130,6 +137,9 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
             <button ref={libraryButtonRef} type="button" onClick={() => setLibraryPickerOpen(true)} className="vhs-button-ghost px-2.5 py-1.5 retro-tooltip" aria-label="Add to library" data-tooltip="Add to Library">
               <BookmarkPlus size={13} />
             </button>
+            <button ref={playlistButtonRef} type="button" onClick={() => setPlaylistPickerOpen(true)} className="vhs-button-ghost px-2.5 py-1.5 retro-tooltip" aria-label="Add to playlist" data-tooltip="Add to Playlist">
+              <ListPlus size={13} />
+            </button>
             <button type="button" onClick={() => void playFromCard()} className="vhs-button-ghost px-3 py-1.5 retro-tooltip" data-tooltip="Cue Tape">
               <Play size={14} /> Cue
             </button>
@@ -154,6 +164,48 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
               }
             : undefined
         }
+      />
+
+      <PlaylistPickerModal
+        open={playlistPickerOpen}
+        title={displayTitle}
+        subjectImage={anime.image}
+        anchorElement={playlistButtonRef.current}
+        playlists={playlists
+          .map((playlist) => ({
+            id: playlist.id,
+            name: playlist.name,
+            image: playlist.image,
+            type: playlist.type,
+          }))}
+        selectedPlaylistIds={[]}
+        onClose={() => setPlaylistPickerOpen(false)}
+        onConfirm={(playlistIds) => {
+          playlistIds.forEach((playlistId) => {
+            const targetPlaylist = playlists.find((playlist) => playlist.id === playlistId);
+            if (targetPlaylist?.type === 'video') {
+              void addVideoToPlaylist(playlistId, {
+                id: `card-anime:${anime.id}`,
+                anime,
+                kind: 'episode',
+                sourceKind: 'anime-card',
+                title: anime.title,
+                titleJapanese: anime.titleJapanese,
+                durationMinutes: anime.durationMinutes,
+                episodeNumber: Math.max(1, Math.floor(Number(anime.currentEpisode) || 1)),
+                typeLabel: `Episode ${Math.max(1, Math.floor(Number(anime.currentEpisode) || 1))}`,
+                createdAt: new Date().toISOString(),
+              });
+              return;
+            }
+            void addAnimeToPlaylist(playlistId, anime);
+          });
+        }}
+        onCreatePlaylist={() => {
+          void createPlaylistImmediate({ type: 'anime' }).then((playlistId) => {
+            void addAnimeToPlaylist(playlistId, anime);
+          });
+        }}
       />
     </article>
   );

@@ -2,6 +2,7 @@ import { CalendarDays, Clapperboard, Clock3, Flame, ListPlus, Play, Star, Trophy
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
+import PlaylistPickerModal from '../components/PlaylistPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
 import { FALLBACK_PAGE_SIZE, getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import { getAnimeEpisodeById } from '../services/jikan';
@@ -58,10 +59,16 @@ export default function AnimeDetail() {
   const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
   const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
   const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
+  const playlists = useAppStore((state) => state.playlists);
+  const addAnimeToPlaylist = useAppStore((state) => state.addAnimeToPlaylist);
+  const addVideoToPlaylist = useAppStore((state) => state.addVideoToPlaylist);
+  const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
   const allowNsfw = useAppStore((state) => state.allowNsfw);
   const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
   const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
+  const [isPlaylistPickerOpen, setIsPlaylistPickerOpen] = useState(false);
+  const [playlistPickerAnchorElement, setPlaylistPickerAnchorElement] = useState<HTMLElement | null>(null);
   const seasonMeta = useMemo(() => (anime ? resolveAnimeSeason(anime) : null), [anime]);
   const episodeTotalLabel = useMemo(() => (anime ? formatEpisodeTotalLabel(anime.episodes, anime.status) : '?/?'), [anime]);
   const currentLibraryStatus = useMemo(
@@ -264,6 +271,18 @@ export default function AnimeDetail() {
               <ListPlus size={17} />
               {currentLibraryStatus ? 'In Library' : 'Add to Library'}
             </button>
+            <button
+              type="button"
+              onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+                setPlaylistPickerAnchorElement(event.currentTarget);
+                setIsPlaylistPickerOpen(true);
+              }}
+              className="vhs-button-ghost py-3 retro-tooltip"
+              data-tooltip="Add to Playlist"
+            >
+              <ListPlus size={17} />
+              Add to Playlist
+            </button>
             {anime.trailerUrl ? (
               <a href={anime.trailerUrl} target="_blank" rel="noreferrer" className="vhs-button-ghost inline-flex items-center gap-2 py-3 retro-tooltip" data-tooltip="Open Trailer Source">
                 Trailer
@@ -410,6 +429,51 @@ export default function AnimeDetail() {
               }
             : undefined
         }
+      />
+
+      <PlaylistPickerModal
+        open={isPlaylistPickerOpen}
+        title={getDisplayTitle(anime, titleLanguage)}
+        subjectImage={anime.image}
+        anchorElement={playlistPickerAnchorElement}
+        playlists={playlists
+          .map((playlist) => ({
+            id: playlist.id,
+            name: playlist.name,
+            image: playlist.image,
+            type: playlist.type,
+          }))}
+        selectedPlaylistIds={[]}
+        onClose={() => {
+          setIsPlaylistPickerOpen(false);
+          setPlaylistPickerAnchorElement(null);
+        }}
+        onConfirm={(playlistIds) => {
+          playlistIds.forEach((playlistId) => {
+            const targetPlaylist = playlists.find((playlist) => playlist.id === playlistId);
+            if (targetPlaylist?.type === 'video') {
+              void addVideoToPlaylist(playlistId, {
+                id: `detail-anime:${anime.id}`,
+                anime,
+                kind: 'episode',
+                sourceKind: 'anime-card',
+                title: anime.title,
+                titleJapanese: anime.titleJapanese,
+                durationMinutes: anime.durationMinutes,
+                episodeNumber: Math.max(1, Math.floor(Number(anime.currentEpisode) || 1)),
+                typeLabel: `Episode ${Math.max(1, Math.floor(Number(anime.currentEpisode) || 1))}`,
+                createdAt: new Date().toISOString(),
+              });
+              return;
+            }
+            void addAnimeToPlaylist(playlistId, anime);
+          });
+        }}
+        onCreatePlaylist={() => {
+          void createPlaylistImmediate({ type: 'anime' }).then((playlistId) => {
+            void addAnimeToPlaylist(playlistId, anime);
+          });
+        }}
       />
     </div>
   );

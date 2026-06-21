@@ -13,7 +13,9 @@ export default function Collections() {
         {playlists.length ? playlists.map((playlist) => (
           <article key={playlist.id} className="app-card p-5">
             <h2 className="font-display text-2xl font-semibold uppercase leading-tight">{playlist.name}</h2>
-            <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-cream/45">{playlist.animeIds.length} tapes</p>
+            <p className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-cream/45">
+              {playlist.type} • {playlist.type === 'video' ? playlist.videoItems.length : playlist.animeIds.length} tapes
+            </p>
           </article>
         )) : (
           <div className="app-card col-span-full p-6 font-mono text-sm uppercase tracking-[0.12em] text-cream/50">

@@ -21,13 +21,16 @@ import { usePlaybackSourceResolver } from '../hooks/usePlaybackSourceResolver';
 import { useYouTubeTrailerPlayer } from '../hooks/useYouTubeTrailerPlayer';
 import { pickSourceOption, type LogoSelectItem } from './SourceSelector';
 import LibraryStatusPickerModal from './LibraryStatusPickerModal';
+import PlaylistPickerModal from './PlaylistPickerModal';
 import PluginsPanel from './PluginsPanel';
 import RightNowDetailPane from './RightNowDetailPane';
 import RightNowFullscreenOverlays from './RightNowFullscreenOverlays';
 import RightNowHeaderSection from './RightNowHeaderSection';
+import RightNowPlaylistPanel, { type RightNowPlaylistPanelHandle } from './RightNowPlaylistPanel';
 import RightNowQueueSection from './RightNowQueueSection';
 import RightNowSourceResolveControls from './RightNowSourceResolveControls';
 import SourceResolveLogPanel from './SourceResolveLogPanel';
+import ConfirmDialog from './ConfirmDialog';
 
 const WATCH_PROGRESS_SAVE_INTERVAL_SECONDS = 5;
 const FULLSCREEN_OVERLAY_HIDE_MS = 2000;
@@ -54,13 +57,27 @@ export default function RightNowPlaying() {
   const currentlyPlayingItem = useAppStore((state) => state.currentlyPlayingItem);
   const queue = useAppStore((state) => state.queue);
   const queueCursor = useAppStore((state) => state.queueCursor);
+  const playlists = useAppStore((state) => state.playlists);
+  const activePlaylistId = useAppStore((state) => state.activePlaylistId);
   const watchProgress = useAppStore((state) => state.watchProgress);
   const clearQueue = useAppStore((state) => state.clearQueue);
   const removeFromQueue = useAppStore((state) => state.removeFromQueue);
   const playFromQueue = useAppStore((state) => state.playFromQueue);
+  const playAnimeSeries = useAppStore((state) => state.playAnimeSeries);
   const playEpisode = useAppStore((state) => state.playEpisode);
   const addAnimeSeriesToQueue = useAppStore((state) => state.addAnimeSeriesToQueue);
   const addEpisodeToQueue = useAppStore((state) => state.addEpisodeToQueue);
+  const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
+  const updatePlaylistMeta = useAppStore((state) => state.updatePlaylistMeta);
+  const deletePlaylist = useAppStore((state) => state.deletePlaylist);
+  const addPlaylistToQueue = useAppStore((state) => state.addPlaylistToQueue);
+  const playPlaylist = useAppStore((state) => state.playPlaylist);
+  const openRightPanelWithView = useAppStore((state) => state.openRightPanelWithView);
+  const removePlaylistAnime = useAppStore((state) => state.removePlaylistAnime);
+  const removePlaylistVideo = useAppStore((state) => state.removePlaylistVideo);
+  const addAnimeToPlaylist = useAppStore((state) => state.addAnimeToPlaylist);
+  const addVideoToPlaylist = useAppStore((state) => state.addVideoToPlaylist);
+  const convertPlaylistType = useAppStore((state) => state.convertPlaylistType);
   const isRightPanelFullpage = useAppStore((state) => state.isRightPanelFullpage);
   const toggleRightPanelFullpage = useAppStore((state) => state.toggleRightPanelFullpage);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
@@ -112,6 +129,7 @@ export default function RightNowPlaying() {
   const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
 
   const menuRootRef = useRef<HTMLDivElement | null>(null);
+  const playlistPanelRef = useRef<RightNowPlaylistPanelHandle | null>(null);
   const queueDrawerRef = useRef<HTMLDivElement | null>(null);
   const queueToggleRef = useRef<HTMLButtonElement | null>(null);
   const logDrawerRef = useRef<HTMLDivElement | null>(null);
@@ -157,6 +175,12 @@ export default function RightNowPlaying() {
   const [sourceCacheVersion, setSourceCacheVersion] = useState(0);
   const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
   const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
+  const [isPlaylistPickerOpen, setIsPlaylistPickerOpen] = useState(false);
+  const [playlistPickerAnchorElement, setPlaylistPickerAnchorElement] = useState<HTMLElement | null>(null);
+  const [playlistPickerItem, setPlaylistPickerItem] = useState<PlayableItem | null>(null);
+  const [pendingTypeChange, setPendingTypeChange] = useState<{ playlistId: string; targetType: 'anime' | 'video' } | null>(null);
+  const [pendingDeletePlaylist, setPendingDeletePlaylist] = useState<{ id: string; name: string } | null>(null);
+  const [isPlaylistEditing, setIsPlaylistEditing] = useState(false);
 
   const trailerVideoId = useMemo(
     () => (currentlyPlayingItem?.kind === 'trailer' ? extractYouTubeVideoId(currentlyPlayingItem.anime.trailerUrl) : ''),
@@ -169,6 +193,7 @@ export default function RightNowPlaying() {
   const isNonTrailerPlayback = Boolean(currentlyPlayingItem && currentlyPlayingItem.kind !== 'trailer');
   const isNowPlayingView = rightPanelView === 'now-playing';
   const isDetailView = rightPanelView === 'detail';
+  const isPlaylistView = rightPanelView === 'playlist';
   const isPluginsView = rightPanelView === 'plugins';
   const isSplitPaneMode = false;
   const showNowPlayingPane = isNowPlayingView;
@@ -211,6 +236,17 @@ export default function RightNowPlaying() {
   const detailLibraryStatus = detailAnimeView
     ? getLibraryStatusForAnime(detailAnimeView.id, detailAnimeView.jikanId)
     : null;
+  const activePlaylistView = useMemo(() => {
+    if (!playlists.length) return null;
+    return playlists.find((playlist) => playlist.id === activePlaylistId) ?? playlists[0];
+  }, [activePlaylistId, playlists]);
+  const playlistDisplayTitle = activePlaylistView?.name ?? 'Playlist';
+  const playlistItemCount = activePlaylistView
+    ? activePlaylistView.type === 'video'
+      ? activePlaylistView.videoItems.length
+      : activePlaylistView.animeIds.length
+    : 0;
+  const playlistMetaLabel = activePlaylistView ? `${activePlaylistView.type.toUpperCase()} • ${playlistItemCount} ITEMS` : '';
   const detailYearLabel = formatAnimeYear(detailAnimeView?.year, detailAnime?.aired);
   const detailPlayableEpisode = useMemo(
     () => (detailAnimeView ? resolveLatestPlayableEpisodeFromSignals(detailAnimeView) : 1),
@@ -1458,6 +1494,7 @@ export default function RightNowPlaying() {
       <RightNowHeaderSection
         isRightPanelFullpage={isRightPanelFullpage}
         isPluginsView={isPluginsView}
+        isPlaylistView={isPlaylistView}
         showNowPlayingPane={showNowPlayingPane}
         isPlaying={isPlaying}
         isFullNowPlayingView={isFullNowPlayingView}
@@ -1483,6 +1520,38 @@ export default function RightNowPlaying() {
         onClearRateLimit={handleClearRateLimit}
         detailAnimeView={detailAnimeView}
         detailDisplayTitle={detailDisplayTitle}
+        playlistDisplayTitle={playlistDisplayTitle}
+        playlistMetaLabel={playlistMetaLabel}
+        onPlaylistPlay={
+          activePlaylistView
+            ? async () => {
+                await playPlaylist(activePlaylistView.id);
+                await openRightPanelWithView('now-playing');
+              }
+            : undefined
+        }
+        onPlaylistAddToQueue={
+          activePlaylistView
+            ? () => {
+                void addPlaylistToQueue(activePlaylistView.id);
+              }
+            : undefined
+        }
+        onPlaylistToggleEdit={
+          activePlaylistView
+            ? () => {
+                playlistPanelRef.current?.toggleEdit();
+              }
+            : undefined
+        }
+        onPlaylistDelete={
+          activePlaylistView
+            ? () => {
+                setPendingDeletePlaylist({ id: activePlaylistView.id, name: activePlaylistView.name });
+              }
+            : undefined
+        }
+        isPlaylistEditing={isPlaylistEditing}
         onDetailPlayAnime={
           detailAnimeView
             ? async () => {
@@ -1532,6 +1601,14 @@ export default function RightNowPlaying() {
             ? (anchorElement) => {
                 setLibraryPickerAnchorElement(anchorElement ?? null);
                 setIsLibraryPickerOpen(true);
+              }
+            : undefined
+        }
+        onDetailAddToPlaylist={
+          detailAnimeView
+            ? (anchorElement) => {
+                setPlaylistPickerAnchorElement(anchorElement ?? null);
+                setIsPlaylistPickerOpen(true);
               }
             : undefined
         }
@@ -1717,11 +1794,41 @@ export default function RightNowPlaying() {
               setLibraryPickerAnchorElement(anchorElement ?? null);
               setIsLibraryPickerOpen(true);
             }}
+            onAddToPlaylist={(anchorElement) => {
+              setPlaylistPickerItem(null);
+              setPlaylistPickerAnchorElement(anchorElement ?? null);
+              setIsPlaylistPickerOpen(true);
+            }}
+            onAddEpisodeToPlaylist={(_episode, anchorElement, item) => {
+              setPlaylistPickerItem(item ?? null);
+              setPlaylistPickerAnchorElement(anchorElement ?? null);
+              setIsPlaylistPickerOpen(true);
+            }}
             onAddEpisodeToQueue={(episodeNumber) => {
               if (!detailAnimeView) return;
               void addEpisodeToQueue(detailAnimeView, episodeNumber);
             }}
             isInLibrary={Boolean(detailLibraryStatus)}
+          />
+        ) : isPlaylistView ? (
+          <RightNowPlaylistPanel
+            ref={playlistPanelRef}
+            playlists={playlists}
+            activePlaylistId={activePlaylistId}
+            titleLanguage={titleLanguage}
+            onSavePlaylistMeta={(playlistId, patch) => {
+              void updatePlaylistMeta(playlistId, patch);
+            }}
+            onChangeTypeWithItems={(playlistId, targetType) => {
+              setPendingTypeChange({ playlistId, targetType });
+            }}
+            onRemoveAnimeItem={(playlistId, animeId) => {
+              void removePlaylistAnime(playlistId, animeId);
+            }}
+            onRemoveVideoItem={(playlistId, queueItemId) => {
+              void removePlaylistVideo(playlistId, queueItemId);
+            }}
+            onEditingChange={setIsPlaylistEditing}
           />
         ) : isPluginsView ? (
           <PluginsPanel />
@@ -1784,6 +1891,116 @@ export default function RightNowPlaying() {
           }
         />
       ) : null}
+
+      {detailAnimeView ? (
+        <PlaylistPickerModal
+          open={isPlaylistPickerOpen}
+          title={detailDisplayTitle || detailAnimeView.title}
+          subjectImage={detailAnimeView.image}
+          anchorElement={playlistPickerAnchorElement}
+          playlists={playlists
+            .map((playlist) => ({
+              id: playlist.id,
+              name: playlist.name,
+              image: playlist.image,
+              type: playlist.type,
+            }))}
+          selectedPlaylistIds={[]}
+          onClose={() => {
+            setIsPlaylistPickerOpen(false);
+            setPlaylistPickerAnchorElement(null);
+          }}
+          onConfirm={(playlistIds) => {
+            const selectedPlaylists = playlists.filter((entry) => playlistIds.includes(entry.id));
+            playlistIds.forEach((playlistId) => {
+              const targetPlaylist = selectedPlaylists.find((entry) => entry.id === playlistId);
+              if (targetPlaylist?.type === 'video' && playlistPickerItem) {
+                void addVideoToPlaylist(playlistId, playlistPickerItem);
+                return;
+              }
+              if (targetPlaylist?.type === 'video') {
+                void addAnimeToPlaylist(playlistId, detailAnimeView);
+                return;
+              }
+              void addAnimeToPlaylist(playlistId, detailAnimeView);
+            });
+            setPlaylistPickerItem(null);
+          }}
+          onCreatePlaylist={() => {
+            void createPlaylistImmediate({ type: 'anime' }).then((playlistId) => {
+              setIsPlaylistPickerOpen(true);
+              void addAnimeToPlaylist(playlistId, detailAnimeView);
+            });
+          }}
+        />
+      ) : null}
+
+      {pendingTypeChange ? (
+        <div className="confirm-overlay" aria-hidden={false}>
+          <button
+            type="button"
+            className="confirm-backdrop retro-tooltip"
+            aria-label="Cancel type change"
+            data-tooltip="Cancel"
+            onClick={() => setPendingTypeChange(null)}
+          />
+          <section className="confirm-dialog" role="dialog" aria-modal="true" aria-label="Change playlist type">
+            <h3 className="confirm-title">Change Playlist Type</h3>
+            <p className="confirm-message">Playlist has existing items. Choose how to switch type.</p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="confirm-btn retro-tooltip"
+                data-tooltip="Cancel"
+                onClick={() => setPendingTypeChange(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-btn is-primary retro-tooltip"
+                data-tooltip="Convert Existing"
+                onClick={() => {
+                  void convertPlaylistType(
+                    pendingTypeChange.playlistId,
+                    pendingTypeChange.targetType,
+                    pendingTypeChange.targetType === 'video' ? 'to-video' : 'to-anime',
+                  );
+                  setPendingTypeChange(null);
+                }}
+              >
+                Convert Existing
+              </button>
+              <button
+                type="button"
+                className="confirm-btn is-primary is-danger retro-tooltip"
+                data-tooltip="Clear All"
+                onClick={() => {
+                  void convertPlaylistType(pendingTypeChange.playlistId, pendingTypeChange.targetType, 'clear-all');
+                  setPendingTypeChange(null);
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={Boolean(pendingDeletePlaylist)}
+        title="Delete Playlist"
+        message={pendingDeletePlaylist ? `Delete ${pendingDeletePlaylist.name}? This action cannot be undone.` : 'Delete this playlist?'}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        tone="danger"
+        onCancel={() => setPendingDeletePlaylist(null)}
+        onConfirm={() => {
+          if (!pendingDeletePlaylist) return;
+          void deletePlaylist(pendingDeletePlaylist.id);
+          setPendingDeletePlaylist(null);
+        }}
+      />
     </aside>
   );
 }
