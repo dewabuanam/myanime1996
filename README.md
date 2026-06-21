@@ -42,3 +42,28 @@ Minimum plugin metadata example:
 	}
 }
 ```
+
+## Importing External Source Plugins (Video Resolve)
+
+This repository does not ship any video source plugin artifacts.
+
+To resolve and play non-trailer video sources, you must import plugin artifact files (`.json`) built and distributed outside this repo.
+
+1. Open the app.
+2. Go to the Plugins panel (`Plugin Sources`).
+3. Click `Import Plugin`.
+4. Select a source plugin artifact JSON file from your local machine.
+5. Confirm the plugin appears in the list (`id`, version, icon).
+
+After import:
+
+- Enable/disable a plugin with the toggle button.
+- Reorder plugin priority with `Move Up`/`Move Down`.
+- Optionally click `Prefer` to force that plugin first.
+- During playback, the app uses enabled plugins by priority (or preferred plugin) to resolve episode sources.
+
+Notes:
+
+- Importing the same plugin `id` again replaces the previously imported version.
+- If no plugins are imported, only trailer/metadata features are available.
+- Plugin artifacts are expected to declare host requirements for best observability.
