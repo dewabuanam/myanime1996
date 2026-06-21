@@ -97,7 +97,7 @@ export default function SearchDropdown({
   return createPortal(
     <section
       ref={dropdownRef}
-      className="search-dropdown"
+      className="search-dropdown search-dropdown-panel"
       style={{ top: `${position.top}px`, left: `${position.left}px`, width: `${position.width}px` }}
       role="dialog"
       aria-label="Search suggestions"

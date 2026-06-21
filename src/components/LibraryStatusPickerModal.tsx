@@ -95,7 +95,7 @@ export default function LibraryStatusPickerModal({
     <div className="fixed inset-0" style={{ zIndex: 2147483646 }} aria-hidden={false}>
       <section
         ref={popupRef}
-        className="pointer-events-auto max-w-none border border-amberline/45 bg-[#0f0b09] p-2.5 shadow-[0_20px_56px_rgba(0,0,0,0.68)]"
+        className="library-status-picker-modal pointer-events-auto max-w-none border border-amberline/45 bg-[#0f0b09] p-2.5 shadow-[0_20px_56px_rgba(0,0,0,0.68)]"
         role="dialog"
         aria-modal="false"
         aria-label={title ? `Add ${title} to library` : 'Add to library'}
@@ -106,8 +106,6 @@ export default function LibraryStatusPickerModal({
           position: 'fixed',
           margin: 0,
           zIndex: 2147483647,
-          backgroundColor: '#0f0b09',
-          backgroundImage: 'none',
           opacity: 1,
           visibility: isPositionReady ? 'visible' : 'hidden',
         }}
@@ -115,7 +113,7 @@ export default function LibraryStatusPickerModal({
           event.stopPropagation();
         }}
       >
-        <div className="mb-2 flex items-start justify-between gap-2 border-b border-cream/12 pb-1.5">
+        <div className="library-status-picker-header mb-2 flex items-start justify-between gap-2 border-b border-cream/12 pb-1.5">
           <div className="min-w-0">
             <p className="font-display text-[12px] uppercase tracking-[0.08em] text-cream">Choose Library Status</p>
             {title ? <p className="mt-0.5 line-clamp-1 font-mono text-[9px] uppercase tracking-[0.07em] text-cream/62">{title}</p> : null}
@@ -124,7 +122,7 @@ export default function LibraryStatusPickerModal({
             <X size={12} />
           </button>
         </div>
-        <div className="space-y-1">
+        <div className="library-status-picker-list space-y-1">
           {LIBRARY_STATUS_OPTIONS.map((option) => {
             const active = initialStatus === option.value;
             const rowBackgroundColor = active ? '#2a1c12' : '#16110f';
@@ -132,7 +130,7 @@ export default function LibraryStatusPickerModal({
               <button
                 key={option.value}
                 type="button"
-                className={`relative z-[1] w-full cursor-pointer border px-2.5 py-2 text-left transition-colors ${
+                className={`library-status-picker-option relative z-[1] w-full cursor-pointer border px-2.5 py-2 text-left transition-colors ${
                   active ? 'border-amberline/45' : 'border-cream/12 hover:border-cream/28'
                 }`}
                 style={{ backgroundColor: rowBackgroundColor, opacity: 1 }}

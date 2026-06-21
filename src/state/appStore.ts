@@ -46,6 +46,7 @@ let animeScheduleRateLimitListenerBound = false;
 export type PlaybackSupportMode = 'fully-supported' | 'fullscreen-only' | 'fully-unsupported';
 export type AnimeSkipType = 'op' | 'ed' | 'recap';
 export type UpcomingSeasonFilter = 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
+export type AppTheme = 'myanime1996' | 'myanime2077';
 
 const LIBRARY_STATUSES: LibraryStatus[] = ['watching', 'plan-to-watch', 'on-hold', 'dropped', 'completed'];
 const MAX_LIBRARY_NOTIFICATIONS = 100;
@@ -112,6 +113,7 @@ interface AppState {
   rightPanelView: RightPanelView;
   rightPanelWidth: number;
   titleLanguage: TitleLanguage;
+  appTheme: AppTheme;
   isTrailerMuted: boolean;
   isProfilePopupOpen: boolean;
   isSettingsOpen: boolean;
@@ -243,6 +245,7 @@ interface AppState {
   setAutoSkipRecap: (enabled: boolean) => Promise<void>;
   setAllowNsfw: (enabled: boolean) => Promise<void>;
   setUpcomingSeasonFilter: (filter: UpcomingSeasonFilter) => Promise<void>;
+  setAppTheme: (theme: AppTheme) => Promise<void>;
   setAnimeSkipButtonSegment: (segment: AnimeSkipButtonSegment | null) => void;
   setBaseCatalogSource: (source: BaseCatalogSource) => Promise<void>;
   setAnimeScheduleApiToken: (token: string) => Promise<void>;
@@ -306,6 +309,10 @@ function normalizeRepeatMode(value: unknown): 'off' | 'one' {
 
 function normalizeSourceAudioLanguage(value: unknown): SourceAudioLanguage {
   return value === 'dub' ? 'dub' : 'sub';
+}
+
+function normalizeAppTheme(value: unknown): AppTheme {
+  return value === 'myanime2077' ? 'myanime2077' : 'myanime1996';
 }
 
 function normalizeBaseCatalogSource(value: unknown): BaseCatalogSource {
@@ -1477,6 +1484,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   rightPanelView: 'now-playing',
   rightPanelWidth: 320,
   titleLanguage: 'japanese',
+  appTheme: 'myanime1996',
   isTrailerMuted: false,
   isProfilePopupOpen: false,
   isSettingsOpen: false,
@@ -1545,6 +1553,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawRightPanelView,
         rightPanelWidth,
         rawTitleLanguage,
+        rawAppTheme,
         rawShuffleEnabled,
         rawRepeatMode,
         rawImportedSourcePlugins,
@@ -1590,6 +1599,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('rightPanelView', 'now-playing' as RightPanelView),
         getStoredValue('rightPanelWidth', 320),
         getStoredValue('titleLanguage', 'japanese' as TitleLanguage),
+        getStoredValue('appTheme', 'myanime1996' as AppTheme),
         getStoredValue('shuffleEnabled', false),
         getStoredValue('repeatMode', 'off' as 'off' | 'one'),
         getStoredValue('importedSourcePlugins', []),
@@ -1646,6 +1656,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         scopedRawRightPanelView,
         scopedRightPanelWidth,
         scopedRawTitleLanguage,
+        scopedRawAppTheme,
         scopedRawShuffleEnabled,
         scopedRawRepeatMode,
         scopedRawImportedSourcePlugins,
@@ -1690,6 +1701,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('rightPanelView', rawRightPanelView),
         getStoredValue('rightPanelWidth', rightPanelWidth),
         getStoredValue('titleLanguage', rawTitleLanguage),
+        getStoredValue('appTheme', rawAppTheme),
         getStoredValue('shuffleEnabled', rawShuffleEnabled),
         getStoredValue('repeatMode', rawRepeatMode),
         getStoredValue('importedSourcePlugins', rawImportedSourcePlugins),
@@ -1734,6 +1746,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (scopedRawTitleLanguage !== titleLanguage) {
         await setStoredValue('titleLanguage', titleLanguage);
       }
+
+      const appTheme = normalizeAppTheme(scopedRawAppTheme);
+      if (scopedRawAppTheme !== appTheme) {
+        await setStoredValue('appTheme', appTheme);
+      }
+      await setStoredValue('lastAppTheme', appTheme);
 
       const rightPanelView = normalizeRightPanelView(scopedRawRightPanelView);
       if (scopedRawRightPanelView !== rightPanelView) {
@@ -1938,6 +1956,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rightPanelView,
         rightPanelWidth,
         titleLanguage,
+        appTheme,
         shuffleEnabled: Boolean(scopedRawShuffleEnabled),
         repeatMode,
         importedSourcePlugins,
@@ -2024,6 +2043,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rightPanelView: 'now-playing',
         rightPanelWidth: 320,
         titleLanguage: 'japanese',
+        appTheme: 'myanime1996',
         shuffleEnabled: false,
         repeatMode: 'off',
         importedSourcePlugins: [],
@@ -2112,6 +2132,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { watchHistory, watchProgress } = await readProfilePlayback(session);
     const [
       favorites,
+      appTheme,
       libraryItems,
       libraryStatusNotificationSettings,
       libraryLastNotifiedEpisodeByAnimeId,
@@ -2119,6 +2140,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       libraryLastDailyEpisodeCheckDate,
     ] = await Promise.all([
       getStoredValue('favorites', []),
+      getStoredValue('appTheme', 'myanime1996' as AppTheme),
       getStoredValue('libraryItems', {}),
       getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
       getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
@@ -2130,6 +2152,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       watchHistory,
       watchProgress,
       favorites: normalizeFavorites(favorites),
+      appTheme: normalizeAppTheme(appTheme),
       libraryItems: normalizeLibraryItems(libraryItems),
       libraryStatusNotificationSettings: normalizeLibraryStatusNotificationSettings(libraryStatusNotificationSettings),
       libraryLastNotifiedEpisodeByAnimeId: normalizeLibraryLastNotifiedEpisodeMap(libraryLastNotifiedEpisodeByAnimeId),
@@ -2155,6 +2178,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { watchHistory, watchProgress } = await readProfilePlayback(session);
     const [
       favorites,
+      appTheme,
       libraryItems,
       libraryStatusNotificationSettings,
       libraryLastNotifiedEpisodeByAnimeId,
@@ -2162,6 +2186,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       libraryLastDailyEpisodeCheckDate,
     ] = await Promise.all([
       getStoredValue('favorites', []),
+      getStoredValue('appTheme', 'myanime1996' as AppTheme),
       getStoredValue('libraryItems', {}),
       getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
       getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
@@ -2173,6 +2198,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       watchHistory,
       watchProgress,
       favorites: normalizeFavorites(favorites),
+      appTheme: normalizeAppTheme(appTheme),
       libraryItems: normalizeLibraryItems(libraryItems),
       libraryStatusNotificationSettings: normalizeLibraryStatusNotificationSettings(libraryStatusNotificationSettings),
       libraryLastNotifiedEpisodeByAnimeId: normalizeLibraryLastNotifiedEpisodeMap(libraryLastNotifiedEpisodeByAnimeId),
@@ -2203,6 +2229,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       playlists: [],
       activePlaylistId: null,
       isRightPanelFullpage: false,
+      appTheme: 'myanime1996',
       watchHistory: [],
       favorites: [],
       libraryItems: {},
@@ -3552,6 +3579,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ upcomingSeasonFilter: next, homeRefreshVersion: get().homeRefreshVersion + 1 });
   },
 
+  setAppTheme: async (theme) => {
+    const next = normalizeAppTheme(theme);
+    await Promise.all([
+      setStoredValue('appTheme', next),
+      setStoredValue('lastAppTheme', next),
+    ]);
+    set({ appTheme: next });
+  },
+
   setAnimeSkipButtonSegment: (segment) => {
     set({ animeSkipButtonSegment: segment });
   },
@@ -3803,6 +3839,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isRightPanelFullpage,
       rightPanelWidth,
       titleLanguage,
+      appTheme,
       isTrailerMuted,
       playlists,
       favorites,
@@ -3818,6 +3855,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       getStoredValue('isRightPanelFullpage', false),
       getStoredValue('rightPanelWidth', 320),
       getStoredValue('titleLanguage', 'japanese' as TitleLanguage),
+      getStoredValue('appTheme', 'myanime1996' as AppTheme),
       getStoredValue('isTrailerMuted', false),
       getStoredValue('playlists', []),
       getStoredValue('favorites', []),
@@ -3838,6 +3876,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isRightPanelFullpage,
         rightPanelWidth,
         titleLanguage,
+        appTheme,
         shuffleEnabled: current.shuffleEnabled,
         repeatMode: current.repeatMode,
         importedSourcePlugins: current.importedSourcePlugins,
@@ -3892,6 +3931,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const importedIsRightPanelFullpage = Boolean(settings.isRightPanelFullpage ?? current.isRightPanelFullpage);
     const importedRightPanelWidth = Math.max(260, Math.min(560, Math.round(Number(settings.rightPanelWidth ?? current.rightPanelWidth) || 320)));
     const importedTitleLanguage = normalizeTitleLanguage(settings.titleLanguage ?? current.titleLanguage);
+    const importedAppTheme = normalizeAppTheme(settings.appTheme ?? current.appTheme);
     const importedShuffleEnabled = Boolean(settings.shuffleEnabled ?? current.shuffleEnabled);
     const importedRepeatMode = normalizeRepeatMode(settings.repeatMode ?? current.repeatMode);
     const importedPlugins = normalizeImportedSourcePlugins(settings.importedSourcePlugins ?? current.importedSourcePlugins);
@@ -3956,6 +3996,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('rightPanelView', normalizeRightPanelView(settings.rightPanelView ?? current.rightPanelView)),
       setStoredValue('rightPanelWidth', importedRightPanelWidth),
       setStoredValue('titleLanguage', importedTitleLanguage),
+      setStoredValue('appTheme', importedAppTheme),
+      setStoredValue('lastAppTheme', importedAppTheme),
       setStoredValue('shuffleEnabled', importedShuffleEnabled),
       setStoredValue('repeatMode', importedRepeatMode),
       setStoredValue('importedSourcePlugins', importedPlugins),
@@ -3998,6 +4040,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       isRightPanelFullpage: importedIsRightPanelFullpage,
       rightPanelWidth: importedRightPanelWidth,
       titleLanguage: importedTitleLanguage,
+      appTheme: importedAppTheme,
       shuffleEnabled: importedShuffleEnabled,
       repeatMode: importedRepeatMode,
       importedSourcePlugins: importedPlugins,
@@ -4072,6 +4115,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('rightPanelView', 'now-playing' as RightPanelView),
       setStoredValue('rightPanelWidth', 320),
       setStoredValue('titleLanguage', 'japanese' as TitleLanguage),
+      setStoredValue('appTheme', 'myanime1996' as AppTheme),
+      setStoredValue('lastAppTheme', 'myanime1996' as AppTheme),
       setStoredValue('shuffleEnabled', false),
       setStoredValue('repeatMode', 'off' as 'off' | 'one'),
       setStoredValue('importedSourcePlugins', []),
@@ -4129,6 +4174,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       rightPanelView: 'now-playing',
       rightPanelWidth: 320,
       titleLanguage: 'japanese',
+      appTheme: 'myanime1996',
       shuffleEnabled: false,
       repeatMode: 'off',
       importedSourcePlugins: [],

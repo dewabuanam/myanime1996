@@ -425,7 +425,7 @@ export default function TopNavigation() {
         createPortal(
           <div
             ref={notificationPopupRef}
-            className="profile-popup profile-popup-portal p-3"
+            className="profile-popup profile-popup-portal notification-popup p-3"
             role="menu"
             aria-label="Notifications"
             data-tauri-drag-region="false"
@@ -435,7 +435,7 @@ export default function TopNavigation() {
               <p className="profile-popup-eyebrow">Notifications</p>
               <button
                 type="button"
-                className="text-[10px] font-mono uppercase tracking-[0.12em] text-amberline"
+                className="notification-popup-checkall text-[10px] font-mono uppercase tracking-[0.12em] text-amberline"
                 onClick={() => {
                   markAllLibraryNotificationsRead();
                   setNotificationPopupOpen(false);
@@ -447,34 +447,34 @@ export default function TopNavigation() {
             </div>
 
             {topNotifications.length === 0 ? (
-              <p className="text-xs text-cream/60">No notifications yet.</p>
+              <p className="notification-popup-empty text-xs text-cream/60">No notifications yet.</p>
             ) : (
-              <div className="space-y-2">
+              <div className="notification-popup-list space-y-2">
                 {topNotifications.map((item) => (
                   <div
                     key={item.id}
-                    className={`group relative rounded-lg border ${item.read ? 'border-cream/12 bg-black/18' : 'border-amberline/35 bg-amberline/10'}`}
+                    className={`notification-popup-item group relative rounded-lg border ${item.read ? 'border-cream/12 bg-black/18 is-read' : 'border-amberline/35 bg-amberline/10 is-unread'}`}
                   >
                     <button
                       type="button"
-                      className="w-full p-2 pr-20 text-left"
+                      className="notification-popup-item-btn w-full p-2 pr-20 text-left"
                       onClick={() => {
                         void playLibraryNotification(item.id);
                         setNotificationPopupOpen(false);
                       }}
                     >
                       <div className="flex items-start gap-2">
-                        {item.image ? <img src={item.image} alt="" className="h-12 w-9 rounded-sm object-cover" /> : null}
+                        {item.image ? <img src={item.image} alt="" className="notification-popup-item-image h-12 w-9 rounded-sm object-cover" /> : null}
                         <div className="min-w-0 flex-1">
-                          <p className="line-clamp-1 font-display text-[12px] uppercase text-cream">{item.title}</p>
-                          <p className="line-clamp-2 text-[11px] text-cream/72">{item.message}</p>
+                          <p className="notification-popup-item-title line-clamp-1 font-display text-[12px] uppercase text-cream">{item.title}</p>
+                          <p className="notification-popup-item-message line-clamp-2 text-[11px] text-cream/72">{item.message}</p>
                         </div>
                       </div>
                     </button>
                     {!item.read ? (
                       <button
                         type="button"
-                        className="absolute right-2 top-2 rounded-md border border-amberline/45 bg-black/45 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-amberline opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                        className="notification-popup-mark-read absolute right-2 top-2 rounded-md border border-amberline/45 bg-black/45 px-2 py-1 font-mono text-[9px] uppercase tracking-[0.08em] text-amberline opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
                         onClick={(event) => {
                           event.stopPropagation();
                           markLibraryNotificationRead(item.id);
@@ -484,7 +484,7 @@ export default function TopNavigation() {
                       </button>
                     ) : null}
                     {!item.read ? (
-                      <span className="absolute bottom-2 right-2 h-2 w-2 rounded-full bg-amberline/90" aria-hidden="true" />
+                      <span className="notification-popup-unread-dot absolute bottom-2 right-2 h-2 w-2 rounded-full bg-amberline/90" aria-hidden="true" />
                     ) : null}
                   </div>
                 ))}

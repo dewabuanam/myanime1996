@@ -16,11 +16,13 @@ export default function Sidebar() {
   const activePlaylistId = useAppStore((state) => state.activePlaylistId);
   const isSidebarCompact = useAppStore((state) => state.isSidebarCompact);
   const isRightPanelFullpage = useAppStore((state) => state.isRightPanelFullpage);
+  const appTheme = useAppStore((state) => state.appTheme);
   const toggleSidebarCompact = useAppStore((state) => state.toggleSidebarCompact);
   const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
   const setActivePlaylist = useAppStore((state) => state.setActivePlaylist);
   const deletePlaylist = useAppStore((state) => state.deletePlaylist);
   const [pendingDeletePlaylist, setPendingDeletePlaylist] = useState<{ id: string; name: string } | null>(null);
+  const brandLogoSrc = appTheme === 'myanime2077' ? '/assets/logo-2077.png' : '/assets/logo.png';
   const sidebarPlaylists = playlists.map((playlist) => ({
     id: playlist.id,
     name: playlist.name,
@@ -37,7 +39,7 @@ export default function Sidebar() {
       </div>
       {!isSidebarCompact && (
         <div className="mt-3 p-2.5" data-tauri-drag-region>
-          <img src="/assets/logo.png" alt="My Anime 1996" className="logo-glow mx-auto h-auto w-full" />
+          <img src={brandLogoSrc} alt="My Anime" className="logo-glow mx-auto h-auto w-full" />
         </div>
       )}
 
@@ -144,10 +146,10 @@ export default function Sidebar() {
                     void setActivePlaylist(playlist.id);
                   }}
                 >
-                  <img src={playlist.image || '/assets/logo.png'} alt="" className="h-9 w-9 rounded-md object-cover opacity-90" />
+                  <img src={playlist.image || '/assets/logo.png'} alt="" className="jb-playlist-poster h-9 w-9 rounded-md object-cover opacity-90" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-cream/90">{playlist.name}</p>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/50">{playlist.count} titles</p>
+                    <p className="jb-playlist-title truncate text-sm text-cream/90">{playlist.name}</p>
+                    <p className="jb-playlist-meta font-mono text-[10px] uppercase tracking-[0.1em] text-cream/50">{playlist.count} titles</p>
                     <span className={`jb-playlist-type-badge ${playlist.type === 'video' ? 'is-video' : 'is-anime'}`}>
                       {playlist.type}
                     </span>

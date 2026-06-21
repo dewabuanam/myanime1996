@@ -729,22 +729,22 @@ export default function BottomPlayer() {
       className={`vhs-panel mini-player grid h-full items-center gap-4 px-4 py-3 transition-all duration-200 ${shouldHideInFullscreen ? 'translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
       style={{ gridTemplateColumns: 'minmax(0,1fr) minmax(220px, clamp(16rem, 50vw, 40rem)) minmax(0,1fr)' }}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="player-media-copy flex min-w-0 items-center gap-3">
         <div className="h-16 w-16 min-h-16 min-w-16 shrink-0 overflow-hidden rounded-lg">
           <img src={currentlyPlayingItem?.anime.image ?? '/assets/logo.png'} alt="" className="h-full w-full object-cover" />
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm text-cream/90">{displayAnimeTitle}</p>
-          {japaneseTitle ? <p className="truncate text-[11px] text-amberline/80">{japaneseTitle}</p> : null}
+        <div className="player-media-text min-w-0 flex-1">
+          <p className="player-anime-title truncate text-sm text-cream/90">{displayAnimeTitle}</p>
+          {japaneseTitle ? <p className="player-anime-title-jp truncate text-[11px] text-amberline/80">{japaneseTitle}</p> : null}
           {currentlyPlayingItem?.kind === 'episode' ? (
             <>
-              <p className="truncate text-xs text-cream/55" data-tooltip={episodeDisplayLabel} data-tooltip-sub={episodeDisplayJapanese || undefined}>
+              <p className="player-episode-title truncate text-xs text-cream/55" data-tooltip={episodeDisplayLabel} data-tooltip-sub={episodeDisplayJapanese || undefined}>
                 {episodeDisplayLabel}
               </p>
-              {episodeDisplayJapanese ? <p className="truncate text-[11px] text-amberline/80">{episodeDisplayJapanese}</p> : null}
+              {episodeDisplayJapanese ? <p className="player-episode-title-jp truncate text-[11px] text-amberline/80">{episodeDisplayJapanese}</p> : null}
             </>
           ) : (
-            <p className="truncate text-xs text-cream/55">{displayTypeLabel}</p>
+            <p className="player-episode-title truncate text-xs text-cream/55">{displayTypeLabel}</p>
           )}
         </div>
       </div>
@@ -771,7 +771,7 @@ export default function BottomPlayer() {
           ><SkipBack size={15} /></button>
           <button
             type="button"
-            className={`retro-tooltip inline-flex h-10 w-10 items-center justify-center rounded-full transition ${playButtonEnabled ? 'bg-amberline text-ink hover:brightness-95' : 'bg-slate-500/45 text-cream/52 cursor-not-allowed'}`}
+            className={`player-main-play-btn retro-tooltip inline-flex h-10 w-10 items-center justify-center rounded-full transition ${playButtonEnabled ? 'bg-amberline text-ink hover:brightness-95' : 'bg-slate-500/45 text-cream/52 cursor-not-allowed'}`}
             onClick={() => {
               if (isWindowToggleMode) {
                 if (!canOpenPlaybackAction) return;
@@ -836,7 +836,7 @@ export default function BottomPlayer() {
         ) : null}
 
         <div className="flex w-full min-w-0 flex-col gap-1">
-          <div className="flex w-full min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-cream/55">
+          <div className="player-time-copy flex w-full min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-cream/55">
             <span className="shrink-0">{currentTimeLabel}</span>
             <input
               className="player-time-slider"

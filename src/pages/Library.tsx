@@ -278,7 +278,7 @@ export default function Library() {
   };
 
   return (
-    <div className="seeall-page space-y-4 pb-8">
+    <div className="library-page seeall-page space-y-4 pb-8">
       <div className="sticky top-0 z-30 space-y-2">
         <section className="seeall-header library-header relative overflow-hidden border border-amberline/35 px-6 pb-3 pt-5 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">
           <div className="absolute inset-0 bg-gradient-to-r from-[#100b08]/96 via-[#1a120c]/86 to-[#2e2016]/46" />
@@ -305,12 +305,12 @@ export default function Library() {
           </div>
 
           <div className="relative z-10 mt-3">
-            <div className="inline-flex flex-wrap gap-2 rounded-xl border border-cream/20 bg-black/25 p-2">
+            <div className="library-tabs inline-flex flex-wrap gap-2 rounded-xl border border-cream/20 bg-black/25 p-2">
               {LIBRARY_TABS.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
-                  className={`rounded-md border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] transition ${
+                  className={`library-tab-btn rounded-md border px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] transition ${
                     activeTab === tab.key
                       ? 'border-amberline/85 bg-gradient-to-b from-amberline/28 to-amberline/16 text-cream shadow-[0_0_0_1px_rgba(0,0,0,0.35)_inset]'
                       : 'border-cream/25 bg-black/20 text-cream/75 hover:border-cream/45 hover:bg-black/35'

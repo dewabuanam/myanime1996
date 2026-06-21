@@ -9,6 +9,7 @@ import { clearPluginResolverCacheByKey, getPluginResolverCacheSnapshot, replaceP
 import { clearSourceResolveCache } from '../services/sourceCache';
 import { getStoredValue, setStoredValue } from '../services/store';
 import { DEFAULT_NOTIFICATION_POSTER, useAppStore } from '../state/appStore';
+import type { AppTheme } from '../state/appStore';
 import type { UpcomingSeasonFilter } from '../state/appStore';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -47,6 +48,11 @@ const UPCOMING_FILTER_OPTIONS: Array<{ value: UpcomingSeasonFilter; label: strin
   { value: 'special', label: 'Special' },
   { value: 'ona', label: 'ONA' },
   { value: 'music', label: 'Music' },
+];
+
+const APP_THEME_OPTIONS: Array<{ value: AppTheme; label: string }> = [
+  { value: 'myanime1996', label: 'My Anime 1996' },
+  { value: 'myanime2077', label: 'My Anime 2077' },
 ];
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
@@ -238,12 +244,14 @@ export default function SettingsModal() {
   const subtitleFontSizeFullscreen = useAppStore((state) => state.subtitleFontSizeFullscreen);
   const subtitleDropShadow = useAppStore((state) => state.subtitleDropShadow);
   const subtitleBackgroundHighlight = useAppStore((state) => state.subtitleBackgroundHighlight);
+  const appTheme = useAppStore((state) => state.appTheme);
   const setSubtitleFontColor = useAppStore((state) => state.setSubtitleFontColor);
   const setSubtitleFontSizeDocked = useAppStore((state) => state.setSubtitleFontSizeDocked);
   const setSubtitleFontSizeExpanded = useAppStore((state) => state.setSubtitleFontSizeExpanded);
   const setSubtitleFontSizeFullscreen = useAppStore((state) => state.setSubtitleFontSizeFullscreen);
   const setSubtitleDropShadow = useAppStore((state) => state.setSubtitleDropShadow);
   const setSubtitleBackgroundHighlight = useAppStore((state) => state.setSubtitleBackgroundHighlight);
+  const setAppTheme = useAppStore((state) => state.setAppTheme);
 
   const [query, setQuery] = useState('');
   const [selectedActionId, setSelectedActionId] = useState<string | null>(null);
@@ -694,15 +702,43 @@ export default function SettingsModal() {
 
                     <div className="space-y-2">
                       <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Catalog Source</p>
-                      <p className="rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream/80">Default</p>
+                      <p className="settings-catalog-default rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream/80">Default</p>
                     </div>
 
-                    <div className="space-y-3 rounded-xl border border-amberline/30 bg-[linear-gradient(135deg,rgba(54,36,23,0.42),rgba(10,8,6,0.5))] p-3">
-                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-amberline/90">Global Content Filter</p>
+                    <div className="space-y-2">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Theme</p>
+                      <div className="space-y-2 rounded-xl border border-cream/20 bg-black/25 p-3">
+                        {APP_THEME_OPTIONS.map((option) => (
+                          <label key={option.value} className="settings-theme-option flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-cream/15 bg-black/20 px-3 py-2 hover:border-cream/35">
+                            <span className="text-sm text-cream/85">{option.label}</span>
+                            <input
+                              type="radio"
+                              className="settings-theme-radio"
+                              name="app-theme"
+                              value={option.value}
+                              checked={appTheme === option.value}
+                              onChange={() => {
+                                void setAppTheme(option.value).then(() => {
+                                  setStatusMessage(`Theme set to ${option.label}.`);
+                                });
+                              }}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      className="settings-control-room-panel space-y-3 rounded-xl border border-amberline/30 p-3"
+                      style={{
+                        background: 'linear-gradient(135deg, var(--theme-settings-panel-a), var(--theme-settings-panel-b))',
+                      }}
+                    >
+                      <p className="settings-control-room-title font-mono text-[11px] uppercase tracking-[0.13em] text-amberline/90">Global Content Filter</p>
 
                       <button
                         type="button"
-                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
                         onClick={() => void setAllowNsfw(!allowNsfw)}
                         aria-label={`${allowNsfw ? 'Disable' : 'Enable'} NSFW content`}
                       >
@@ -712,7 +748,7 @@ export default function SettingsModal() {
 
                       <button
                         type="button"
-                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
                         onClick={() => {
                           const next = !assumeEpisodeCountFromReleaseDate;
                           setAssumeEpisodeCountFromReleaseDate(next);
@@ -791,15 +827,15 @@ export default function SettingsModal() {
                         ) : null}
                         {isDevMode ? (
                           <>
-                            <div className="w-full rounded-xl border border-cream/20 bg-black/25 p-3">
-                              <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Test Notification Poster</p>
+                            <div className="settings-test-poster-card w-full rounded-xl border border-cream/20 bg-black/25 p-3">
+                              <p className="settings-test-poster-title mb-2 font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Test Notification Poster</p>
                               <div className="flex items-center gap-3">
                                 <img
                                   src={DEFAULT_NOTIFICATION_POSTER}
                                   alt="Default test notification poster"
-                                  className="h-16 w-12 rounded-md border border-cream/20 object-cover"
+                                  className="settings-test-poster-image h-16 w-12 rounded-md border border-cream/20 object-cover"
                                 />
-                                <p className="text-xs text-cream/70">Uses the same notification icon pipeline as library notifications.</p>
+                                <p className="settings-test-poster-copy text-xs text-cream/70">Uses the same notification icon pipeline as library notifications.</p>
                               </div>
                             </div>
                             <input
@@ -936,7 +972,7 @@ export default function SettingsModal() {
                     <div className="space-y-3">
                       <button
                         type="button"
-                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
                         onClick={() => void setAutoSkipOpening(!autoSkipOpening)}
                         aria-label={`${autoSkipOpening ? 'Disable' : 'Enable'} auto-skip opening`}
                       >
@@ -946,7 +982,7 @@ export default function SettingsModal() {
 
                       <button
                         type="button"
-                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
                         onClick={() => void setAutoSkipEnding(!autoSkipEnding)}
                         aria-label={`${autoSkipEnding ? 'Disable' : 'Enable'} auto-skip ending`}
                       >
@@ -956,7 +992,7 @@ export default function SettingsModal() {
 
                       <button
                         type="button"
-                        className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
                         onClick={() => void setAutoSkipRecap(!autoSkipRecap)}
                         aria-label={`${autoSkipRecap ? 'Disable' : 'Enable'} auto-skip recap`}
                       >
@@ -1039,7 +1075,7 @@ export default function SettingsModal() {
 
                     <button
                       type="button"
-                      className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                      className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
                       onClick={() => void setSubtitleDropShadow(!subtitleDropShadow)}
                       aria-label={`${subtitleDropShadow ? 'Disable' : 'Enable'} subtitle drop shadow`}
                     >
@@ -1049,7 +1085,7 @@ export default function SettingsModal() {
 
                     <button
                       type="button"
-                      className="w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                      className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
                       onClick={() => void setSubtitleBackgroundHighlight(!subtitleBackgroundHighlight)}
                       aria-label={`${subtitleBackgroundHighlight ? 'Disable' : 'Enable'} subtitle background highlight`}
                     >

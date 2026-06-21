@@ -242,7 +242,7 @@ export default function History() {
   };
 
   return (
-    <div className="seeall-page space-y-4 pb-8">
+    <div className="history-page seeall-page space-y-4 pb-8">
       <section className="seeall-header history-header px-6 py-5">
         <div>
           <p className="eyebrow">Playback log</p>

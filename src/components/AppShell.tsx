@@ -12,6 +12,7 @@ import AnimeScheduleRateLimitGuideModal from './AnimeScheduleRateLimitGuideModal
 import SettingsModal from './SettingsModal';
 import Sidebar from './Sidebar';
 import TopNavigation from './TopNavigation';
+import WindowControls from './WindowControls';
 import { useAppStore } from '../state/appStore';
 
 const DRAG_START_DISTANCE_PX = 4;
@@ -26,8 +27,12 @@ export default function AppShell() {
   const isSidebarCompact = useAppStore((state) => state.isSidebarCompact);
   const isRightPanelHidden = useAppStore((state) => state.isRightPanelHidden);
   const isRightPanelFullpage = useAppStore((state) => state.isRightPanelFullpage);
+  const isSettingsOpen = useAppStore((state) => state.isSettingsOpen);
   const rightPanelWidth = useAppStore((state) => state.rightPanelWidth);
   const setRightPanelWidth = useAppStore((state) => state.setRightPanelWidth);
+  const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(() =>
+    typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false,
+  );
   const [liveRightPanelWidth, setLiveRightPanelWidth] = useState<number | null>(null);
   const liveRightPanelWidthRef = useRef<number | null>(null);
   const isResizingRightPanelRef = useRef(false);
@@ -66,6 +71,18 @@ export default function AppShell() {
       window.removeEventListener('resize', clampRightPanelToViewport);
     };
   }, [isRightPanelFullpage, isRightPanelHidden, isSidebarCompact, rightPanelWidth, setRightPanelWidth]);
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      setIsDocumentFullscreen(Boolean(document.fullscreenElement));
+    };
+
+    syncFullscreenState();
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreenState);
+    };
+  }, []);
 
   const resolvedRightPanelWidth = liveRightPanelWidth ?? rightPanelWidth;
 
@@ -253,6 +270,11 @@ export default function AppShell() {
         </div>
         <GlobalTooltip />
         <InAppNotificationToasts />
+        {isSettingsOpen && !isDocumentFullscreen ? (
+          <div className="app-settings-window-controls" aria-hidden="true">
+            <WindowControls />
+          </div>
+        ) : null}
         <SettingsModal />
         <AnimeScheduleRateLimitGuideModal />
       </div>

@@ -101,7 +101,7 @@ export default function PlaylistPickerModal({
     <div className="fixed inset-0" style={{ zIndex: 2147483646 }} aria-hidden={false}>
       <section
         ref={popupRef}
-        className="pointer-events-auto max-w-none border border-amberline/45 bg-[#0f0b09] p-2.5 shadow-[0_20px_56px_rgba(0,0,0,0.68)]"
+        className="playlist-picker-modal pointer-events-auto max-w-none border border-amberline/45 bg-[#0f0b09] p-2.5 shadow-[0_20px_56px_rgba(0,0,0,0.68)]"
         role="dialog"
         aria-modal="false"
         aria-label={title ? `Add ${title} to playlist` : 'Add to playlist'}
@@ -112,13 +112,11 @@ export default function PlaylistPickerModal({
           position: 'fixed',
           margin: 0,
           zIndex: 2147483647,
-          backgroundColor: '#0f0b09',
-          backgroundImage: 'none',
           opacity: 1,
           visibility: isPositionReady ? 'visible' : 'hidden',
         }}
       >
-        <div className="mb-2 flex items-start justify-between gap-2 border-b border-cream/12 pb-1.5">
+        <div className="playlist-picker-header mb-2 flex items-start justify-between gap-2 border-b border-cream/12 pb-1.5">
           <div className="min-w-0 flex items-start gap-2">
             {subjectImage ? <img src={subjectImage} alt="" className="h-10 w-8 border border-cream/20 object-cover" /> : null}
             <div className="min-w-0">
@@ -131,7 +129,7 @@ export default function PlaylistPickerModal({
           </button>
         </div>
 
-        <div className="mb-2 flex items-center justify-end">
+        <div className="playlist-picker-toolbar mb-2 flex items-center justify-end">
           <button
             type="button"
             className="vhs-button-ghost inline-flex items-center gap-1.5 px-2 py-1 text-[10px]"
@@ -142,14 +140,14 @@ export default function PlaylistPickerModal({
           </button>
         </div>
 
-        <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+        <div className="playlist-picker-list max-h-64 space-y-1.5 overflow-y-auto pr-1">
           {playlists.length ? playlists.map((playlist) => {
             const selected = localSelection.includes(playlist.id);
             return (
               <button
                 key={playlist.id}
                 type="button"
-                className={`w-full border px-2 py-1.5 text-left transition-colors ${selected ? 'border-amberline/50 bg-amberline/12' : 'border-cream/12 bg-black/18 hover:border-cream/28'}`}
+                className={`playlist-picker-option w-full border px-2 py-1.5 text-left transition-colors ${selected ? 'border-amberline/50 bg-amberline/12' : 'border-cream/12 bg-black/18 hover:border-cream/28'}`}
                 onClick={() => {
                   setLocalSelection((current) =>
                     current.includes(playlist.id)
@@ -159,7 +157,7 @@ export default function PlaylistPickerModal({
                 }}
               >
                 <div className="flex items-center gap-2">
-                  <img src={playlist.image || '/assets/logo.png'} alt="" className="h-9 w-9 rounded-sm object-cover" />
+                  <img src={playlist.image || '/assets/logo.png'} alt="" className="playlist-picker-option-image h-9 w-9 rounded-sm object-cover" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-cream/92">{playlist.name}</p>
                     <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/55">{playlist.type}</p>
@@ -175,7 +173,7 @@ export default function PlaylistPickerModal({
           )}
         </div>
 
-        <div className="mt-2 flex items-center justify-end gap-2 border-t border-cream/12 pt-2">
+        <div className="playlist-picker-footer mt-2 flex items-center justify-end gap-2 border-t border-cream/12 pt-2">
           <button type="button" className="vhs-button-ghost px-2 py-1 text-[10px]" onClick={onClose}>Cancel</button>
           <button
             type="button"

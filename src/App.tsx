@@ -25,6 +25,7 @@ function ProtectedShell() {
 export default function App() {
   const hydrated = useAppStore((state) => state.hydrated);
   const initialize = useAppStore((state) => state.initialize);
+  const appTheme = useAppStore((state) => state.appTheme);
   const startupHandoffDoneRef = useRef(false);
 
   const completeStartupHandoff = async () => {
@@ -70,6 +71,13 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const nextTheme = appTheme === 'myanime2077' ? 'myanime2077' : 'myanime1996';
+    document.documentElement.setAttribute('data-theme', nextTheme);
+    document.body.setAttribute('data-theme', nextTheme);
+  }, [appTheme, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;

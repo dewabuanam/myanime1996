@@ -3,11 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Anime 1996</title>
+    <title>My Anime 2077</title>
     <style>
       :root {
-        color: #f5ead2;
-        background: #0f0b09;
+        color: #d9fbff;
+        background: #04070f;
+      }
+
+      :root[data-theme='myanime1996'] {
+        --splash-fg: #f5ead2;
+        --splash-bg: #0f0b09;
+        --splash-radial-a: rgba(240, 182, 96, 0.18);
+        --splash-radial-b: rgba(186, 83, 44, 0.16);
+        --splash-border: rgba(236, 183, 104, 0.35);
+        --splash-panel-a: rgba(28, 18, 12, 0.9);
+        --splash-panel-b: rgba(12, 9, 7, 0.94);
+        --splash-glow: rgba(184, 123, 58, 0.2);
+        --splash-desc: rgba(245, 234, 210, 0.78);
+        --splash-rail-bg: rgba(245, 234, 210, 0.16);
+        --splash-rail-a: rgba(236, 183, 104, 0.9);
+        --splash-rail-b: rgba(236, 183, 104, 0.9);
+        --splash-title-glow: rgba(231, 176, 97, 0.24);
+      }
+
+      :root[data-theme='myanime2077'] {
+        --splash-fg: #d9fbff;
+        --splash-bg: #04070f;
+        --splash-radial-a: rgba(255, 59, 155, 0.25);
+        --splash-radial-b: rgba(0, 229, 255, 0.18);
+        --splash-border: rgba(88, 241, 255, 0.42);
+        --splash-panel-a: rgba(10, 20, 41, 0.92);
+        --splash-panel-b: rgba(5, 10, 25, 0.95);
+        --splash-glow: rgba(31, 216, 255, 0.22);
+        --splash-desc: rgba(217, 251, 255, 0.8);
+        --splash-rail-bg: rgba(217, 251, 255, 0.2);
+        --splash-rail-a: rgba(255, 62, 164, 0.9);
+        --splash-rail-b: rgba(34, 231, 255, 0.95);
+        --splash-title-glow: rgba(31, 216, 255, 0.3);
+        --splash-grid-a: rgba(76, 242, 255, 0.1);
+        --splash-grid-b: rgba(255, 61, 164, 0.07);
       }
 
       * {
@@ -21,11 +55,11 @@
         margin: 0;
         overflow: hidden;
         font-family: 'Oswald', 'Segoe UI', sans-serif;
-        color: #f5ead2;
+        color: var(--splash-fg, #f5ead2);
         background:
-          radial-gradient(circle at 14% 12%, rgba(240, 182, 96, 0.18), transparent 35rem),
-          radial-gradient(circle at 86% 88%, rgba(186, 83, 44, 0.16), transparent 32rem),
-          #0f0b09;
+          radial-gradient(circle at 14% 12%, var(--splash-radial-a, rgba(240, 182, 96, 0.18)), transparent 35rem),
+          radial-gradient(circle at 86% 88%, var(--splash-radial-b, rgba(186, 83, 44, 0.16)), transparent 32rem),
+          var(--splash-bg, #0f0b09);
       }
 
       .wrap {
@@ -40,12 +74,30 @@
       .panel {
         width: min(22rem, calc(100vw - 1rem));
         max-height: calc(100vh - 1rem);
-        border: 1px solid rgba(236, 183, 104, 0.35);
-        background: rgba(18, 13, 10, 0.88);
+        border: 1px solid var(--splash-border, rgba(236, 183, 104, 0.35));
+        background:
+          radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--splash-rail-a, rgba(236, 183, 104, 0.9)) 22%, transparent), transparent 13rem),
+          linear-gradient(165deg, var(--splash-panel-a, rgba(28, 18, 12, 0.9)), var(--splash-panel-b, rgba(12, 9, 7, 0.94)));
         padding: clamp(1rem, 4vh, 1.8rem) clamp(0.9rem, 4vw, 1.6rem);
         text-align: center;
-        box-shadow: 0 22px 45px rgba(0, 0, 0, 0.45);
+        box-shadow:
+          0 22px 45px rgba(0, 0, 0, 0.5),
+          0 0 34px var(--splash-glow, rgba(184, 123, 58, 0.2));
         overflow: auto;
+      }
+
+      :root[data-theme='myanime2077'] .panel {
+        border-radius: 0;
+        clip-path: polygon(0 18px, 18px 0, calc(100% - 18px) 0, 100% 18px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%, 0 calc(100% - 18px));
+        background:
+          radial-gradient(circle at 50% 0%, rgba(59, 240, 255, 0.18), transparent 38%),
+          repeating-linear-gradient(0deg, var(--splash-grid-a) 0 1px, transparent 1px 14px),
+          repeating-linear-gradient(90deg, var(--splash-grid-b) 0 1px, transparent 1px 14px),
+          linear-gradient(165deg, var(--splash-panel-a), var(--splash-panel-b));
+        box-shadow:
+          0 22px 45px rgba(0, 0, 0, 0.58),
+          0 0 34px var(--splash-glow),
+          inset 0 0 0 1px rgba(86, 243, 255, 0.22);
       }
 
       .logo {
@@ -61,6 +113,7 @@
         font-size: clamp(1.2rem, 4.3vh, 1.8rem);
         letter-spacing: clamp(0.06em, 0.2vw, 0.12em);
         text-transform: uppercase;
+        text-shadow: 0 0 16px var(--splash-title-glow, rgba(231, 176, 97, 0.24));
       }
 
       .desc {
@@ -69,7 +122,7 @@
         font-size: clamp(0.56rem, 1.75vh, 0.7rem);
         letter-spacing: clamp(0.1em, 0.28vw, 0.22em);
         text-transform: uppercase;
-        color: rgba(245, 234, 210, 0.78);
+        color: var(--splash-desc, rgba(245, 234, 210, 0.78));
       }
 
       .rail {
@@ -78,7 +131,12 @@
         width: 100%;
         height: 2px;
         overflow: hidden;
-        background: rgba(245, 234, 210, 0.16);
+        background: var(--splash-rail-bg, rgba(245, 234, 210, 0.16));
+      }
+
+      :root[data-theme='myanime2077'] .rail {
+        height: 3px;
+        border-radius: 0;
       }
 
       .rail::before {
@@ -86,8 +144,16 @@
         position: absolute;
         inset: 0;
         width: 45%;
-        background: rgba(236, 183, 104, 0.9);
+        background: linear-gradient(90deg, var(--splash-rail-a, rgba(236, 183, 104, 0.9)), var(--splash-rail-b, rgba(236, 183, 104, 0.9)));
         animation: scan 1.35s linear infinite;
+      }
+
+      :root[data-theme='myanime2077'] .title {
+        letter-spacing: clamp(0.08em, 0.23vw, 0.14em);
+      }
+
+      :root[data-theme='myanime2077'] .desc {
+        letter-spacing: clamp(0.11em, 0.3vw, 0.24em);
       }
 
       @keyframes scan {
@@ -103,11 +169,41 @@
   <body>
     <main class="wrap">
       <section class="panel">
-        <img src="/assets/logo.png" alt="My Anime 1996" class="logo" />
-        <h1 class="title">Booting Archive</h1>
-        <p class="desc">Loading library, playback queue, and plugins</p>
+        <img src="/assets/logo.png" alt="My Anime" class="logo" id="splash-logo" />
+        <h1 class="title">Booting Control Grid</h1>
+        <p class="desc">Syncing cache channels, playlist matrix, and source plugins</p>
         <div class="rail" aria-hidden="true"></div>
       </section>
     </main>
+    <script>
+      (function applyStartupTheme() {
+        const root = document.documentElement;
+        const logo = document.getElementById('splash-logo');
+        const setTheme = (value) => {
+          const next = value === 'myanime2077' ? 'myanime2077' : 'myanime1996';
+          root.setAttribute('data-theme', next);
+          document.body.setAttribute('data-theme', next);
+          if (logo) {
+            logo.setAttribute('src', next === 'myanime2077' ? '/assets/logo-2077.png' : '/assets/logo.png');
+          }
+        };
+
+        setTheme('myanime1996');
+
+        const w = window;
+        const invoke = w && w.__TAURI_INTERNALS__ && w.__TAURI_INTERNALS__.invoke;
+        if (typeof invoke !== 'function') return;
+
+        invoke('resolve_startup_theme')
+          .then((theme) => {
+            if (typeof theme === 'string') {
+              setTheme(theme);
+            }
+          })
+          .catch(() => {
+            // Keep default theme if startup theme resolution fails.
+          });
+      })();
+    </script>
   </body>
 </html>

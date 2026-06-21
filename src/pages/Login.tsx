@@ -8,9 +8,11 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const session = useAppStore((state) => state.session);
+  const appTheme = useAppStore((state) => state.appTheme);
   const continueAsGuest = useAppStore((state) => state.continueAsGuest);
   const loginWithEmail = useAppStore((state) => state.loginWithEmail);
   const navigate = useNavigate();
+  const brandLogoSrc = appTheme === 'myanime2077' ? '/assets/logo-2077.png' : '/assets/logo.png';
 
   useEffect(() => {
     if (session) navigate('/home', { replace: true });
@@ -37,7 +39,7 @@ export default function Login() {
         <div className="relative min-h-[620px] overflow-hidden bg-black/35 p-8 max-md:min-h-0">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(232,184,115,0.2),transparent_24rem)]" />
           <div className="relative z-10 flex h-full flex-col justify-between">
-            <img src="/assets/logo.png" alt="MyAnime1996" className="logo-glow w-full max-w-xl" />
+            <img src={brandLogoSrc} alt="My Anime" className="logo-glow w-full max-w-xl" />
             <div>
               <p className="eyebrow mb-4">Desktop archive / local session</p>
               <h1 className="font-display text-4xl font-semibold uppercase leading-tight text-cream max-md:text-3xl">

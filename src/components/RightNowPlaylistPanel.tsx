@@ -281,11 +281,11 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
   };
 
   return (
-    <section className="space-y-3">
+    <section className="playlist-panel space-y-3">
       {activePlaylist ? (
         <div className="space-y-3">
           {isEditing ? (
-            <label className="advanced-search-field">
+            <label className="playlist-panel-edit-field advanced-search-field">
               <input
                 value={draftName}
                 onChange={(event) => setDraftName(event.currentTarget.value)}
@@ -294,12 +294,12 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
             </label>
           ) : null}
 
-          <div className="flex items-start gap-2.5">
+          <div className={`playlist-panel-meta-row flex items-start gap-2.5 ${isEditing ? 'is-editing' : ''}`}>
             <div className="shrink-0">
               <img
                 src={(isEditing ? draftImage : activePlaylist.image) || '/assets/logo.png'}
                 alt=""
-                className="h-20 w-16 border border-cream/14 object-cover"
+                className="playlist-panel-poster h-20 w-16 border border-cream/14 object-cover"
               />
               {isEditing ? (
                 <label className="vhs-button-ghost mt-1 inline-flex w-16 cursor-pointer items-center justify-center gap-1 px-1.5 py-1 text-[10px] retro-tooltip" data-tooltip="Upload Playlist Image">
@@ -312,7 +312,7 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
             <div className="min-w-0 flex-1 space-y-1.5">
               {isEditing ? (
                 <>
-                  <label className="advanced-search-field">
+                  <label className="playlist-panel-edit-field advanced-search-field">
                     <span>Playlist Type</span>
                     <select
                       value={draftType}
@@ -328,7 +328,7 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
                       </p>
                     ) : null}
                   </label>
-                  <label className="advanced-search-field">
+                  <label className="playlist-panel-edit-field advanced-search-field">
                     <span>Description</span>
                     <textarea
                       className="min-h-[92px] w-full resize-y border border-cream/20 bg-black/25 px-2 py-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/85 placeholder:text-cream/45 focus:border-amberline/55 focus:outline-none"
@@ -340,11 +340,11 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
                 </>
               ) : (
                 <>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-amberline/75">{activePlaylist.type} playlist</p>
+                  <p className="playlist-panel-label font-mono text-[10px] uppercase tracking-[0.1em] text-amberline/75">{activePlaylist.type} playlist</p>
                   {activePlaylist.description?.trim() ? (
-                    <p className="line-clamp-4 text-sm leading-5 text-cream/68">{activePlaylist.description}</p>
+                    <p className="playlist-panel-description line-clamp-4 text-sm leading-5 text-cream/68">{activePlaylist.description}</p>
                   ) : (
-                    <p className="text-xs uppercase tracking-[0.1em] text-cream/45">No description yet.</p>
+                    <p className="playlist-panel-description text-xs uppercase tracking-[0.1em] text-cream/45">No description yet.</p>
                   )}
                 </>
               )}
@@ -353,7 +353,7 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
 
           <div className="border-t border-cream/12 pt-2" />
 
-          <div className="space-y-1.5">
+          <div className={`playlist-panel-item-list space-y-1.5 ${isEditing ? 'is-editing' : ''}`}>
             {activePlaylist.type === 'anime'
               ? pagedAnimeIds.map((animeId) => {
                   const meta = animeMetaById.get(animeId) ?? resolvedAnimeMetaById[animeId];

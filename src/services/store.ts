@@ -24,6 +24,8 @@ type StoreShape = {
   rightPanelView: RightPanelView;
   rightPanelWidth: number;
   titleLanguage: TitleLanguage;
+  appTheme: 'myanime1996' | 'myanime2077';
+  lastAppTheme: 'myanime1996' | 'myanime2077';
   shuffleEnabled: boolean;
   repeatMode: 'off' | 'one';
   importedSourcePlugins: ImportedSourcePluginDefinition[];
@@ -81,6 +83,7 @@ type StoreShape = {
 const PROFILE_SCOPED_KEYS: ReadonlySet<keyof StoreShape> = new Set<keyof StoreShape>([
   'isSidebarCompact',
   'titleLanguage',
+  'appTheme',
   'shuffleEnabled',
   'repeatMode',
   'importedSourcePlugins',

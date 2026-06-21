@@ -870,10 +870,16 @@ export default function Home() {
   };
 
   return (
-    <div className="space-y-6 pb-4">
+    <div className="home-page space-y-6 pb-4">
       <section className="hero-scene hero-band relative overflow-hidden px-6 py-9">
         {featured?.banner && <img src={featured.banner} alt="" className="hero-retro-image absolute inset-0 h-full w-full object-cover opacity-[0.34]" />}
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0f0b09]/92 via-[#15100d]/84 to-[#1e160f]/40" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(90deg, color-mix(in srgb, var(--theme-overlay-a) 92%, transparent), color-mix(in srgb, var(--theme-overlay-b) 84%, transparent), color-mix(in srgb, var(--theme-overlay-c) 40%, transparent))',
+          }}
+        />
 
         <div className="hero-seeall-menu-slot">
           <HeroSeeAllMenu

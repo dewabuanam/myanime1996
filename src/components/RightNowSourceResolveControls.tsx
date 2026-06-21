@@ -50,7 +50,7 @@ export default function RightNowSourceResolveControls({
   }
 
   return (
-    <div className={`${showVideoOverlayControls ? 'right-now-full-overlay-row' : 'mt-2 flex flex-wrap items-center gap-1.5'}`}>
+    <div className={`source-resolve-controls ${showVideoOverlayControls ? 'right-now-full-overlay-row' : 'mt-2 flex flex-wrap items-center gap-1.5'}`}>
       <SourceSelectorField
         label="Source"
         ariaLabel="Choose source plugin preference"

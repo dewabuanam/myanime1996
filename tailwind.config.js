@@ -4,14 +4,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: '#1a1410',
-        carbon: '#231b16',
-        ember: '#d4a574',
-        amberline: '#e8b873',
-        rust: '#c65f4d',
-        cream: '#f5ead2',
-        brass: '#725b36',
-        greenVU: '#8fcf7b',
+        ink: 'rgb(var(--color-ink) / <alpha-value>)',
+        carbon: 'rgb(var(--color-carbon) / <alpha-value>)',
+        ember: 'rgb(var(--color-ember) / <alpha-value>)',
+        amberline: 'rgb(var(--color-amberline) / <alpha-value>)',
+        rust: 'rgb(var(--color-rust) / <alpha-value>)',
+        cream: 'rgb(var(--color-cream) / <alpha-value>)',
+        brass: 'rgb(var(--color-brass) / <alpha-value>)',
+        greenVU: 'rgb(var(--color-greenvu) / <alpha-value>)',
       },
       fontFamily: {
         display: ['Oswald', 'Bahnschrift', 'Arial Narrow', 'sans-serif'],

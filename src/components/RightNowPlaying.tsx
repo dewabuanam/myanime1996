@@ -1751,7 +1751,7 @@ export default function RightNowPlaying() {
               <div className="right-now-no-signal">
                 <div className="right-now-no-signal-crt" aria-hidden="true" />
                 <div className="right-now-no-signal-badge">
-                  <p className="right-now-no-signal-title">{sourcePlugins.length === 0 ? 'No Plugin Installed' : 'No Signal'}</p>
+                  <p className="right-now-no-signal-title">{sourcePlugins.length === 0 ? 'No Plugin Installed' : 'Signal Not Found'}</p>
                   <p className="right-now-no-signal-subtitle">
                     {sourcePlugins.length === 0
                       ? 'Open Plugins tab and import a plugin artifact from the plugin repository output.'
