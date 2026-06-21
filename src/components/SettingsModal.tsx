@@ -440,139 +440,145 @@ export default function SettingsModal() {
   }, [isSettingsOpen]);
 
   const actions = useMemo<SettingAction[]>(
-    () => [
-      {
-        id: 'base-source',
-        title: 'Base Source',
-        description: 'Choose the default catalog source and manage AnimeSchedule API token settings.',
-        actionLabel: 'Manage source',
-        onAction: async () => {
-          setStatusMessage('Base source settings are ready below.');
+    () => {
+      const next: SettingAction[] = [
+        {
+          id: 'base-source',
+          title: 'Base Source',
+          description: 'Use the default catalog source and manage AnimeSchedule API token settings.',
+          actionLabel: 'Manage source',
+          onAction: async () => {
+            setStatusMessage('Base source settings are ready below.');
+          },
         },
-      },
-      {
-        id: 'clear-cache',
-        title: 'Cache Data',
-        description: 'Remove cached Jikan/AnimeSchedule responses, plugin runtime cache, and source resolve cache to force fresh content on next load.',
-        actionLabel: 'Clear cache',
-        confirm: {
-          title: 'Clear cache data?',
-          message: 'This removes cached Jikan and AnimeSchedule data, plugin runtime cache, and source resolve cache. Your history, playlists, and settings stay unchanged.',
-          confirmLabel: 'Clear cache',
+        {
+          id: 'clear-cache',
+          title: 'Cache Data',
+          description: 'Remove cached Jikan/AnimeSchedule responses, plugin runtime cache, and source resolve cache to force fresh content on next load.',
+          actionLabel: 'Clear cache',
+          confirm: {
+            title: 'Clear cache data?',
+            message: 'This removes cached Jikan and AnimeSchedule data, plugin runtime cache, and source resolve cache. Your history, playlists, and settings stay unchanged.',
+            confirmLabel: 'Clear cache',
+          },
+          onAction: async () => {
+            await clearJikanCache();
+            setCacheSnapshot({});
+            setCacheViewerOpen(false);
+            setStatusMessage('Cache cleared.');
+          },
         },
-        onAction: async () => {
-          await clearJikanCache();
-          setCacheSnapshot({});
-          setCacheViewerOpen(false);
-          setStatusMessage('Cache cleared.');
+        {
+          id: 'anime-skip',
+          title: 'Anime Skip',
+          description: 'Toggle auto-skip for opening, ending, and recap segments during controllable playback.',
+          actionLabel: 'Manage anime skip',
+          onAction: async () => {
+            setStatusMessage('Anime Skip settings are ready below.');
+          },
         },
-      },
-      {
-        id: 'notifications',
-        title: 'Notifications',
-        description: 'Manage notification availability checks and saved available-episode state.',
-        actionLabel: 'Manage notifications',
-        onAction: async () => {
-          setStatusMessage('Notification controls are ready below.');
+        {
+          id: 'subtitle-style',
+          title: 'Subtitle Style',
+          description: 'Adjust subtitle font color, docked/expanded/fullscreen size, drop shadow, and background highlight.',
+          actionLabel: 'Manage subtitle style',
+          onAction: async () => {
+            setStatusMessage('Subtitle style settings are ready below.');
+          },
         },
-      },
-      {
-        id: 'anime-skip',
-        title: 'Anime Skip',
-        description: 'Toggle auto-skip for opening, ending, and recap segments during controllable playback.',
-        actionLabel: 'Manage anime skip',
-        onAction: async () => {
-          setStatusMessage('Anime Skip settings are ready below.');
-        },
-      },
-      {
-        id: 'subtitle-style',
-        title: 'Subtitle Style',
-        description: 'Adjust subtitle font color, docked/expanded/fullscreen size, drop shadow, and background highlight.',
-        actionLabel: 'Manage subtitle style',
-        onAction: async () => {
-          setStatusMessage('Subtitle style settings are ready below.');
-        },
-      },
-      {
-        id: 'export-json',
-        title: 'Export User Data (JSON)',
-        description: 'Save current profile, UI settings, watch data, and history as a JSON file.',
-        actionLabel: 'Export JSON',
-        onAction: async () => {
-          const payload = await exportUserData();
-          const stamp = new Date().toISOString().replace(/[.:]/g, '-');
-          const filePath = await save({
-            defaultPath: `myanime1996-user-export-${stamp}.json`,
-            filters: [
-              {
-                name: 'JSON',
-                extensions: ['json'],
-              },
-            ],
-          });
+        {
+          id: 'export-json',
+          title: 'Export User Data (JSON)',
+          description: 'Save current profile, UI settings, watch data, and history as a JSON file.',
+          actionLabel: 'Export JSON',
+          onAction: async () => {
+            const payload = await exportUserData();
+            const stamp = new Date().toISOString().replace(/[.:]/g, '-');
+            const filePath = await save({
+              defaultPath: `myanime1996-user-export-${stamp}.json`,
+              filters: [
+                {
+                  name: 'JSON',
+                  extensions: ['json'],
+                },
+              ],
+            });
 
-          if (!filePath) {
-            setStatusMessage('Export canceled.');
-            return;
-          }
+            if (!filePath) {
+              setStatusMessage('Export canceled.');
+              return;
+            }
 
-          await writeTextFile(filePath, JSON.stringify(payload, null, 2));
-          setStatusMessage('Export saved.');
+            await writeTextFile(filePath, JSON.stringify(payload, null, 2));
+            setStatusMessage('Export saved.');
+          },
         },
-      },
-      {
-        id: 'import-json',
-        title: 'Import User Data (JSON)',
-        description: 'Import profile settings, library, history, and notifications for the current user from a JSON export.',
-        actionLabel: 'Import JSON',
-        onAction: async () => {
-          const filePath = await open({
-            multiple: false,
-            filters: [
-              {
-                name: 'JSON',
-                extensions: ['json'],
-              },
-            ],
-          });
+        {
+          id: 'import-json',
+          title: 'Import User Data (JSON)',
+          description: 'Import profile settings, library, history, and notifications for the current user from a JSON export.',
+          actionLabel: 'Import JSON',
+          onAction: async () => {
+            const filePath = await open({
+              multiple: false,
+              filters: [
+                {
+                  name: 'JSON',
+                  extensions: ['json'],
+                },
+              ],
+            });
 
-          if (!filePath || Array.isArray(filePath)) {
-            setStatusMessage('Import canceled.');
-            return;
-          }
+            if (!filePath || Array.isArray(filePath)) {
+              setStatusMessage('Import canceled.');
+              return;
+            }
 
-          const raw = await readTextFile(filePath);
-          const payload = JSON.parse(raw) as unknown;
-          await importUserData(payload);
-          setStatusMessage('Import completed for current user.');
+            const raw = await readTextFile(filePath);
+            const payload = JSON.parse(raw) as unknown;
+            await importUserData(payload);
+            setStatusMessage('Import completed for current user.');
+          },
         },
-      },
-      {
-        id: 'factory-reset',
-        title: 'Factory Reset',
-        description: 'Reset UI settings, library data, and history while keeping the current login session.',
-        actionLabel: 'Reset now',
-        tone: 'danger',
-        confirm: {
-          title: 'Factory reset app data?',
-          message: 'This deletes user settings, library data, playlists, and history while keeping your current login session.',
-          confirmLabel: 'Reset all',
+        {
+          id: 'factory-reset',
+          title: 'Factory Reset',
+          description: 'Reset UI settings, library data, and history while keeping the current login session.',
+          actionLabel: 'Reset now',
+          tone: 'danger',
+          confirm: {
+            title: 'Factory reset app data?',
+            message: 'This deletes user settings, library data, playlists, and history while keeping your current login session.',
+            confirmLabel: 'Reset all',
+          },
+          onAction: async () => {
+            await factoryReset();
+            setProfilePopupOpen(false);
+            setSettingsOpen(false);
+          },
         },
-        onAction: async () => {
-          await factoryReset();
-          setProfilePopupOpen(false);
-          setSettingsOpen(false);
-        },
-      },
-    ],
+      ];
+
+      if (isDevMode) {
+        next.splice(2, 0, {
+          id: 'notifications',
+          title: 'Notifications',
+          description: 'Manage notification availability checks and saved available-episode state.',
+          actionLabel: 'Manage notifications',
+          onAction: async () => {
+            setStatusMessage('Notification controls are ready below.');
+          },
+        });
+      }
+
+      return next;
+    },
     [
       clearJikanCache,
       exportUserData,
       factoryReset,
       importUserData,
-      resetLibraryAvailableEpisodeState,
-      runLibraryEpisodeDailyCheck,
+      isDevMode,
       setProfilePopupOpen,
       setSettingsOpen,
     ],
@@ -688,7 +694,7 @@ export default function SettingsModal() {
 
                     <div className="space-y-2">
                       <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Catalog Source</p>
-                      <p className="rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream/80">AnimeSchedule (Default)</p>
+                      <p className="rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream/80">Default</p>
                     </div>
 
                     <div className="space-y-3 rounded-xl border border-amberline/30 bg-[linear-gradient(135deg,rgba(54,36,23,0.42),rgba(10,8,6,0.5))] p-3">
@@ -867,15 +873,17 @@ export default function SettingsModal() {
                         <Trash2 size={14} />
                         {busyActionId === selectedAction.id ? 'Working...' : selectedAction.actionLabel}
                       </button>
-                      <button
-                        type="button"
-                        className="settings-action-btn retro-tooltip"
-                        onClick={() => void openCacheViewer()}
-                        disabled={cacheViewerLoading}
-                        data-tooltip={cacheViewerLoading ? 'Loading cache data' : 'Show Cache Data'}
-                      >
-                        {cacheViewerLoading ? 'Loading...' : 'Show Cache Data'}
-                      </button>
+                      {isDevMode ? (
+                        <button
+                          type="button"
+                          className="settings-action-btn retro-tooltip"
+                          onClick={() => void openCacheViewer()}
+                          disabled={cacheViewerLoading}
+                          data-tooltip={cacheViewerLoading ? 'Loading cache data' : 'Show Cache Data'}
+                        >
+                          {cacheViewerLoading ? 'Loading...' : 'Show Cache Data'}
+                        </button>
+                      ) : null}
                     </div>
                   </article>
                 ) : selectedAction.id === 'notifications' ? (
