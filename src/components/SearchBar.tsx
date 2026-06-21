@@ -6,9 +6,10 @@ interface SearchBarProps {
   onChange: (value: string) => void;
   onSubmit: () => void;
   placeholder?: string;
+  onFocus?: () => void;
 }
 
-export default function SearchBar({ value, onChange, onSubmit, placeholder = 'Search the archive...' }: SearchBarProps) {
+export default function SearchBar({ value, onChange, onSubmit, placeholder = 'Search the archive...', onFocus }: SearchBarProps) {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     onSubmit();
@@ -20,6 +21,7 @@ export default function SearchBar({ value, onChange, onSubmit, placeholder = 'Se
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onFocus={onFocus}
         placeholder={placeholder}
         className="w-full bg-transparent font-mono text-sm tracking-[0.01em] text-cream outline-none placeholder:text-cream/35"
       />

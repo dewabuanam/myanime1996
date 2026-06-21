@@ -5,6 +5,9 @@ import { useEffect, useState, useRef, type MouseEvent as ReactMouseEvent } from 
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../state/appStore';
+import SearchDropdown from './SearchDropdown';
+import AdvancedSearchModal from './AdvancedSearchModal';
+import { useAnimeSearch } from '../hooks/useAnimeSearch';
 
 const DRAG_START_DISTANCE_PX = 4;
 
@@ -12,6 +15,7 @@ export default function TopNavigation() {
   const navigate = useNavigate();
   const session = useAppStore((state) => state.session);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
+  const allowNsfw = useAppStore((state) => state.allowNsfw);
   const toggleTitleLanguage = useAppStore((state) => state.toggleTitleLanguage);
   const isProfilePopupOpen = useAppStore((state) => state.isProfilePopupOpen);
   const setProfilePopupOpen = useAppStore((state) => state.setProfilePopupOpen);
@@ -25,9 +29,30 @@ export default function TopNavigation() {
   const profilePopupRef = useRef<HTMLDivElement | null>(null);
   const notificationButtonRef = useRef<HTMLButtonElement | null>(null);
   const notificationPopupRef = useRef<HTMLDivElement | null>(null);
+  const topSearchRef = useRef<HTMLLabelElement | null>(null);
   const [profilePopupPosition, setProfilePopupPosition] = useState({ top: 64, left: 0 });
   const [notificationPopupPosition, setNotificationPopupPosition] = useState({ top: 64, left: 0 });
   const [isNotificationPopupOpen, setNotificationPopupOpen] = useState(false);
+  const [isSearchOpen, setSearchOpen] = useState(false);
+  const [isAdvancedOpen, setAdvancedOpen] = useState(false);
+
+  const {
+    query,
+    setQuery,
+    loading,
+    recentSearches,
+    clearRecent,
+    previewResults,
+    keywordSuggestions,
+    submitCurrentQuery,
+    runAdvancedSearch,
+    genreBuckets,
+    producerQuery,
+    setProducerQuery,
+    producerResults,
+    selectedProducerIds,
+    toggleProducer,
+  } = useAnimeSearch();
 
   const unreadNotificationCount = notifications.filter((item) => !item.read).length;
   const topNotifications = [...notifications]
@@ -221,12 +246,32 @@ export default function TopNavigation() {
         <ChevronRight size={16} />
       </button>
 
-      <label className="top-search ml-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-full px-3 py-2" data-tauri-drag-region="false">
+
+      <label ref={topSearchRef} className="top-search ml-1 flex min-w-0 flex-1 items-center gap-2.5 rounded-full px-3 py-2" data-tauri-drag-region="false">
         <Search size={15} className="text-amberline/80" />
         <input
           type="text"
           placeholder="Search anime, movies, genres..."
           className="w-full bg-transparent text-sm text-cream/88 outline-none placeholder:text-cream/35"
+          value={query}
+          onFocus={() => setSearchOpen(true)}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setSearchOpen(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void submitCurrentQuery().then(() => {
+                const next = new URLSearchParams();
+                next.set('q', query.trim());
+                next.set('page', '1');
+                next.set('limit', '24');
+                navigate(`/search/results?${next.toString()}`);
+                setSearchOpen(false);
+              });
+            }
+          }}
         />
       </label>
 
@@ -379,6 +424,75 @@ export default function TopNavigation() {
           </div>,
           document.body,
         )}
+
+      <SearchDropdown
+        anchorRef={topSearchRef}
+        open={isSearchOpen && !isAdvancedOpen}
+        query={query}
+        loading={loading}
+        keywords={keywordSuggestions}
+        results={previewResults}
+        recentSearches={recentSearches}
+        titleLanguage={titleLanguage}
+        onClose={() => setSearchOpen(false)}
+        onPickQuery={(value) => {
+          setQuery(value);
+          setSearchOpen(true);
+        }}
+        onClearRecent={() => {
+          void clearRecent();
+        }}
+        onSubmitCurrentQuery={() => {
+          void submitCurrentQuery().then(() => {
+            const next = new URLSearchParams();
+            next.set('q', query.trim());
+            next.set('page', '1');
+            next.set('limit', '24');
+            navigate(`/search/results?${next.toString()}`);
+            setSearchOpen(false);
+          });
+        }}
+        onOpenAdvanced={() => {
+          setAdvancedOpen(true);
+          setSearchOpen(false);
+        }}
+      />
+
+      <AdvancedSearchModal
+        open={isAdvancedOpen}
+        query={query}
+        allowNsfw={allowNsfw}
+        genres={genreBuckets.genres}
+        themes={genreBuckets.themes}
+        demographics={genreBuckets.demographics}
+        explicitGenres={genreBuckets.explicitGenres}
+        producerResults={producerResults}
+        selectedProducerIds={selectedProducerIds}
+        producerQuery={producerQuery}
+        onClose={() => setAdvancedOpen(false)}
+        onProducerQueryChange={setProducerQuery}
+        onToggleProducer={toggleProducer}
+        onSubmit={(payload) => {
+          void runAdvancedSearch(payload).then(() => {
+            const next = new URLSearchParams();
+            next.set('q', payload.q);
+            if (payload.type) next.set('type', payload.type);
+            if (payload.status) next.set('status', payload.status);
+            if (payload.rating) next.set('rating', payload.rating);
+            if (payload.order_by) next.set('order_by', payload.order_by);
+            if (payload.sort) next.set('sort', payload.sort);
+            if (payload.min_score !== undefined) next.set('min_score', String(payload.min_score));
+            if (payload.max_score !== undefined) next.set('max_score', String(payload.max_score));
+            if (payload.genres?.length) next.set('genres', payload.genres.join(','));
+            if (payload.genres_exclude?.length) next.set('genres_exclude', payload.genres_exclude.join(','));
+            if (payload.producers?.length) next.set('producers', payload.producers.join(','));
+            next.set('page', '1');
+            next.set('limit', '24');
+            navigate(`/search/results?${next.toString()}`);
+            setAdvancedOpen(false);
+          });
+        }}
+      />
     </div>
   );
 }

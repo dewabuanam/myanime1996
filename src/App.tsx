@@ -9,6 +9,8 @@ import Library from './pages/Library';
 import Login from './pages/Login';
 import FullscreenPlayback from './pages/FullscreenPlayback';
 import Notifications from './pages/Notifications';
+import Search from './pages/Search';
+import SearchResults from './pages/SearchResults';
 import SeeAll from './pages/SeeAll';
 import { useAppStore } from './state/appStore';
 
@@ -77,6 +79,8 @@ export default function App() {
         <Route path="/anime/:id" element={<AnimeDetail />} />
         <Route path="/history" element={<History />} />
         <Route path="/notifications" element={<Notifications />} />
+        <Route path="/search" element={<Search />} />
+        <Route path="/search/results" element={<SearchResults />} />
         <Route path="/see-all/:type" element={<SeeAll />} />
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />

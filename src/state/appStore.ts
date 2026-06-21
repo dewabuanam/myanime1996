@@ -32,6 +32,7 @@ import { getAvailableSourcePlugins, getDefaultPluginPriority } from '../services
 import { clearSourceResolveCache } from '../services/sourceCache';
 import { clearAniSkipDataCache } from '../services/aniSkip';
 import { clearPluginResolverCaches } from '../services/pluginExecutor';
+import { clearSearchFilterCaches } from '../services/searchStorage';
 
 const WATCH_HISTORY_PROFILE_KEY = 'watchHistoryByProfile';
 const WATCH_PROGRESS_PROFILE_KEY = 'watchProgressByProfile';
@@ -2966,7 +2967,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setAllowNsfw: async (enabled) => {
     const next = Boolean(enabled);
-    await setStoredValue('allowNsfw', next);
+    await Promise.all([
+      setStoredValue('allowNsfw', next),
+      clearSearchFilterCaches(),
+    ]);
     set({ allowNsfw: next, homeRefreshVersion: get().homeRefreshVersion + 1 });
   },
 
@@ -3213,6 +3217,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       clearAnimeScheduleDataCache(),
       clearSourceResolveCache(),
       clearAniSkipDataCache(),
+      clearSearchFilterCaches(),
     ]);
     set({ homeRefreshVersion: get().homeRefreshVersion + 1 });
   },

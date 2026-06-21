@@ -36,6 +36,87 @@ type TopAnimeFilter = 'bypopularity' | 'upcoming' | 'airing';
 
 type UpcomingSeasonFilter = 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
 
+export type AnimeSearchQueryType = 'TV' | 'OVA' | 'Movie' | 'Special' | 'ONA' | 'Music' | 'CM' | 'PV' | 'TV Special';
+export type AnimeSearchQueryStatus = 'airing' | 'complete' | 'upcoming';
+export type AnimeSearchQueryRating = 'g' | 'pg' | 'pg13' | 'r17' | 'r' | 'rx';
+export type AnimeSearchQueryOrderBy =
+  | 'mal_id'
+  | 'title'
+  | 'start_date'
+  | 'end_date'
+  | 'episodes'
+  | 'score'
+  | 'scored_by'
+  | 'rank'
+  | 'popularity'
+  | 'members'
+  | 'favorites';
+export type SearchQuerySort = 'desc' | 'asc';
+export type AnimeGenreFilterType = 'genres' | 'explicit_genres' | 'themes' | 'demographics';
+export type ProducerOrderBy = 'mal_id' | 'count' | 'favorites' | 'established';
+
+export type AnimeSearchQuery = {
+  q: string;
+  unapproved?: boolean;
+  page?: number;
+  limit?: number;
+  type?: AnimeSearchQueryType;
+  score?: number;
+  min_score?: number;
+  max_score?: number;
+  status?: AnimeSearchQueryStatus;
+  rating?: AnimeSearchQueryRating;
+  sfw?: boolean;
+  genres?: number[];
+  genres_exclude?: number[];
+  order_by?: AnimeSearchQueryOrderBy;
+  sort?: SearchQuerySort;
+  letter?: string;
+  producers?: number[];
+  start_date?: string;
+  end_date?: string;
+};
+
+export type AnimeSearchResult = {
+  data: AnimeSummary[];
+  pagination: {
+    currentPage: number;
+    lastVisiblePage: number;
+    hasNextPage: boolean;
+  };
+};
+
+export type AnimeGenre = {
+  mal_id: number;
+  name: string;
+  count: number;
+};
+
+export type ProducerSummary = {
+  mal_id: number;
+  title: string;
+  favorites?: number;
+  count?: number;
+};
+
+export type ProducerSearchQuery = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  order_by?: ProducerOrderBy;
+  sort?: SearchQuerySort;
+  letter?: string;
+};
+
+export type ProducerSearchResult = {
+  data: ProducerSummary[];
+  pagination: {
+    currentPage: number;
+    lastVisiblePage: number;
+    hasNextPage: boolean;
+  };
+};
+
 type HomeRefreshCallbacks = {
   onSeasonal?: (value: AnimeSummary[]) => void;
   onPopular?: (value: AnimeSummary[]) => void;
@@ -132,7 +213,9 @@ export async function clearJikanDataCache() {
 }
 
 interface JikanNamedResource {
+  mal_id?: number;
   name: string;
+  count?: number;
 }
 
 interface JikanTitleVariant {
@@ -157,6 +240,10 @@ interface JikanAnime {
   status?: string;
   studios?: JikanNamedResource[];
   genres?: JikanNamedResource[];
+  explicit_genres?: JikanNamedResource[];
+  themes?: JikanNamedResource[];
+  demographics?: JikanNamedResource[];
+  producers?: JikanNamedResource[];
   rating?: string;
   duration?: string;
   source?: string;
@@ -176,6 +263,26 @@ interface JikanPagedListResponse extends JikanListResponse {
     last_visible_page?: number;
     has_next_page?: boolean;
     current_page?: number;
+  };
+}
+
+interface JikanGenresResponse {
+  data: JikanNamedResource[];
+}
+
+interface JikanProducer {
+  mal_id: number;
+  titles?: Array<{ title?: string; type?: string }>;
+  favorites?: number;
+  count?: number;
+}
+
+interface JikanProducerListResponse {
+  data: JikanProducer[];
+  pagination?: {
+    current_page?: number;
+    last_visible_page?: number;
+    has_next_page?: boolean;
   };
 }
 
@@ -477,6 +584,11 @@ function normalizeAnime(anime: JikanAnime): AnimeSummary {
 }
 
 function normalizeDetail(anime: JikanAnime): AnimeDetail {
+  const toTaxonomyItems = (items?: JikanNamedResource[]) =>
+    (items ?? [])
+      .filter((item) => typeof item.mal_id === 'number' && item.mal_id > 0 && typeof item.name === 'string' && item.name.trim().length > 0)
+      .map((item) => ({ id: Math.floor(item.mal_id as number), name: item.name.trim() }));
+
   return {
     ...normalizeAnime(anime),
     rating: anime.rating,
@@ -486,6 +598,11 @@ function normalizeDetail(anime: JikanAnime): AnimeDetail {
     popularity: anime.popularity,
     members: anime.members,
     aired: anime.aired?.string,
+    genreItems: toTaxonomyItems(anime.genres),
+    explicitGenreItems: toTaxonomyItems(anime.explicit_genres),
+    themeItems: toTaxonomyItems(anime.themes),
+    demographicItems: toTaxonomyItems(anime.demographics),
+    producerItems: toTaxonomyItems(anime.producers),
   };
 }
 
@@ -971,13 +1088,91 @@ export async function getTopUpcomingAnime(limit = 10, options?: CacheFetchOption
 }
 
 export async function searchAnime(query: string) {
+  const results = await searchAnimeWithQuery({ q: query.trim(), limit: 16 });
+  return results.data;
+}
+
+export async function searchAnimeWithQuery(query: AnimeSearchQuery): Promise<AnimeSearchResult> {
   const prefs = await readGlobalCatalogContentPrefs();
-  const encoded = encodeURIComponent(query.trim());
-  const path = withJikanContentFlags(`/anime?q=${encoded}`, { allowNsfw: prefs.allowNsfw, limit: 16 });
-  return cachedAnimeListFetch(path, HOUR, (json) =>
-    (json as JikanListResponse).data.map(normalizeAnime),
-    { cacheContext: `search:${encoded}`, useDailyCacheKey: true },
-  ).catch(() => []);
+  const normalizedQuery = query.q.trim();
+  const hasFilterCriteria = Boolean(
+    query.type ||
+    query.status ||
+    query.rating ||
+    query.order_by ||
+    query.sort ||
+    query.letter?.trim() ||
+    query.start_date ||
+    query.end_date ||
+    (query.genres && query.genres.length > 0) ||
+    (query.genres_exclude && query.genres_exclude.length > 0) ||
+    (query.producers && query.producers.length > 0) ||
+    (typeof query.min_score === 'number' && Number.isFinite(query.min_score)) ||
+    (typeof query.max_score === 'number' && Number.isFinite(query.max_score)) ||
+    (typeof query.score === 'number' && Number.isFinite(query.score))
+  );
+
+  if (!normalizedQuery && !hasFilterCriteria) {
+    return {
+      data: [],
+      pagination: {
+        currentPage: 1,
+        lastVisiblePage: 1,
+        hasNextPage: false,
+      },
+    };
+  }
+
+  const params = new URLSearchParams();
+  if (normalizedQuery) params.set('q', normalizedQuery);
+  if (typeof query.page === 'number' && Number.isFinite(query.page)) {
+    params.set('page', String(Math.max(1, Math.floor(query.page))));
+  }
+  if (typeof query.limit === 'number' && Number.isFinite(query.limit)) {
+    params.set('limit', String(Math.max(1, Math.floor(query.limit))));
+  }
+  if (query.type) params.set('type', query.type);
+  if (typeof query.score === 'number' && Number.isFinite(query.score)) params.set('score', String(query.score));
+  if (typeof query.min_score === 'number' && Number.isFinite(query.min_score)) params.set('min_score', String(query.min_score));
+  if (typeof query.max_score === 'number' && Number.isFinite(query.max_score)) params.set('max_score', String(query.max_score));
+  if (query.status) params.set('status', query.status);
+  if (query.rating) params.set('rating', query.rating);
+  if (query.order_by) params.set('order_by', query.order_by);
+  if (query.sort) params.set('sort', query.sort);
+  if (query.letter) params.set('letter', query.letter.trim());
+  if (query.start_date) params.set('start_date', query.start_date);
+  if (query.end_date) params.set('end_date', query.end_date);
+  if (query.unapproved) params.set('unapproved', 'true');
+  if (query.genres && query.genres.length > 0) params.set('genres', query.genres.join(','));
+  if (query.genres_exclude && query.genres_exclude.length > 0) params.set('genres_exclude', query.genres_exclude.join(','));
+  if (query.producers && query.producers.length > 0) params.set('producers', query.producers.join(','));
+
+  const effectiveAllowNsfw = query.sfw === true ? false : prefs.allowNsfw;
+  const path = withJikanContentFlags(`/anime?${params.toString()}`, {
+    allowNsfw: effectiveAllowNsfw,
+  });
+
+  return cachedFetch(path, HOUR, (json) => {
+    const payload = json as JikanPagedListResponse;
+    return {
+      data: (payload.data ?? []).map(normalizeAnime),
+      pagination: {
+        currentPage: payload.pagination?.current_page ?? 1,
+        lastVisiblePage: payload.pagination?.last_visible_page ?? 1,
+        hasNextPage: payload.pagination?.has_next_page === true,
+      },
+    };
+  }, {
+    cacheContext: `search-advanced:${params.toString()}`,
+    useDailyCacheKey: true,
+  }).catch(() => ({
+    data: [],
+    pagination: {
+      currentPage: 1,
+      lastVisiblePage: 1,
+      hasNextPage: false,
+    },
+  }));
 }
 
 export function getAnimeDetails(id: string | number) {
@@ -1070,10 +1265,63 @@ export function getAnimeEpisodeById(id: string | number, episode: number) {
     } as AnimeEpisode));
 }
 
-export function getAnimeGenres() {
-  return cachedFetch('/genres/anime', 24 * HOUR, (json) =>
-    (json as { data: JikanNamedResource[] }).data.map((genre) => genre.name),
-  );
+export function getAnimeGenres(filter: AnimeGenreFilterType = 'genres') {
+  return cachedFetch(`/genres/anime?filter=${encodeURIComponent(filter)}`, 24 * HOUR, (json) =>
+    (json as JikanGenresResponse).data.map((genre) => ({
+      mal_id: genre.mal_id ?? 0,
+      name: genre.name,
+      count: genre.count ?? 0,
+    })),
+    {
+      cacheContext: `genres:${filter}`,
+      useDailyCacheKey: true,
+    },
+  ).catch(() => []);
+}
+
+function normalizeProducer(entry: JikanProducer): ProducerSummary {
+  const fromTitles = (entry.titles ?? [])
+    .map((titleEntry) => titleEntry.title?.trim() ?? '')
+    .find((title) => title.length > 0);
+  return {
+    mal_id: entry.mal_id,
+    title: fromTitles || `Producer ${entry.mal_id}`,
+    favorites: entry.favorites,
+    count: entry.count,
+  };
+}
+
+export function searchProducers(query: ProducerSearchQuery = {}): Promise<ProducerSearchResult> {
+  const params = new URLSearchParams();
+  if (typeof query.page === 'number' && Number.isFinite(query.page)) params.set('page', String(Math.max(1, Math.floor(query.page))));
+  if (typeof query.limit === 'number' && Number.isFinite(query.limit)) params.set('limit', String(Math.max(1, Math.floor(query.limit))));
+  if (query.q?.trim()) params.set('q', query.q.trim());
+  if (query.order_by) params.set('order_by', query.order_by);
+  if (query.sort) params.set('sort', query.sort);
+  if (query.letter?.trim()) params.set('letter', query.letter.trim());
+
+  const path = `/producers${params.toString() ? `?${params.toString()}` : ''}`;
+  return cachedFetch(path, 12 * HOUR, (json) => {
+    const payload = json as JikanProducerListResponse;
+    return {
+      data: (payload.data ?? []).map(normalizeProducer),
+      pagination: {
+        currentPage: payload.pagination?.current_page ?? 1,
+        lastVisiblePage: payload.pagination?.last_visible_page ?? 1,
+        hasNextPage: payload.pagination?.has_next_page === true,
+      },
+    };
+  }, {
+    cacheContext: `producers:${params.toString()}`,
+    useDailyCacheKey: true,
+  }).catch(() => ({
+    data: [],
+    pagination: {
+      currentPage: 1,
+      lastVisiblePage: 1,
+      hasNextPage: false,
+    },
+  }));
 }
 
 export async function refreshHomeShelvesIfNeeded(limit = 20, callbacks: HomeRefreshCallbacks = {}) {

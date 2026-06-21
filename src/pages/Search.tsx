@@ -1,24 +1,45 @@
-import { useState } from 'react';
-import AnimeCard from '../components/AnimeCard';
+import { useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import AdvancedSearchModal from '../components/AdvancedSearchModal';
 import SearchBar from '../components/SearchBar';
-import { searchAnime } from '../services/catalogSource';
-import type { AnimeSummary } from '../types/anime';
+import SearchDropdown from '../components/SearchDropdown';
+import { useAnimeSearch } from '../hooks/useAnimeSearch';
+import { useAppStore } from '../state/appStore';
 
 export default function Search() {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<AnimeSummary[]>([]);
-  const [status, setStatus] = useState('Enter a title and scan the active source catalog.');
+  const navigate = useNavigate();
+  const titleLanguage = useAppStore((state) => state.titleLanguage);
+  const allowNsfw = useAppStore((state) => state.allowNsfw);
+  const searchAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [isSearchOpen, setSearchOpen] = useState(false);
+  const [isAdvancedOpen, setAdvancedOpen] = useState(false);
+  const {
+    query,
+    setQuery,
+    loading,
+    recentSearches,
+    clearRecent,
+    previewResults,
+    keywordSuggestions,
+    submitCurrentQuery,
+    runAdvancedSearch,
+    genreBuckets,
+    producerQuery,
+    setProducerQuery,
+    producerResults,
+    selectedProducerIds,
+    toggleProducer,
+  } = useAnimeSearch();
 
   const handleSearch = async () => {
     if (!query.trim()) return;
-    setStatus('Tracking search signal...');
-    try {
-      const data = await searchAnime(query);
-      setResults(data);
-      setStatus(data.length ? `${data.length} tapes found.` : 'No tapes found on this frequency.');
-    } catch {
-      setStatus('Search failed. The active source may be rate limiting requests.');
-    }
+    await submitCurrentQuery();
+    const next = new URLSearchParams();
+    next.set('q', query.trim());
+    next.set('page', '1');
+    next.set('limit', '24');
+    navigate(`/search/results?${next.toString()}`);
+    setSearchOpen(false);
   };
 
   return (
@@ -27,11 +48,83 @@ export default function Search() {
         <p className="eyebrow">Archive scanner</p>
         <h1 className="section-title">Search</h1>
       </div>
-      <SearchBar value={query} onChange={setQuery} onSubmit={handleSearch} />
-      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-cream/50">{status}</p>
-      <div className="grid grid-cols-4 gap-4 max-2xl:grid-cols-3 max-xl:grid-cols-2 max-sm:grid-cols-1">
-        {results.map((anime) => <AnimeCard key={anime.id} anime={anime} />)}
+      <div ref={searchAnchorRef}>
+        <SearchBar
+          value={query}
+          onChange={(value) => {
+            setQuery(value);
+            setSearchOpen(true);
+          }}
+          onSubmit={handleSearch}
+          onFocus={() => setSearchOpen(true)}
+        />
       </div>
+
+      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-cream/50">
+        {loading ? 'Scanning signal...' : 'Type a title and wait 3 seconds for quick results.'}
+      </p>
+
+      <SearchDropdown
+        anchorRef={searchAnchorRef}
+        open={isSearchOpen && !isAdvancedOpen}
+        query={query}
+        loading={loading}
+        keywords={keywordSuggestions}
+        results={previewResults}
+        recentSearches={recentSearches}
+        titleLanguage={titleLanguage}
+        onClose={() => setSearchOpen(false)}
+        onPickQuery={(value) => {
+          setQuery(value);
+          setSearchOpen(true);
+        }}
+        onClearRecent={() => {
+          void clearRecent();
+        }}
+        onSubmitCurrentQuery={() => {
+          void handleSearch();
+        }}
+        onOpenAdvanced={() => {
+          setAdvancedOpen(true);
+          setSearchOpen(false);
+        }}
+      />
+
+      <AdvancedSearchModal
+        open={isAdvancedOpen}
+        query={query}
+        allowNsfw={allowNsfw}
+        genres={genreBuckets.genres}
+        themes={genreBuckets.themes}
+        demographics={genreBuckets.demographics}
+        explicitGenres={genreBuckets.explicitGenres}
+        producerResults={producerResults}
+        selectedProducerIds={selectedProducerIds}
+        producerQuery={producerQuery}
+        onClose={() => setAdvancedOpen(false)}
+        onProducerQueryChange={setProducerQuery}
+        onToggleProducer={toggleProducer}
+        onSubmit={(payload) => {
+          void runAdvancedSearch(payload).then(() => {
+            const next = new URLSearchParams();
+            next.set('q', payload.q);
+            if (payload.type) next.set('type', payload.type);
+            if (payload.status) next.set('status', payload.status);
+            if (payload.rating) next.set('rating', payload.rating);
+            if (payload.order_by) next.set('order_by', payload.order_by);
+            if (payload.sort) next.set('sort', payload.sort);
+            if (payload.min_score !== undefined) next.set('min_score', String(payload.min_score));
+            if (payload.max_score !== undefined) next.set('max_score', String(payload.max_score));
+            if (payload.genres?.length) next.set('genres', payload.genres.join(','));
+            if (payload.genres_exclude?.length) next.set('genres_exclude', payload.genres_exclude.join(','));
+            if (payload.producers?.length) next.set('producers', payload.producers.join(','));
+            next.set('page', '1');
+            next.set('limit', '24');
+            navigate(`/search/results?${next.toString()}`);
+            setAdvancedOpen(false);
+          });
+        }}
+      />
     </div>
   );
 }

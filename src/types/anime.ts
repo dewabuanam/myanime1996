@@ -5,6 +5,11 @@ export type PlayableKind = 'episode' | 'movie' | 'ova' | 'ona' | 'special' | 'tr
 export type PlayableSourceKind = 'anime-card' | 'episode-card' | 'trailer-card';
 export type LibraryStatus = 'plan-to-watch' | 'watching' | 'on-hold' | 'dropped' | 'completed';
 
+export interface AnimeTaxonomyItem {
+  id: number;
+  name: string;
+}
+
 export interface UserSession {
   mode: SessionMode;
   id: string;
@@ -64,6 +69,11 @@ export interface AnimeDetail extends AnimeSummary {
   rank?: number;
   popularity?: number;
   aired?: string;
+  genreItems?: AnimeTaxonomyItem[];
+  explicitGenreItems?: AnimeTaxonomyItem[];
+  themeItems?: AnimeTaxonomyItem[];
+  demographicItems?: AnimeTaxonomyItem[];
+  producerItems?: AnimeTaxonomyItem[];
 }
 
 export interface AnimeEpisode {
@@ -155,4 +165,22 @@ export interface CachedPayload<T> {
   value: T;
   expiresAt: number;
   savedAt: number;
+}
+
+export interface RecentSearchEntry {
+  query: string;
+  updatedAt: string;
+}
+
+export interface SearchGenreCacheEntry {
+  malId: number;
+  name: string;
+  count: number;
+}
+
+export interface SearchProducerCacheEntry {
+  malId: number;
+  title: string;
+  favorites?: number;
+  count?: number;
 }

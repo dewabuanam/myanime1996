@@ -1,6 +1,6 @@
 import { CalendarDays, Clapperboard, Clock3, Flame, ListPlus, Play, Star, Trophy } from 'lucide-react';
 import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
 import { FALLBACK_PAGE_SIZE, getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
@@ -37,6 +37,7 @@ function formatAired(aired?: string) {
 }
 
 export default function AnimeDetail() {
+  const navigate = useNavigate();
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const [anime, setAnime] = useState<AnimeDetailType | null>(null);
@@ -58,6 +59,7 @@ export default function AnimeDetail() {
   const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
   const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
+  const allowNsfw = useAppStore((state) => state.allowNsfw);
   const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
   const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
   const seasonMeta = useMemo(() => (anime ? resolveAnimeSeason(anime) : null), [anime]);
@@ -66,6 +68,53 @@ export default function AnimeDetail() {
     () => (anime ? getLibraryStatusForAnime(anime.id, anime.jikanId) : null),
     [anime, getLibraryStatusForAnime],
   );
+
+  const navigateToTaxonomySearch = (kind: 'genre' | 'producer', name: string, id?: number) => {
+    const normalizedName = name.trim();
+    if (!normalizedName) return;
+    const nextParams = new URLSearchParams();
+    if (kind === 'genre' && id && id > 0) {
+      nextParams.set('genres', String(id));
+    } else if (kind === 'genre') {
+      nextParams.set('q', normalizedName);
+    }
+    if (kind === 'producer' && id && id > 0) {
+      nextParams.set('producers', String(id));
+    } else if (kind === 'producer') {
+      nextParams.set('q', normalizedName);
+    }
+    if (!allowNsfw) {
+      nextParams.set('sfw', 'true');
+    }
+    nextParams.set('page', '1');
+    nextParams.set('limit', '24');
+    navigate(`/search/results?${nextParams.toString()}`);
+  };
+
+  const renderTaxonomySection = (
+    label: string,
+    items: Array<{ id: number; name: string }>,
+    kind: 'genre' | 'producer',
+  ) => {
+    if (!items.length) return null;
+    return (
+      <div className="mt-3">
+        <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/58">{label}</p>
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <button
+              key={`${label}-${item.id}-${item.name}`}
+              type="button"
+              className="border border-cream/15 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-cream/60 transition-colors hover:border-amberline/45 hover:text-amberline"
+              onClick={() => navigateToTaxonomySearch(kind, item.name, item.id)}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   const queryEpisode = useMemo(() => {
     const raw = Number(searchParams.get('episode'));
@@ -155,11 +204,11 @@ export default function AnimeDetail() {
 
   return (
     <div className="space-y-5">
-      <section className="app-card grid grid-cols-[270px_1fr] gap-5 overflow-hidden p-5 max-lg:grid-cols-1">
-        <div className="relative aspect-[3/4] overflow-hidden rounded-2xl bg-black/50">
+      <section className="seeall-row-card app-card grid grid-cols-[270px_1fr] gap-5 overflow-hidden p-5 max-lg:grid-cols-1">
+        <div className="relative aspect-[3/4] overflow-hidden bg-black/50 border border-cream/15">
           <img src={anime.image} alt="" className="h-full w-full object-cover" />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-          <p className="absolute left-3 top-3 rounded-full bg-ink/82 px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-amberline">
+          <p className="absolute left-3 top-3 border border-cream/22 bg-ink/82 px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-amberline">
             #{anime.id}
           </p>
         </div>
@@ -170,36 +219,34 @@ export default function AnimeDetail() {
           {anime.titleJapanese ? <p className="anime-card-jp mt-1.5 line-clamp-1">{anime.titleJapanese}</p> : null}
 
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Score">
+            <span className="inline-flex items-center gap-1.5 border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Score">
               <Star size={12} className="text-amberline" /> {anime.score?.toFixed(1) ?? 'N/A'}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Total Episodes">
+            <span className="inline-flex items-center gap-1.5 border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Total Episodes">
               <Clapperboard size={12} className="text-amberline" /> {episodeTotalLabel}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Broadcast Year">
+            <span className="inline-flex items-center gap-1.5 border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Broadcast Year">
               <CalendarDays size={12} className="text-amberline" /> {anime.year ?? 'TBA'}
             </span>
             {seasonMeta ? <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="full" showLabel /> : null}
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Episode Duration">
+            <span className="inline-flex items-center gap-1.5 border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Episode Duration">
               <Clock3 size={12} className="text-amberline" /> {anime.duration || formatDuration(anime.durationMinutes)}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Popularity Rank">
+            <span className="inline-flex items-center gap-1.5 border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Popularity Rank">
               <Flame size={12} className="text-amberline" /> {anime.popularity ? `#${anime.popularity}` : 'N/A'}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Site Rank">
+            <span className="inline-flex items-center gap-1.5 border border-cream/20 px-2.5 py-1 text-xs text-cream/78 retro-tooltip" data-tooltip="Site Rank">
               <Trophy size={12} className="text-amberline" /> {anime.rank ? `#${anime.rank}` : 'N/A'}
             </span>
           </div>
 
           <p className="mt-4 text-sm leading-6 text-cream/70">{anime.synopsis}</p>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {anime.genres.map((genre) => (
-              <span key={genre} className="rounded-full border border-cream/15 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.12em] text-cream/60">
-                {genre}
-              </span>
-            ))}
-          </div>
+          {renderTaxonomySection('Genres', anime.genreItems ?? anime.genres.map((name) => ({ id: 0, name })), 'genre')}
+          {allowNsfw ? renderTaxonomySection('Explicit Genres', anime.explicitGenreItems ?? [], 'genre') : null}
+          {renderTaxonomySection('Themes', anime.themeItems ?? [], 'genre')}
+          {renderTaxonomySection('Demographics', anime.demographicItems ?? [], 'genre')}
+          {renderTaxonomySection('Producers', anime.producerItems ?? [], 'producer')}
 
           <div className="mt-5 flex flex-wrap gap-3">
             <button type="button" onClick={() => void selectAnime(anime)} className="vhs-button retro-tooltip" data-tooltip="Cue Tape">
@@ -244,7 +291,7 @@ export default function AnimeDetail() {
               const synopsis = episode.synopsis?.trim() || 'No synopsis recorded for this episode.';
 
               return (
-                <article key={episode.episodeNumber} className="rounded-2xl border border-cream/12 bg-carbon/35 px-3 py-2.5">
+                <article key={episode.episodeNumber} className="border border-cream/12 bg-carbon/35 px-3 py-2.5">
                   <div className="grid grid-cols-[82px_minmax(0,1fr)_130px_100px_auto] items-start gap-2 max-lg:grid-cols-1">
                     <div className="space-y-1">
                       <button
@@ -256,8 +303,8 @@ export default function AnimeDetail() {
                         <Play size={12} /> EP {String(episode.episodeNumber).padStart(2, '0')}
                       </button>
                       <div className="flex flex-wrap gap-1">
-                        {episode.filler ? <span className="rounded-full bg-rust/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-white">Filler</span> : null}
-                        {episode.recap ? <span className="rounded-full bg-amberline/85 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink">Recap</span> : null}
+                        {episode.filler ? <span className="bg-rust/80 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-white">Filler</span> : null}
+                        {episode.recap ? <span className="bg-amberline/85 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink">Recap</span> : null}
                       </div>
                     </div>
 
@@ -285,10 +332,10 @@ export default function AnimeDetail() {
                   </div>
 
                   {isExpanded ? (
-                    <div className="mt-2 rounded-xl border border-cream/10 bg-black/20 p-3">
+                    <div className="mt-2 border border-cream/10 bg-black/20 p-3">
                       <div className="mb-2 flex flex-wrap items-center gap-2">
                         {episode.score !== null && episode.score !== undefined ? (
-                          <span className="inline-flex items-center rounded-full border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
+                          <span className="inline-flex items-center border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
                             Score {episode.score.toFixed(2)}
                           </span>
                         ) : null}
@@ -297,13 +344,13 @@ export default function AnimeDetail() {
                             href={episode.forumUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center rounded-full border border-amberline/55 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-amberline transition-colors hover:bg-amberline/12"
+                            className="inline-flex items-center border border-amberline/55 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-amberline transition-colors hover:bg-amberline/12"
                           >
                             Forum Thread
                           </a>
                         ) : null}
                       </div>
-                      <div className="rounded-xl border border-cream/10 bg-black/25 p-2.5">
+                      <div className="border border-cream/10 bg-black/25 p-2.5">
                         <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-amberline/75">Synopsis</p>
                         <p className="mt-1 text-sm leading-5 text-cream/72">{synopsis}</p>
                       </div>
@@ -313,7 +360,7 @@ export default function AnimeDetail() {
               );
             })}
 
-            <div className="flex items-center justify-between rounded-xl border border-cream/10 bg-black/20 px-3 py-2">
+            <div className="flex items-center justify-between border border-cream/10 bg-black/20 px-3 py-2">
               <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-cream/58">
                 Page {episodePagination.page} / {episodePagination.lastVisiblePage}
               </p>

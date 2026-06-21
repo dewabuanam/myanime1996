@@ -1,12 +1,15 @@
 export {
   DEFAULT_BASE_CATALOG_SOURCE,
   getAnimeDetails,
+  getSearchAnimeGenres,
   getAnimeTrailerUrl,
   getBaseCatalogSourceSetting,
   getLatestPromoAnime,
   getLatestUpdatedAnime,
   getUpcomingUpdatedAnime,
   getSeasonalAnime,
+  searchAnimeAdvanced,
+  searchAnimeProducers,
   getTopAiringAnime,
   getTopAnime,
   getTopUpcomingAnime,
@@ -15,3 +18,19 @@ export {
   searchAnime,
   type BaseCatalogSource,
 } from './catalogRepository';
+
+export type {
+  AnimeGenre,
+  AnimeGenreFilterType,
+  AnimeSearchQuery,
+  AnimeSearchQueryOrderBy,
+  AnimeSearchQueryRating,
+  AnimeSearchQueryStatus,
+  AnimeSearchQueryType,
+  AnimeSearchResult,
+  ProducerOrderBy,
+  ProducerSearchQuery,
+  ProducerSearchResult,
+  ProducerSummary,
+  SearchQuerySort,
+} from './jikan';

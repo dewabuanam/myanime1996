@@ -5,6 +5,9 @@ import type {
   LibraryStatusNotificationSettings,
   PlayableItem,
   Playlist,
+  SearchGenreCacheEntry,
+  SearchProducerCacheEntry,
+  RecentSearchEntry,
   RightPanelView,
   TitleLanguage,
   UserSession,
@@ -70,6 +73,9 @@ type StoreShape = {
   animeScheduleCache: Record<string, CachedPayload<unknown>>;
   animeScheduleMeta: Record<string, string | number | boolean>;
   aniSkipCache: Record<string, CachedPayload<unknown>>;
+  recentSearches: RecentSearchEntry[];
+  searchGenreCache: Record<string, CachedPayload<SearchGenreCacheEntry[]>>;
+  searchProducerCache: Record<string, CachedPayload<SearchProducerCacheEntry[]>>;
 };
 
 const PROFILE_SCOPED_KEYS: ReadonlySet<keyof StoreShape> = new Set<keyof StoreShape>([
@@ -115,6 +121,9 @@ const PROFILE_SCOPED_KEYS: ReadonlySet<keyof StoreShape> = new Set<keyof StoreSh
   'baseCatalogSource',
   'animeScheduleApiToken',
   'animeScheduleRateLimitGuideDismissedDate',
+  'recentSearches',
+  'searchGenreCache',
+  'searchProducerCache',
 ]);
 
 const STORE_FILE = 'myanime1996.store.json';

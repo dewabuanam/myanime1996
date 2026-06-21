@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { BookmarkPlus, CalendarDays, ChevronDown, Clock3, List, ListPlus, Minus, Play, Plus, RotateCcw, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import type { AnimeDetail, AnimeEpisode, AnimeEpisodePagination, TitleLanguage } from '../types/anime';
+import { useAppStore } from '../state/appStore';
 import { formatEpisodeDuration, formatEpisodeScoreOutOfTen } from '../utils/episodeFormatters';
 import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
@@ -65,6 +67,8 @@ export default function RightNowDetailPane({
   onAddToLibrary,
   isInLibrary = false,
 }: RightNowDetailPaneProps) {
+  const navigate = useNavigate();
+  const allowNsfw = useAppStore((state) => state.allowNsfw);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
   const [isCompactPane, setIsCompactPane] = useState(false);
@@ -79,11 +83,70 @@ export default function RightNowDetailPane({
   const popularityLabel = detailAnimeView?.popularity ? String(detailAnimeView.popularity) : 'N/A';
   const episodeTotalLabel = formatEpisodeTotalLabel(detailAnimeView?.currentEpisode, detailAnimeView?.episodes);
   const genreList = detailAnimeView?.genres?.filter(Boolean) ?? [];
+  const genreItems = detailAnimeView?.genreItems?.length
+    ? detailAnimeView.genreItems
+    : genreList.map((name) => ({ id: 0, name }));
+  const explicitGenreItems = detailAnimeView?.explicitGenreItems ?? [];
+  const themeItems = detailAnimeView?.themeItems ?? [];
+  const demographicItems = detailAnimeView?.demographicItems ?? [];
+  const producerItems = detailAnimeView?.producerItems ?? [];
   const rawReleaseDate = detailAnimeView?.airingDate || detailAnimeView?.aired;
   const parsedReleaseTimestamp = parseReleaseTimestamp(rawReleaseDate);
   const releaseDateLabel = parsedReleaseTimestamp !== null
     ? new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(parsedReleaseTimestamp))
     : rawReleaseDate?.split('to')[0]?.trim() || 'TBA';
+
+  const navigateToTaxonomySearch = (kind: 'genre' | 'producer', name: string, id?: number) => {
+    const normalizedName = name.trim();
+    if (!normalizedName) return;
+
+    const nextParams = new URLSearchParams();
+    if (kind === 'genre' && id && id > 0) {
+      nextParams.set('genres', String(id));
+    } else if (kind === 'genre') {
+      nextParams.set('q', normalizedName);
+    }
+    if (kind === 'producer' && id && id > 0) {
+      nextParams.set('producers', String(id));
+    } else if (kind === 'producer') {
+      nextParams.set('q', normalizedName);
+    }
+    if (!allowNsfw) {
+      nextParams.set('sfw', 'true');
+    }
+    nextParams.set('page', '1');
+    nextParams.set('limit', '24');
+    navigate(`/search/results?${nextParams.toString()}`);
+  };
+
+  const taxonomyChipClass =
+    'inline-flex items-center border border-amberline/30 bg-amberline/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.09em] text-amberline/90 transition-colors hover:bg-amberline/20';
+
+  const renderTaxonomySection = (
+    label: string,
+    items: Array<{ id: number; name: string }>,
+    kind: 'genre' | 'producer',
+  ) => {
+    if (!items.length) return null;
+    return (
+      <div className="space-y-1">
+        <p className="font-mono text-[10px] uppercase tracking-[0.11em] text-cream/55">{label}</p>
+        <div className="flex flex-wrap gap-1.5">
+          {items.map((item) => (
+            <button
+              key={`${label}-${item.id}-${item.name}`}
+              type="button"
+              className={taxonomyChipClass}
+              onClick={() => navigateToTaxonomySearch(kind, item.name, item.id)}
+              title={`Search ${item.name}`}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   useEffect(() => {
     const root = rootRef.current;
@@ -174,9 +237,9 @@ export default function RightNowDetailPane({
   if (isDetailLoading && !detailAnimeView) {
     return (
       <div className="space-y-3">
-        <div className="h-40 animate-pulse rounded-2xl border border-cream/12 bg-black/35" />
-        <div className="h-4 w-4/5 animate-pulse rounded bg-cream/12" />
-        <div className="h-4 w-3/5 animate-pulse rounded bg-cream/10" />
+        <div className="h-40 animate-pulse border border-cream/12 bg-black/35" />
+        <div className="h-4 w-4/5 animate-pulse bg-cream/12" />
+        <div className="h-4 w-3/5 animate-pulse bg-cream/10" />
         <div className="inline-flex items-center gap-2 text-cream/70">
           <RotateCcw size={13} className="animate-spin text-amberline" />
           <span className="font-mono text-[11px] uppercase tracking-[0.11em]">Loading detail...</span>
@@ -191,10 +254,10 @@ export default function RightNowDetailPane({
 
   return (
     <div ref={rootRef} className="space-y-2.5">
-      <div className="anime-card media-thumb-card rounded-xl border border-cream/14 bg-black/22 p-2.5">
+      <div className="anime-card media-thumb-card border border-cream/14 bg-black/22 p-2.5">
         <div className={`${isCompactPane ? 'space-y-2' : 'grid grid-cols-[140px_minmax(0,1fr)] items-start gap-2.5'}`}>
           <div
-            className="anime-card-poster-wrap w-full rounded-xl border border-cream/12 bg-black/45 min-h-[260px]"
+            className="anime-card-poster-wrap w-full border border-cream/12 bg-black/45 min-h-[260px]"
             style={{ aspectRatio: '2 / 3' }}
           >
             <button
@@ -209,32 +272,32 @@ export default function RightNowDetailPane({
             {isCompactPane ? (
               <>
                 <div className="absolute left-1 top-1 z-[2]">
-                  <div className="rounded-md border border-amberline/55 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-left shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
+                  <div className="border border-amberline/55 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-left shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
                     <p className="font-mono text-[8px] uppercase tracking-[0.09em] text-cream/72">Rank</p>
                     <p className="font-display text-[13px] leading-none text-amberline/95">{rankLabel}</p>
                   </div>
                 </div>
                 <div className="absolute right-1 top-1 z-[2] space-y-1">
-                  <div className="rounded-md border border-amberline/60 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-right shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
+                  <div className="border border-amberline/60 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-right shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
                     <p className="font-mono text-[8px] uppercase tracking-[0.09em] text-cream/70">Score</p>
                     <p className="font-display text-[13px] leading-none text-amberline">{scoreLabel}</p>
                     <p className="mt-0.5 font-mono text-[7px] uppercase tracking-[0.09em] text-cream/62">{membersLabel}</p>
                   </div>
-                  <div className="rounded-md border border-amberline/54 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-right shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
+                  <div className="border border-amberline/54 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-right shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
                     <p className="font-mono text-[8px] uppercase tracking-[0.09em] text-cream/70">Popularity</p>
                     <p className="font-display text-[13px] leading-none text-amberline/95">{popularityLabel}</p>
                   </div>
                 </div>
 
-                <div className="absolute inset-x-1 bottom-1 z-[2] space-y-1 rounded-lg border border-amberline/45 bg-[rgba(36,22,14,0.60)] p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-[1px]">
+                <div className="absolute inset-x-1 bottom-1 z-[2] space-y-1 border border-amberline/45 bg-[rgba(36,22,14,0.60)] p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-[1px]">
                 <div className="flex flex-wrap gap-1">
-                  <span className="inline-flex items-center gap-1 rounded-md border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                  <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
                     <List size={9} className="text-amberline" /> {episodeTotalLabel}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-md border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                  <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
                     <CalendarDays size={9} className="text-amberline" /> {releaseDateLabel}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-md border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                  <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
                     <Clock3 size={9} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
                   </span>
                   {seasonMeta ? (
@@ -248,15 +311,17 @@ export default function RightNowDetailPane({
                     />
                   ) : null}
                 </div>
-                {genreList.length > 0 ? (
+                {genreItems.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
-                    {genreList.slice(0, 4).map((genre) => (
-                      <span
-                        key={genre}
-                        className="inline-flex items-center rounded-md border border-amberline/42 bg-amberline/18 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-amberline/95"
+                    {genreItems.slice(0, 4).map((genre) => (
+                      <button
+                        key={`compact-genre-${genre.id}-${genre.name}`}
+                        type="button"
+                        className="inline-flex items-center border border-amberline/42 bg-amberline/18 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-amberline/95"
+                        onClick={() => navigateToTaxonomySearch('genre', genre.name, genre.id)}
                       >
-                        {genre}
-                      </span>
+                        {genre.name}
+                      </button>
                     ))}
                   </div>
                 ) : null}
@@ -292,16 +357,16 @@ export default function RightNowDetailPane({
           <div className="min-w-0 flex h-full flex-col space-y-1.5">
             {!isCompactPane ? (
               <div className="grid grid-cols-3 gap-1.5">
-                <div className="rounded-lg border border-amberline/35 bg-amberline/10 px-2.5 py-1.5 text-center">
+                <div className="border border-amberline/35 bg-amberline/10 px-2.5 py-1.5 text-center">
                   <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/65">Score</p>
                   <p className="mt-0.5 font-display text-[24px] leading-none text-amberline">{scoreLabel}</p>
                   <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-cream/60">{membersLabel}</p>
                 </div>
-                <div className="rounded-lg border border-cream/18 bg-black/26 px-2.5 py-1.5 text-center">
+                <div className="border border-cream/18 bg-black/26 px-2.5 py-1.5 text-center">
                   <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/65">Rank</p>
                   <p className="mt-0.5 font-display text-[22px] leading-none text-amberline/95">{rankLabel}</p>
                 </div>
-                <div className="rounded-lg border border-cream/18 bg-black/26 px-2.5 py-1.5 text-center">
+                <div className="border border-cream/18 bg-black/26 px-2.5 py-1.5 text-center">
                   <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/65">Popularity</p>
                   <p className="mt-0.5 font-display text-[22px] leading-none text-amberline/95">{popularityLabel}</p>
                 </div>
@@ -309,13 +374,13 @@ export default function RightNowDetailPane({
             ) : null}
 
             <div className={`flex flex-wrap gap-1.5 ${isCompactPane ? 'hidden' : ''}`}>
-              <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Episodes">
+              <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Episodes">
                 <List size={11} className="text-amberline" /> {episodeTotalLabel}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Release Date">
+              <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Release Date">
                 <CalendarDays size={11} className="text-amberline" /> {releaseDateLabel}
               </span>
-              <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Status">
+              <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Status">
                 <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
               </span>
               {seasonMeta ? (
@@ -323,16 +388,13 @@ export default function RightNowDetailPane({
               ) : null}
             </div>
 
-            {genreList.length > 0 && !isCompactPane ? (
-              <div className="flex flex-wrap gap-1.5">
-                {genreList.map((genre) => (
-                  <span
-                    key={genre}
-                    className="inline-flex items-center rounded-md border border-amberline/30 bg-amberline/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.09em] text-amberline/90"
-                  >
-                    {genre}
-                  </span>
-                ))}
+            {!isCompactPane ? (
+              <div className="space-y-1.5">
+                {renderTaxonomySection('Genres', genreItems, 'genre')}
+                {allowNsfw ? renderTaxonomySection('Explicit Genres', explicitGenreItems, 'genre') : null}
+                {renderTaxonomySection('Themes', themeItems, 'genre')}
+                {renderTaxonomySection('Demographics', demographicItems, 'genre')}
+                {renderTaxonomySection('Producers', producerItems, 'producer')}
               </div>
             ) : null}
 
@@ -389,7 +451,7 @@ export default function RightNowDetailPane({
               value={detailEpisodeSearchQuery}
               onChange={(event) => onDetailEpisodeSearchQueryChange(event.target.value)}
               placeholder="Search episode # / title"
-              className="w-40 rounded-md border border-cream/20 bg-black/25 px-2 py-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/85 placeholder:text-cream/45 focus:border-amberline/55 focus:outline-none"
+              className="w-40 border border-cream/20 bg-black/25 px-2 py-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/85 placeholder:text-cream/45 focus:border-amberline/55 focus:outline-none"
             />
             <label className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/58">
               <span>Page</span>
@@ -418,7 +480,7 @@ export default function RightNowDetailPane({
             const isExpanded = detailExpandedEpisode === episode.episodeNumber;
             const labels = getEpisodeDisplayTitles(episode, detailAnimeView, titleLanguage);
             return (
-              <article key={episode.episodeNumber} className="group/episode rounded-xl border border-cream/10 bg-carbon/35 px-2.5 py-2">
+              <article key={episode.episodeNumber} className="group/episode border border-cream/10 bg-carbon/35 px-2.5 py-2">
                 <div className="flex items-start gap-2">
                   <button
                     type="button"
@@ -435,20 +497,20 @@ export default function RightNowDetailPane({
                     {labels.secondary ? <p className="anime-card-jp line-clamp-1">{labels.secondary}</p> : null}
                     <div className="mt-1 flex flex-wrap gap-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/55">
                       <span className="inline-flex items-center gap-1"><CalendarDays size={10} className="text-amberline" /> {episode.aired?.slice(0, 10) || 'TBA'}</span>
-                      {episode.filler ? <span className="rounded-full bg-rust/80 px-1.5 py-0.5 text-white">Filler</span> : null}
-                      {episode.recap ? <span className="rounded-full bg-amberline/85 px-1.5 py-0.5 text-ink">Recap</span> : null}
+                      {episode.filler ? <span className="bg-rust/80 px-1.5 py-0.5 text-white">Filler</span> : null}
+                      {episode.recap ? <span className="bg-amberline/85 px-1.5 py-0.5 text-ink">Recap</span> : null}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {detailEpisodeResolvedIconByEpisode[episode.episodeNumber] ? (
                       <div
-                        className="shrink-0 rounded-md bg-black/62 p-1 shadow-[0_4px_14px_rgba(0,0,0,0.45)] retro-tooltip"
+                        className="shrink-0 bg-black/62 p-1 shadow-[0_4px_14px_rgba(0,0,0,0.45)] retro-tooltip"
                         data-tooltip={`${detailEpisodeResolvedIconByEpisode[episode.episodeNumber].pluginName} Available`}
                       >
                         <img
                           src={detailEpisodeResolvedIconByEpisode[episode.episodeNumber].iconDataUri}
                           alt="Resolved source"
-                          className="h-4 w-4 rounded-sm object-contain"
+                          className="h-4 w-4 object-contain"
                           loading="lazy"
                         />
                       </div>
@@ -479,15 +541,15 @@ export default function RightNowDetailPane({
                   </div>
                 </div>
                 {isExpanded ? (
-                  <div className="mt-1.5 rounded-lg border border-cream/10 bg-black/20 p-2">
+                  <div className="mt-1.5 border border-cream/10 bg-black/20 p-2">
                     <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                       {formatEpisodeScoreOutOfTen(episode.score) ? (
-                        <span className="inline-flex items-center rounded-full border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
+                        <span className="inline-flex items-center border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
                           Score {formatEpisodeScoreOutOfTen(episode.score)}
                         </span>
                       ) : null}
                       {episode.durationMinutes && episode.durationMinutes > 0 ? (
-                        <span className="inline-flex items-center rounded-full border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
+                        <span className="inline-flex items-center border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
                           <Clock3 size={10} className="mr-1 text-amberline" /> {formatEpisodeDuration(episode.durationMinutes)}
                         </span>
                       ) : null}
@@ -496,7 +558,7 @@ export default function RightNowDetailPane({
                           href={episode.forumUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center rounded-full border border-amberline/55 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-amberline transition-colors hover:bg-amberline/12"
+                          className="inline-flex items-center border border-amberline/55 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-amberline transition-colors hover:bg-amberline/12"
                         >
                           Forum Thread
                         </a>
@@ -587,12 +649,12 @@ export default function RightNowDetailPane({
                   src={detailAnimeView.image}
                   alt={`${detailAnimeView.title} poster fullscreen`}
                   draggable={false}
-                  className="max-h-[92vh] max-w-[92vw] rounded-lg border border-amberline/45 object-contain shadow-[0_16px_42px_rgba(0,0,0,0.6)]"
+                  className="max-h-[92vh] max-w-[92vw] border border-amberline/45 object-contain shadow-[0_16px_42px_rgba(0,0,0,0.6)]"
                   style={{ transform: `translate(${posterPan.x}px, ${posterPan.y}px) scale(${posterZoom})`, transformOrigin: 'center center' }}
                 />
               </div>
 
-              <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md border border-amberline/35 bg-black/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-cream/84">
+              <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 border border-amberline/35 bg-black/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-cream/84">
                 Zoom {Math.round(posterZoom * 100)}% · Mouse wheel, buttons, drag to pan
               </p>
             </div>,

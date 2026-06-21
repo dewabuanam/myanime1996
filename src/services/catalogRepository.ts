@@ -6,6 +6,17 @@ import { animeScheduleCatalogProvider } from './providers/animeScheduleCatalogPr
 import type { CacheFetchOptions, HomeRefreshCallbacks } from './providers/catalogProviderTypes';
 import { jikanCatalogProvider } from './providers/jikanCatalogProvider';
 import { resolveAnimeScheduleBridgeJikanId } from './animeSchedule';
+import {
+  getAnimeGenres,
+  searchAnimeWithQuery,
+  searchProducers,
+  type AnimeGenre,
+  type AnimeGenreFilterType,
+  type AnimeSearchQuery,
+  type AnimeSearchResult,
+  type ProducerSearchQuery,
+  type ProducerSearchResult,
+} from './jikan';
 
 export type BaseCatalogSource = 'animeschedule' | 'jikan';
 
@@ -271,6 +282,18 @@ export async function searchAnime(query: string): Promise<AnimeSummary[]> {
 
   if (data.length > 0) return data;
   return dedupeAnimeList(await jikanCatalogProvider.searchAnime(query));
+}
+
+export function searchAnimeAdvanced(query: AnimeSearchQuery): Promise<AnimeSearchResult> {
+  return searchAnimeWithQuery(query);
+}
+
+export function getSearchAnimeGenres(filter: AnimeGenreFilterType = 'genres'): Promise<AnimeGenre[]> {
+  return getAnimeGenres(filter);
+}
+
+export function searchAnimeProducers(query: ProducerSearchQuery = {}): Promise<ProducerSearchResult> {
+  return searchProducers(query);
 }
 
 export async function getAnimeDetails(id: string | number): Promise<AnimeDetail> {
