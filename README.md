@@ -2,6 +2,10 @@
 
 A Tauri v2 + React + TypeScript desktop anime metadata browser styled with a retro VHS/CRT interface.
 
+<img width="1911" height="1025" alt="image" src="https://github.com/user-attachments/assets/0c94fce7-6001-4f3c-b3d2-7364b835d6c3" />
+
+Download latest release [here](https://github.com/dewabuanam/myanime1996/releases)
+
 ## Scripts
 
 - `npm run dev` starts the Vite frontend.
