@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { BookmarkPlus, CalendarDays, ChevronDown, Clock3, List, ListPlus, Minus, Play, Plus, RotateCcw, X } from 'lucide-react';
+import { CalendarDays, ChevronDown, Clock3, List, ListPlus, Minus, Play, Plus, RotateCcw, X } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import type { AnimeDetail, AnimeEpisode, AnimeEpisodePagination, TitleLanguage } from '../types/anime';
@@ -8,7 +8,7 @@ import { formatEpisodeDuration, formatEpisodeScoreOutOfTen } from '../utils/epis
 import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
 import { parseReleaseTimestamp } from '../utils/releaseTime';
-import { resolveAnimeSeason } from '../utils/season';
+import { getSeasonLabelUpper, resolveAnimeSeason } from '../utils/season';
 import SeasonLinkBadge from './SeasonLinkBadge';
 
 type DetailEpisodeIcon = {
@@ -20,7 +20,7 @@ const MIN_POSTER_ZOOM = 1;
 const MAX_POSTER_ZOOM = 4;
 const RIGHT_PANEL_MIN_WIDTH_PX = 260;
 const RIGHT_PANEL_MAX_WIDTH_PX = 560;
-const COMPACT_DETAIL_PANE_RANGE_RATIO = 0.2;
+const COMPACT_DETAIL_PANE_RANGE_RATIO = 0.5;
 const COMPACT_DETAIL_PANE_HYSTERESIS_PX = 18;
 const COMPACT_DETAIL_PANE_MAX_WIDTH = Math.round(
   RIGHT_PANEL_MIN_WIDTH_PX + (RIGHT_PANEL_MAX_WIDTH_PX - RIGHT_PANEL_MIN_WIDTH_PX) * COMPACT_DETAIL_PANE_RANGE_RATIO,
@@ -41,7 +41,6 @@ type RightNowDetailPaneProps = {
   detailEpisodeResolvedIconByEpisode: Record<number, DetailEpisodeIcon>;
   onPlayEpisode: (episodeNumber: number) => void;
   onToggleEpisodeExpand: (episodeNumber: number) => void;
-  onAddToQueue?: () => void;
   onAddEpisodeToQueue?: (episodeNumber: number) => void;
   onAddToLibrary?: (anchorElement?: HTMLElement | null) => void;
   isInLibrary?: boolean;
@@ -62,7 +61,6 @@ export default function RightNowDetailPane({
   detailEpisodeResolvedIconByEpisode,
   onPlayEpisode,
   onToggleEpisodeExpand,
-  onAddToQueue,
   onAddEpisodeToQueue,
   onAddToLibrary,
   isInLibrary = false,
@@ -95,6 +93,9 @@ export default function RightNowDetailPane({
   const releaseDateLabel = parsedReleaseTimestamp !== null
     ? new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(parsedReleaseTimestamp))
     : rawReleaseDate?.split('to')[0]?.trim() || 'TBA';
+  const seasonLabel = seasonMeta
+    ? `${getSeasonLabelUpper(seasonMeta.season)} ${seasonMeta.year ?? detailYearLabel}`
+    : detailYearLabel;
 
   const navigateToTaxonomySearch = (kind: 'genre' | 'producer', name: string, id?: number) => {
     const normalizedName = name.trim();
@@ -121,6 +122,7 @@ export default function RightNowDetailPane({
 
   const taxonomyChipClass =
     'inline-flex items-center border border-amberline/30 bg-amberline/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.09em] text-amberline/90 transition-colors hover:bg-amberline/20';
+  const taxonomyLabelClass = 'font-mono text-[10px] uppercase tracking-[0.11em] text-cream/55';
 
   const renderTaxonomySection = (
     label: string,
@@ -129,8 +131,8 @@ export default function RightNowDetailPane({
   ) => {
     if (!items.length) return null;
     return (
-      <div className="space-y-1">
-        <p className="font-mono text-[10px] uppercase tracking-[0.11em] text-cream/55">{label}</p>
+      <div className="min-w-0 space-y-1">
+        <p className={taxonomyLabelClass}>{label}</p>
         <div className="flex flex-wrap gap-1.5">
           {items.map((item) => (
             <button
@@ -236,13 +238,44 @@ export default function RightNowDetailPane({
 
   if (isDetailLoading && !detailAnimeView) {
     return (
-      <div className="space-y-3">
-        <div className="h-40 animate-pulse border border-cream/12 bg-black/35" />
-        <div className="h-4 w-4/5 animate-pulse bg-cream/12" />
-        <div className="h-4 w-3/5 animate-pulse bg-cream/10" />
+      <div className="space-y-2.5">
+        <div className="anime-card media-thumb-card border border-cream/14 bg-black/22 p-0">
+          <div className="grid grid-cols-[140px_minmax(0,1fr)] items-start gap-2.5 p-2.5">
+            <div className="min-h-[220px] w-[min(100%,170px)] animate-pulse border border-cream/12 bg-black/45" style={{ aspectRatio: '2 / 3' }} />
+            <div className="min-w-0 space-y-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
+                <div className="h-16 animate-pulse border border-amberline/30 bg-amberline/10" />
+                <div className="h-16 animate-pulse border border-cream/16 bg-black/26" />
+                <div className="h-16 animate-pulse border border-cream/16 bg-black/26" />
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div className="h-10 animate-pulse border border-cream/15 bg-black/22" />
+                <div className="h-10 animate-pulse border border-cream/15 bg-black/22" />
+                <div className="h-10 animate-pulse border border-cream/15 bg-black/22" />
+                <div className="h-10 animate-pulse border border-cream/15 bg-black/22" />
+              </div>
+            </div>
+          </div>
+          <div className="mt-2 space-y-2 border-t border-cream/10 px-2.5 pt-2 pb-2.5">
+            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+              <div className="h-12 animate-pulse border border-cream/15 bg-black/22" />
+              <div className="h-12 animate-pulse border border-cream/15 bg-black/22" />
+              <div className="h-12 animate-pulse border border-cream/15 bg-black/22" />
+            </div>
+          </div>
+        </div>
+        <div className="h-14 animate-pulse border border-cream/10 bg-black/20" />
+        <div className="flex justify-center">
+          <div className="h-6 w-6 animate-pulse border border-cream/12 bg-black/24" />
+        </div>
+        <div className="space-y-1.5 border-t border-cream/10 pt-2">
+          <div className="h-7 animate-pulse border border-cream/10 bg-black/20" />
+          <div className="h-16 animate-pulse border border-cream/10 bg-carbon/35" />
+          <div className="h-16 animate-pulse border border-cream/10 bg-carbon/35" />
+        </div>
         <div className="inline-flex items-center gap-2 text-cream/70">
           <RotateCcw size={13} className="animate-spin text-amberline" />
-          <span className="font-mono text-[11px] uppercase tracking-[0.11em]">Loading detail...</span>
+          <span className="font-mono text-[11px] uppercase tracking-[0.11em]">Loading anime detail...</span>
         </div>
       </div>
     );
@@ -254,10 +287,10 @@ export default function RightNowDetailPane({
 
   return (
     <div ref={rootRef} className="space-y-2.5">
-      <div className="anime-card media-thumb-card border border-cream/14 bg-black/22 p-2.5">
+      <div className="anime-card media-thumb-card border border-cream/14 bg-black/22 p-0">
         <div className={`${isCompactPane ? 'space-y-2' : 'grid grid-cols-[140px_minmax(0,1fr)] items-start gap-2.5'}`}>
           <div
-            className="anime-card-poster-wrap w-full border border-cream/12 bg-black/45 min-h-[260px]"
+            className={`anime-card-poster-wrap border border-cream/12 bg-black/45 ${isCompactPane ? 'w-full min-h-[260px]' : 'w-[min(100%,170px)] min-h-[220px]'}`}
             style={{ aspectRatio: '2 / 3' }}
           >
             <button
@@ -290,26 +323,42 @@ export default function RightNowDetailPane({
                 </div>
 
                 <div className="absolute inset-x-1 bottom-1 z-[2] space-y-1 border border-amberline/45 bg-[rgba(36,22,14,0.60)] p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-[1px]">
-                <div className="flex flex-wrap gap-1">
-                  <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
-                    <List size={9} className="text-amberline" /> {episodeTotalLabel}
-                  </span>
-                  <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
-                    <CalendarDays size={9} className="text-amberline" /> {releaseDateLabel}
-                  </span>
-                  <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
-                    <Clock3 size={9} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
-                  </span>
-                  {seasonMeta ? (
-                    <SeasonLinkBadge
-                      season={seasonMeta.season}
-                      year={seasonMeta.year}
-                      variant="compact"
-                      showLabel
-                      interaction="link"
-                      className="!bg-[rgba(52,33,21,0.60)] !border-amberline/45"
-                    />
-                  ) : null}
+                <div className="grid grid-cols-2 gap-1">
+                  <div className="space-y-0.5">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.11em] text-cream/55">Total Episodes</p>
+                    <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                      <List size={9} className="text-amberline" /> {episodeTotalLabel}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.11em] text-cream/55">Release Date</p>
+                    <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                      <CalendarDays size={9} className="text-amberline" /> {releaseDateLabel}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.11em] text-cream/55">Status</p>
+                    <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                      <Clock3 size={9} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.11em] text-cream/55">Season</p>
+                    {seasonMeta ? (
+                      <SeasonLinkBadge
+                        season={seasonMeta.season}
+                        year={seasonMeta.year}
+                        variant="compact"
+                        showLabel
+                        interaction="link"
+                        className="!bg-[rgba(52,33,21,0.60)] !border-amberline/45"
+                      />
+                    ) : (
+                      <span className="inline-flex items-center gap-1 border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                        {seasonLabel}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {genreItems.length > 0 ? (
                   <div className="flex flex-wrap gap-1">
@@ -325,30 +374,6 @@ export default function RightNowDetailPane({
                     ))}
                   </div>
                 ) : null}
-                <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
-                  {onAddToQueue ? (
-                    <button
-                      type="button"
-                      className="vhs-button-ghost inline-flex items-center gap-1 px-2 py-1 text-[9px]"
-                      onClick={onAddToQueue}
-                      aria-label="Add to queue"
-                    >
-                      <ListPlus size={11} />
-                      <span className="font-mono uppercase tracking-[0.08em]">Queue</span>
-                    </button>
-                  ) : null}
-                  {onAddToLibrary ? (
-                    <button
-                      type="button"
-                      className="vhs-button-ghost inline-flex items-center gap-1 px-2 py-1 text-[9px]"
-                      onClick={(event) => onAddToLibrary(event.currentTarget)}
-                      aria-label={isInLibrary ? 'Update library status' : 'Add to library'}
-                    >
-                      <BookmarkPlus size={11} />
-                      <span className="font-mono uppercase tracking-[0.08em]">Library</span>
-                    </button>
-                  ) : null}
-                </div>
               </div>
               </>
             ) : null}
@@ -373,59 +398,51 @@ export default function RightNowDetailPane({
               </div>
             ) : null}
 
-            <div className={`flex flex-wrap gap-1.5 ${isCompactPane ? 'hidden' : ''}`}>
-              <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Episodes">
-                <List size={11} className="text-amberline" /> {episodeTotalLabel}
-              </span>
-              <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Release Date">
-                <CalendarDays size={11} className="text-amberline" /> {releaseDateLabel}
-              </span>
-              <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Status">
-                <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
-              </span>
-              {seasonMeta ? (
-                <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="compact" showLabel interaction="link" />
-              ) : null}
-            </div>
-
-            {!isCompactPane ? (
-              <div className="space-y-1.5">
-                {renderTaxonomySection('Genres', genreItems, 'genre')}
-                {allowNsfw ? renderTaxonomySection('Explicit Genres', explicitGenreItems, 'genre') : null}
-                {renderTaxonomySection('Themes', themeItems, 'genre')}
-                {renderTaxonomySection('Demographics', demographicItems, 'genre')}
-                {renderTaxonomySection('Producers', producerItems, 'producer')}
+            <div className={`grid grid-cols-2 gap-1.5 ${isCompactPane ? 'hidden' : ''}`}>
+              <div className="space-y-1">
+                <p className={taxonomyLabelClass}>Total Episodes</p>
+                <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Episodes">
+                  <List size={11} className="text-amberline" /> {episodeTotalLabel}
+                </span>
               </div>
-            ) : null}
-
-            <div className={`mt-auto flex flex-wrap justify-end gap-2 pt-2 ${isCompactPane ? 'hidden' : ''}`}>
-              {onAddToQueue ? (
-                <button
-                  type="button"
-                  className="vhs-button-ghost inline-flex items-center gap-1.5 px-3.5 py-2 text-[11px] retro-tooltip"
-                  onClick={onAddToQueue}
-                  data-tooltip="Add to Queue"
-                  aria-label="Add to queue"
-                >
-                  <ListPlus size={15} />
-                  <span className="font-mono uppercase tracking-[0.08em]">Add Queue</span>
-                </button>
-              ) : null}
-              {onAddToLibrary ? (
-                <button
-                  type="button"
-                  className="vhs-button-ghost inline-flex items-center gap-1.5 px-3.5 py-2 text-[11px] retro-tooltip"
-                  onClick={(event) => onAddToLibrary(event.currentTarget)}
-                  data-tooltip={isInLibrary ? 'Update Library Status' : 'Add to Library'}
-                  aria-label={isInLibrary ? 'Update library status' : 'Add to library'}
-                >
-                  <BookmarkPlus size={15} />
-                  <span className="font-mono uppercase tracking-[0.08em]">Add Library</span>
-                </button>
-              ) : null}
+              <div className="space-y-1">
+                <p className={taxonomyLabelClass}>Release Date</p>
+                <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Release Date">
+                  <CalendarDays size={11} className="text-amberline" /> {releaseDateLabel}
+                </span>
+              </div>
+              <div className="space-y-1">
+                <p className={taxonomyLabelClass}>Status</p>
+                <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Status">
+                  <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
+                </span>
+              </div>
+              <div className="space-y-1">
+                <p className={taxonomyLabelClass}>Season</p>
+                {seasonMeta ? (
+                  <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="compact" showLabel interaction="link" />
+                ) : (
+                  <span className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Season">
+                    {seasonLabel}
+                  </span>
+                )}
+              </div>
             </div>
+
           </div>
         </div>
+
+        {!isCompactPane ? (
+          <div className="mt-2 space-y-2 border-t border-cream/10 pt-2 pb-2">
+            <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+              {renderTaxonomySection('Genres', genreItems, 'genre')}
+              {allowNsfw ? renderTaxonomySection('Explicit Genres', explicitGenreItems, 'genre') : null}
+              {renderTaxonomySection('Themes', themeItems, 'genre')}
+              {renderTaxonomySection('Demographics', demographicItems, 'genre')}
+              {renderTaxonomySection('Producers', producerItems, 'producer')}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <p className={isSynopsisExpanded ? 'text-justify text-cream/72' : 'line-clamp-5 text-justify text-cream/72'}>{detailAnimeView.synopsis ?? 'Select an anime to view details and playback context.'}</p>

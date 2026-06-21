@@ -1,4 +1,4 @@
-import { EllipsisVertical, List, ScrollText } from 'lucide-react';
+import { BookmarkPlus, History, List, ListPlus, Play, RotateCcw, ScrollText, Tv2 } from 'lucide-react';
 import type { ReactNode, Ref } from 'react';
 import type { AnimeSummary, PlayableKind } from '../types/anime';
 import type { SourceResolveTrace } from '../types/plugin';
@@ -20,10 +20,6 @@ type RightNowHeaderSectionProps = {
   isSourceLogOpen: boolean;
   onToggleSourceLog: () => void;
   logToggleRef: Ref<HTMLButtonElement>;
-  isPaneLayoutMenuOpen: boolean;
-  onTogglePaneLayoutMenu: () => void;
-  onClosePaneLayoutMenu: () => void;
-  paneLayoutMenuRef: Ref<HTMLDivElement>;
   fallbackDisplayTitle: string;
   fallbackDisplayJapanese: string;
   currentlyPlayingKind: PlayableKind | undefined;
@@ -35,6 +31,13 @@ type RightNowHeaderSectionProps = {
   onClearRateLimit: (pluginId: string) => void;
   detailAnimeView: AnimeSummary | null;
   detailDisplayTitle: string;
+  onDetailPlayAnime?: () => void;
+  onDetailStartOverAnime?: () => void;
+  onDetailPlayTrailer?: () => void;
+  onDetailAddToQueue?: () => void;
+  onDetailAddToLibrary?: (anchorElement?: HTMLElement | null) => void;
+  isDetailResumeAction?: boolean;
+  isDetailInLibrary?: boolean;
 };
 
 export default function RightNowHeaderSection({
@@ -52,10 +55,6 @@ export default function RightNowHeaderSection({
   isSourceLogOpen,
   onToggleSourceLog,
   logToggleRef,
-  isPaneLayoutMenuOpen,
-  onTogglePaneLayoutMenu,
-  onClosePaneLayoutMenu,
-  paneLayoutMenuRef,
   fallbackDisplayTitle,
   fallbackDisplayJapanese,
   currentlyPlayingKind,
@@ -67,6 +66,13 @@ export default function RightNowHeaderSection({
   onClearRateLimit,
   detailAnimeView,
   detailDisplayTitle,
+  onDetailPlayAnime,
+  onDetailStartOverAnime,
+  onDetailPlayTrailer,
+  onDetailAddToQueue,
+  onDetailAddToLibrary,
+  isDetailResumeAction = false,
+  isDetailInLibrary = false,
 }: RightNowHeaderSectionProps) {
   return (
     <div className="space-y-1">
@@ -130,24 +136,65 @@ export default function RightNowHeaderSection({
               <ScrollText size={12} />
             </button>
           ) : null}
-          <div ref={paneLayoutMenuRef} className="relative">
-            <button
-              type="button"
-              className="right-panel-fullpage-btn retro-tooltip"
-              aria-label="Pane layout options"
-              data-tooltip="Pane Layout"
-              onClick={onTogglePaneLayoutMenu}
-            >
-              <EllipsisVertical size={13} />
-            </button>
-            {isPaneLayoutMenuOpen ? (
-              <div className="right-pane-layout-menu" role="menu" aria-label="Pane layout options">
-                <button type="button" role="menuitem" className="right-pane-layout-btn is-active" onClick={onClosePaneLayoutMenu}>
-                  Full Right Panel
+          {!showNowPlayingPane && !isPluginsView ? (
+            <>
+              {onDetailPlayAnime ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={onDetailPlayAnime}
+                  aria-label={isDetailResumeAction ? 'Resume playback' : 'Play now'}
+                  data-tooltip={isDetailResumeAction ? 'Resume' : 'Play Now'}
+                >
+                  {isDetailResumeAction ? <History size={13} /> : <Play size={13} />}
                 </button>
-              </div>
-            ) : null}
-          </div>
+              ) : null}
+              {isDetailResumeAction && onDetailStartOverAnime ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={onDetailStartOverAnime}
+                  aria-label="Start over"
+                  data-tooltip="Start Over"
+                >
+                  <RotateCcw size={13} />
+                </button>
+              ) : null}
+              {onDetailPlayTrailer ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={onDetailPlayTrailer}
+                  aria-label="Play trailer"
+                  data-tooltip="Play Trailer"
+                >
+                  <Tv2 size={13} />
+                </button>
+              ) : null}
+              {onDetailAddToQueue ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={onDetailAddToQueue}
+                  aria-label="Add to queue"
+                  data-tooltip="Add to Queue"
+                >
+                  <ListPlus size={13} />
+                </button>
+              ) : null}
+              {onDetailAddToLibrary ? (
+                <button
+                  type="button"
+                  className="right-panel-fullpage-btn retro-tooltip"
+                  onClick={(event) => onDetailAddToLibrary(event.currentTarget)}
+                  aria-label={isDetailInLibrary ? 'Update library status' : 'Add to library'}
+                  data-tooltip={isDetailInLibrary ? 'Update Library Status' : 'Add to Library'}
+                >
+                  <BookmarkPlus size={13} />
+                </button>
+              ) : null}
+            </>
+          ) : null}
         </div>
       </div>
       {showNowPlayingPane ? (

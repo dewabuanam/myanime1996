@@ -37,6 +37,13 @@ const MAX_TRAILER_VOLUME = 200;
 const SUBTITLE_OFF_ID = '__off__';
 const TRAILER_FINDING_SIGNAL_TIMEOUT_MS = 30_000;
 
+const resolveLatestPlayableEpisodeFromSignals = (anime: AnimeDetailType | null) => {
+  const totalEpisodes = anime?.episodes ?? 0;
+  const currentEpisode = anime?.currentEpisode ?? 0;
+  const latestEpisode = Math.max(totalEpisodes, currentEpisode);
+  return Math.max(1, latestEpisode || 1);
+};
+
 function isEditableKeyboardTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]'));
@@ -109,7 +116,6 @@ export default function RightNowPlaying() {
   const queueToggleRef = useRef<HTMLButtonElement | null>(null);
   const logDrawerRef = useRef<HTMLDivElement | null>(null);
   const logToggleRef = useRef<HTMLButtonElement | null>(null);
-  const paneLayoutMenuRef = useRef<HTMLDivElement | null>(null);
   const sourceVideoRef = useRef<HTMLVideoElement | null>(null);
   const sourceVideoAudioContextRef = useRef<AudioContext | null>(null);
   const sourceVideoAudioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -144,7 +150,6 @@ export default function RightNowPlaying() {
   const [detailEpisodeResolvedIconByEpisode, setDetailEpisodeResolvedIconByEpisode] = useState<
     Record<number, { iconDataUri: string; pluginName: string }>
   >({});
-  const [isPaneLayoutMenuOpen, setIsPaneLayoutMenuOpen] = useState(false);
   const [hasTrailerFindingSignalTimedOut, setHasTrailerFindingSignalTimedOut] = useState(false);
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(() =>
     typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false,
@@ -207,6 +212,40 @@ export default function RightNowPlaying() {
     ? getLibraryStatusForAnime(detailAnimeView.id, detailAnimeView.jikanId)
     : null;
   const detailYearLabel = formatAnimeYear(detailAnimeView?.year, detailAnime?.aired);
+  const detailPlayableEpisode = useMemo(
+    () => (detailAnimeView ? resolveLatestPlayableEpisodeFromSignals(detailAnimeView) : 1),
+    [detailAnimeView],
+  );
+  const detailResumePlan = useMemo(() => {
+    if (!detailAnimeView) return null;
+    const canonicalAnimeId = detailAnimeView.jikanId ?? detailAnimeView.id;
+    const entry = watchProgress[canonicalAnimeId] ?? watchProgress[detailAnimeView.id];
+    if (!entry) return null;
+    if (entry.progress <= 0) return null;
+
+    const currentEpisode = Math.max(1, Math.floor(entry.episode || 1));
+    const resumeAt = Math.max(0, Math.floor(entry.lastPlaybackSeconds ?? 0));
+    const resumeDuration = Math.max(0, Math.floor(entry.episodeDurationSeconds ?? 0));
+
+    if (entry.progress < 100) {
+      if (resumeAt <= 0 && currentEpisode <= 1) return null;
+      return {
+        episode: currentEpisode,
+        resumeAt,
+        resumeDuration,
+      };
+    }
+
+    const latestKnownEpisode = Math.max(currentEpisode, detailPlayableEpisode);
+    const nextEpisode = currentEpisode + 1;
+    if (nextEpisode > latestKnownEpisode) return null;
+
+    return {
+      episode: nextEpisode,
+      resumeAt: 0,
+      resumeDuration: 0,
+    };
+  }, [detailAnimeView, detailPlayableEpisode, watchProgress]);
   const filteredDetailEpisodes = useMemo(() => {
     const term = detailEpisodeSearchQuery.trim().toLowerCase();
     if (!term) return detailEpisodes;
@@ -1282,11 +1321,6 @@ export default function RightNowPlaying() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsPaneLayoutMenuOpen(false);
-        return;
-      }
-
       if (isEditableKeyboardTarget(event.target)) {
         return;
       }
@@ -1381,10 +1415,6 @@ export default function RightNowPlaying() {
 
       if (target.closest('.right-queue-item-menu') || target.closest('.right-queue-item-menu-trigger')) return;
       setOpenMenuQueueItemId(null);
-
-      if (!paneLayoutMenuRef.current?.contains(target)) {
-        setIsPaneLayoutMenuOpen(false);
-      }
     };
 
     document.addEventListener('mousedown', onDocumentMouseDown);
@@ -1442,10 +1472,6 @@ export default function RightNowPlaying() {
         isSourceLogOpen={isSourceLogOpen}
         onToggleSourceLog={() => setIsSourceLogOpen((open) => !open)}
         logToggleRef={logToggleRef}
-        isPaneLayoutMenuOpen={isPaneLayoutMenuOpen}
-        onTogglePaneLayoutMenu={() => setIsPaneLayoutMenuOpen((open) => !open)}
-        onClosePaneLayoutMenu={() => setIsPaneLayoutMenuOpen(false)}
-        paneLayoutMenuRef={paneLayoutMenuRef}
         fallbackDisplayTitle={fallbackDisplayTitle}
         fallbackDisplayJapanese={fallbackDisplayJapanese}
         currentlyPlayingKind={currentlyPlayingItem?.kind}
@@ -1457,6 +1483,60 @@ export default function RightNowPlaying() {
         onClearRateLimit={handleClearRateLimit}
         detailAnimeView={detailAnimeView}
         detailDisplayTitle={detailDisplayTitle}
+        onDetailPlayAnime={
+          detailAnimeView
+            ? async () => {
+                const resumePlan = detailResumePlan;
+                if (resumePlan) {
+                  await playEpisode(detailAnimeView, Math.max(1, resumePlan.episode));
+                  if (resumePlan.resumeDuration > 0) {
+                    setPlaybackDuration(resumePlan.resumeDuration);
+                  }
+                  if (resumePlan.resumeAt > 0) {
+                    setPlaybackTime(resumePlan.resumeAt);
+                    requestSeekTo(resumePlan.resumeAt);
+                  }
+                  return;
+                }
+
+                await playAnimeSeries(detailAnimeView);
+              }
+            : undefined
+        }
+        onDetailStartOverAnime={
+          detailAnimeView
+            ? async () => {
+                const resumeEpisode = detailResumePlan?.episode ?? detailPlayableEpisode;
+                await playEpisode(detailAnimeView, Math.max(1, resumeEpisode));
+                setPlaybackTime(0);
+                requestSeekTo(0);
+              }
+            : undefined
+        }
+        onDetailPlayTrailer={
+          detailAnimeView
+            ? async () => {
+                await useAppStore.getState().playTrailer(detailAnimeView);
+              }
+            : undefined
+        }
+        onDetailAddToQueue={
+          detailAnimeView
+            ? () => {
+                void addAnimeSeriesToQueue(detailAnimeView);
+              }
+            : undefined
+        }
+        onDetailAddToLibrary={
+          detailAnimeView
+            ? (anchorElement) => {
+                setLibraryPickerAnchorElement(anchorElement ?? null);
+                setIsLibraryPickerOpen(true);
+              }
+            : undefined
+        }
+        isDetailResumeAction={Boolean(detailResumePlan)}
+        isDetailInLibrary={Boolean(detailLibraryStatus)}
       />
 
       <div className={`right-now-video-section ${isDocumentFullscreen || isNowPlayingView ? '' : 'is-collapsed'}`} aria-hidden={!showNowPlayingPane}>
@@ -1636,10 +1716,6 @@ export default function RightNowPlaying() {
             onAddToLibrary={(anchorElement) => {
               setLibraryPickerAnchorElement(anchorElement ?? null);
               setIsLibraryPickerOpen(true);
-            }}
-            onAddToQueue={() => {
-              if (!detailAnimeView) return;
-              void addAnimeSeriesToQueue(detailAnimeView);
             }}
             onAddEpisodeToQueue={(episodeNumber) => {
               if (!detailAnimeView) return;
