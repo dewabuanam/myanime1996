@@ -2969,6 +2969,8 @@ button {
   display: grid;
   align-content: start;
   gap: 0.95rem;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .settings-action-copy h3 {
@@ -4407,6 +4409,11 @@ button {
   box-shadow: 0 0 0 1px rgba(245, 234, 210, 0.05) inset;
   padding-top: 1rem;
   padding-bottom: 1rem;
+}
+
+.notifications-scrollable {
+  max-height: calc(100vh - 12rem);
+  overflow-y: auto;
 }
 
 .library-row-card,

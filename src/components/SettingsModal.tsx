@@ -213,6 +213,8 @@ export default function SettingsModal() {
   const setSettingsOpen = useAppStore((state) => state.setSettingsOpen);
   const setProfilePopupOpen = useAppStore((state) => state.setProfilePopupOpen);
   const clearJikanCache = useAppStore((state) => state.clearJikanCache);
+  const runLibraryEpisodeDailyCheck = useAppStore((state) => state.runLibraryEpisodeDailyCheck);
+  const resetLibraryAvailableEpisodeState = useAppStore((state) => state.resetLibraryAvailableEpisodeState);
   const exportUserData = useAppStore((state) => state.exportUserData);
   const importUserData = useAppStore((state) => state.importUserData);
   const factoryReset = useAppStore((state) => state.factoryReset);
@@ -466,6 +468,15 @@ export default function SettingsModal() {
         },
       },
       {
+        id: 'notifications',
+        title: 'Notifications',
+        description: 'Manage notification availability checks and saved available-episode state.',
+        actionLabel: 'Manage notifications',
+        onAction: async () => {
+          setStatusMessage('Notification controls are ready below.');
+        },
+      },
+      {
         id: 'anime-skip',
         title: 'Anime Skip',
         description: 'Toggle auto-skip for opening, ending, and recap segments during controllable playback.',
@@ -555,7 +566,16 @@ export default function SettingsModal() {
         },
       },
     ],
-    [clearJikanCache, exportUserData, factoryReset, importUserData, setProfilePopupOpen, setSettingsOpen],
+    [
+      clearJikanCache,
+      exportUserData,
+      factoryReset,
+      importUserData,
+      resetLibraryAvailableEpisodeState,
+      runLibraryEpisodeDailyCheck,
+      setProfilePopupOpen,
+      setSettingsOpen,
+    ],
   );
 
   const filteredActions = useMemo(() => {
@@ -856,6 +876,46 @@ export default function SettingsModal() {
                       >
                         {cacheViewerLoading ? 'Loading...' : 'Show Cache Data'}
                       </button>
+                    </div>
+                  </article>
+                ) : selectedAction.id === 'notifications' ? (
+                  <article className="settings-action-card space-y-4">
+                    <div className="settings-action-copy">
+                      <h3>{highlightText(selectedAction.title, query)}</h3>
+                      <p>{highlightText(selectedAction.description, query)}</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="settings-action-btn retro-tooltip"
+                        onClick={() => {
+                          void runLibraryEpisodeDailyCheck(true).then(() => {
+                            setStatusMessage('Notification availability check completed.');
+                          });
+                        }}
+                        data-tooltip="Check now"
+                      >
+                        Check Notifications
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-action-btn retro-tooltip"
+                        onClick={() => {
+                          void resetLibraryAvailableEpisodeState().then(() => {
+                            setStatusMessage('Notification available-episode state reset.');
+                          });
+                        }}
+                        data-tooltip="Reset state"
+                      >
+                        Reset Notification State
+                      </button>
+                    </div>
+
+                    <div className="space-y-1 text-sm text-cream/75">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Behavior</p>
+                      <p>Check Notifications runs an immediate compare using saved available episode versus current available episode.</p>
+                      <p>Reset Notification State clears saved available-episode tracking without sending notifications.</p>
                     </div>
                   </article>
                 ) : selectedAction.id === 'anime-skip' ? (

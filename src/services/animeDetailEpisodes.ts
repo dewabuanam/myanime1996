@@ -162,18 +162,146 @@ function normalizeTitleToken(value?: string) {
     .trim();
 }
 
-function buildTitleCandidates(value: {
+type TitleSignature = {
+  baseKey: string;
+  seasonNumber?: number;
+  segmentNumber?: number;
+};
+
+function parseRomanNumeral(value: string) {
+  const input = value.trim().toUpperCase();
+  if (!/^[IVXLCDM]+$/.test(input)) return 0;
+
+  const map: Record<string, number> = {
+    I: 1,
+    V: 5,
+    X: 10,
+    L: 50,
+    C: 100,
+    D: 500,
+    M: 1000,
+  };
+
+  let total = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    const current = map[input[index]];
+    const next = map[input[index + 1]];
+    if (next && next > current) {
+      total -= current;
+    } else {
+      total += current;
+    }
+  }
+
+  return total;
+}
+
+function toSeasonLikeNumber(raw?: string) {
+  if (!raw) return 0;
+  const token = raw.trim().toLowerCase();
+  if (!token) return 0;
+
+  const numeric = token.replace(/(st|nd|rd|th)$/i, '');
+  if (/^\d+$/.test(numeric)) {
+    return Math.max(0, Math.floor(Number(numeric)));
+  }
+
+  const roman = parseRomanNumeral(token);
+  if (roman > 0) return roman;
+
+  return 0;
+}
+
+function extractTitleSignature(rawTitle?: string): TitleSignature | null {
+  const normalized = normalizeTitleToken(rawTitle);
+  if (!normalized) return null;
+
+  let seasonNumber = 0;
+  let seasonFromTrailing = false;
+  let segmentNumber = 0;
+
+  const seasonWordMatch = normalized.match(/\bseason\s+(\d+(?:st|nd|rd|th)?|[ivxlcdm]+)\b/i);
+  if (seasonWordMatch?.[1]) {
+    seasonNumber = toSeasonLikeNumber(seasonWordMatch[1]);
+  }
+
+  if (seasonNumber <= 0) {
+    const reverseSeasonWordMatch = normalized.match(/\b(\d+(?:st|nd|rd|th)?|[ivxlcdm]+)\s+season\b/i);
+    if (reverseSeasonWordMatch?.[1]) {
+      seasonNumber = toSeasonLikeNumber(reverseSeasonWordMatch[1]);
+    }
+  }
+
+  const segmentMatch = normalized.match(/\b(?:part|cour)\s+(\d+)\b/i);
+  if (segmentMatch?.[1]) {
+    segmentNumber = toSeasonLikeNumber(segmentMatch[1]);
+  }
+
+  if (seasonNumber <= 0) {
+    const trailingSeasonMatch = normalized.match(/\b(\d+|[ivxlcdm]+)\s*$/i);
+    if (trailingSeasonMatch?.[1]) {
+      const tokens = normalized.split(/\s+/).filter(Boolean);
+      if (tokens.length >= 3) {
+        seasonNumber = toSeasonLikeNumber(trailingSeasonMatch[1]);
+        seasonFromTrailing = seasonNumber > 0;
+      }
+    }
+  }
+
+  let baseKey = normalized
+    .replace(/\bseason\s+(\d+(?:st|nd|rd|th)?|[ivxlcdm]+)\b/gi, ' ')
+    .replace(/\b(\d+(?:st|nd|rd|th)?|[ivxlcdm]+)\s+season\b/gi, ' ')
+    .replace(/\b(?:part|cour)\s+\d+\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (seasonFromTrailing) {
+    baseKey = baseKey
+      .replace(/\b(\d+|[ivxlcdm]+)\s*$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  if (!baseKey) return null;
+
+  return {
+    baseKey,
+    seasonNumber: seasonNumber > 0 ? seasonNumber : undefined,
+    segmentNumber: segmentNumber > 0 ? segmentNumber : undefined,
+  };
+}
+
+function buildTitleSignatures(value: {
   title?: string;
   titleEnglish?: string;
   titleJapanese?: string;
 }) {
-  const set = new Set<string>();
+  const signatures = new Map<string, TitleSignature>();
   const candidates = [value.title, value.titleEnglish, value.titleJapanese];
   for (const candidate of candidates) {
-    const normalized = normalizeTitleToken(candidate);
-    if (normalized) set.add(normalized);
+    const signature = extractTitleSignature(candidate);
+    if (!signature) continue;
+    const key = `${signature.baseKey}|${signature.seasonNumber ?? 0}|${signature.segmentNumber ?? 0}`;
+    signatures.set(key, signature);
   }
-  return set;
+  return Array.from(signatures.values());
+}
+
+function hasCompatibleTitleSignature(detail: TitleSignature, candidate: TitleSignature) {
+  if (detail.baseKey !== candidate.baseKey) return false;
+
+  const detailSeason = detail.seasonNumber;
+  const candidateSeason = candidate.seasonNumber;
+  if (detailSeason || candidateSeason) {
+    if (!detailSeason || !candidateSeason) return false;
+    if (detailSeason !== candidateSeason) return false;
+  }
+
+  const detailSegment = detail.segmentNumber;
+  const candidateSegment = candidate.segmentNumber;
+  if (detailSegment && candidateSegment && detailSegment !== candidateSegment) return false;
+
+  return true;
 }
 
 function isSameAnimeCandidate(
@@ -192,11 +320,13 @@ function isSameAnimeCandidate(
   const candidateRoute = candidate.animeScheduleRoute?.trim().toLowerCase();
   if (detailRoute && candidateRoute && detailRoute === candidateRoute) return true;
 
-  const detailTitles = buildTitleCandidates(detail);
-  const candidateTitles = buildTitleCandidates(candidate);
-  if (detailTitles.size > 0 && candidateTitles.size > 0) {
-    for (const token of detailTitles) {
-      if (candidateTitles.has(token)) return true;
+  const detailSignatures = buildTitleSignatures(detail);
+  const candidateSignatures = buildTitleSignatures(candidate);
+  if (detailSignatures.length > 0 && candidateSignatures.length > 0) {
+    for (const detailSignature of detailSignatures) {
+      for (const candidateSignature of candidateSignatures) {
+        if (hasCompatibleTitleSignature(detailSignature, candidateSignature)) return true;
+      }
     }
   }
 
@@ -322,7 +452,6 @@ async function resolveKnownEpisodeCount(detail: Awaited<ReturnType<typeof getAni
 
 async function resolveFallbackEpisodeCount(detail: Awaited<ReturnType<typeof getAnimeDetails>>): Promise<number> {
   const known = toEpisodeCount(detail.currentEpisode);
-  console.log('resolveFallbackEpisodeCount', { detailId: detail.id, known });
   if (known > 0) return await resolveKnownEpisodeCount(detail, known);
 
   const nextWeekDerived = await findLatestEpisodeCountFromNextWeekTimetable(detail);
@@ -443,7 +572,7 @@ async function toBundleFromDetail(
   jikanId?: number,
 ): Promise<AnimeDetailEpisodeBundle> {
   const fallbackEpisodeCount = await resolveFallbackEpisodeCount(detail);
-  const fallback = buildFallbackEpisodesPage(fallbackEpisodeCount, safePage);
+  const fallback = buildFallbackEpisodesPage(detail.episodes ?? fallbackEpisodeCount, safePage);
   const jikanEpisodes = jikanPayload?.data ?? [];
   const currentEpisode = await resolveCurrentEpisodeCount(detail, fallbackEpisodeCount, jikanId, jikanPayload);
   const detailWithEpisodeTotal = detail.episodes && detail.episodes > 0
@@ -477,14 +606,6 @@ async function toBundleFromDetail(
     hasNextPage: safePage < lastVisiblePage || jikanPayload?.pagination.hasNextPage === true,
     hasPrevPage: safePage > 1,
   };
-
-  console.log('toBundleFromDetail', {
-    detailId: detail.id,
-    jikanId,
-    episodeCountFromDetail: detail.episodes,
-    fallbackEpisodeCount,
-    currentEpisode,
-  });
   return {
     detail: detailWithEpisodeTotal,
     episodes,

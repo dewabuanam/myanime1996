@@ -334,7 +334,6 @@ export default function Home() {
 
     const refreshIfNeeded = () => {
       void refreshHomeShelvesIfNeeded(SHELF_LIMIT, refreshCallbacks);
-      void runLibraryEpisodeDailyCheck();
     };
 
     async function load() {
@@ -373,24 +372,10 @@ export default function Home() {
 
     void load();
 
-    const onFocus = () => refreshIfNeeded();
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') refreshIfNeeded();
-    };
-    const refreshTimer = window.setInterval(() => {
-      refreshIfNeeded();
-    }, 60 * 1000);
-
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-
     return () => {
       alive = false;
-      window.clearInterval(refreshTimer);
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [activeSeasonMeta.season, activeSeasonMeta.year, homeRefreshVersion, runLibraryEpisodeDailyCheck]);
+  }, [activeSeasonMeta.season, activeSeasonMeta.year, homeRefreshVersion]);
 
   const heroPool = useMemo(() => {
     const poolMap = new Map<number, AnimeSummary>();

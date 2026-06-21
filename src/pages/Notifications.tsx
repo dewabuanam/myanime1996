@@ -30,7 +30,7 @@ export default function Notifications() {
         </div>
       </section>
 
-      <section className="notifications-content space-y-2 px-6">
+      <section className="notifications-content space-y-2 px-6 notifications-scrollable">
         {sortedNotifications.length === 0 ? (
           <div className="app-card p-6 font-mono text-sm uppercase tracking-[0.12em] text-cream/50">No notifications yet.</div>
         ) : (

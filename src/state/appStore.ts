@@ -47,7 +47,7 @@ export type UpcomingSeasonFilter = 'all' | 'tv' | 'movie' | 'ova' | 'special' | 
 
 const LIBRARY_STATUSES: LibraryStatus[] = ['watching', 'plan-to-watch', 'on-hold', 'dropped', 'completed'];
 const MAX_LIBRARY_NOTIFICATIONS = 100;
-const LIBRARY_EPISODE_POLL_INTERVAL_MS = 60_000;
+const LIBRARY_EPISODE_POLL_INTERVAL_MS = 5 * 60_000;
 const OS_NOTIFICATION_DEDUPE_WINDOW_MS = 90_000;
 const MAX_ACTION_TOASTS = 4;
 const ACTION_TOAST_DURATION_MS = 3600;
@@ -200,6 +200,7 @@ interface AppState {
   testWindowsNotification: (animeTitle: string, episode: number, count?: number) => Promise<void>;
   markAllLibraryNotificationsRead: () => void;
   clearLibraryNotifications: () => Promise<void>;
+  resetLibraryAvailableEpisodeState: () => Promise<void>;
   pushActionToast: (toast: Omit<InAppActionToast, 'id'>) => void;
   dismissActionToast: (toastId: string) => void;
   runLibraryEpisodeDailyCheck: (force?: boolean) => Promise<void>;
@@ -2615,6 +2616,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ libraryNotifications: [] });
   },
 
+  resetLibraryAvailableEpisodeState: async () => {
+    await Promise.all([
+      setStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
+      setStoredValue('libraryLastDailyEpisodeCheckDate', null),
+    ]);
+    set({
+      libraryLastNotifiedEpisodeByAnimeId: {},
+      libraryLastDailyEpisodeCheckDate: null,
+    });
+  },
+
   pushActionToast: (toast) => {
     const toastId = createId('action-toast');
     const nextToast: InAppActionToast = {
@@ -2679,7 +2691,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const today = getLocalDateStamp();
 
-    const candidates = Object.values(current.libraryItems);
+    const candidates = Object.values(current.libraryItems).filter(
+      (item) => current.libraryStatusNotificationSettings[item.status] === true,
+    );
     if (candidates.length === 0) {
       await setStoredValue('libraryLastDailyEpisodeCheckDate', today);
       set({ libraryLastDailyEpisodeCheckDate: today });
@@ -2705,13 +2719,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const latestEpisode = Math.max(
         0,
-        Math.floor(
-          Number(
-            episodeBundle.detail.currentEpisode ??
-              item.currentEpisode ??
-              0,
-          ) || 0,
-        ),
+        Math.floor(Number(episodeBundle.detail.currentEpisode) || 0),
       );
       if (latestEpisode <= 0) continue;
 
@@ -2722,14 +2730,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
 
       const resolvedAnimeId = resolveLibraryAnimeId(item.animeId, item.jikanId);
-      const progressEntry = current.watchProgress[resolvedAnimeId] ?? current.watchProgress[item.animeId];
       const lastNotifiedEpisode = Math.max(
         0,
         Math.floor(
           Number(
             libraryLastNotifiedEpisodeByAnimeId[item.animeId] ??
               libraryLastNotifiedEpisodeByAnimeId[resolvedAnimeId] ??
-              progressEntry?.episode ??
               0,
           ) || 0,
         ),

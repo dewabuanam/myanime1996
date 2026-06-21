@@ -195,9 +195,7 @@ export default function Library() {
 
     const availableEpisode = Math.max(
       0,
-      Math.floor(Number(item.currentEpisode) || 0),
-      Math.floor(Number(item.episodes) || 0),
-      Math.floor(Number(progressEntry?.totalEpisodes) || 0),
+      Math.floor(Number(item.currentEpisode) || 0)
     );
 
     if (availableEpisode <= 0 && watchedEpisode <= 0) return 'N/A';
