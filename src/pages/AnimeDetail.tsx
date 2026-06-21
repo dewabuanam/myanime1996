@@ -1,11 +1,12 @@
-import { CalendarDays, Clapperboard, Clock3, Flame, Heart, Play, Star, Trophy } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { CalendarDays, Clapperboard, Clock3, Flame, ListPlus, Play, Star, Trophy } from 'lucide-react';
+import { useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
+import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
-import { FALLBACK_PAGE_SIZE, getAnimeDetailEpisodeBundle } from '../services/animeDetailEpisodes';
+import { FALLBACK_PAGE_SIZE, getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import { getAnimeEpisodeById } from '../services/jikan';
 import { useAppStore } from '../state/appStore';
-import type { AnimeDetail as AnimeDetailType, AnimeEpisode, AnimeEpisodePagination } from '../types/anime';
+import type { AnimeDetail as AnimeDetailType, AnimeEpisode, AnimeEpisodePagination, LibraryStatus } from '../types/anime';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
 import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import { parseReleaseTimestamp } from '../utils/releaseTime';
@@ -53,11 +54,18 @@ export default function AnimeDetail() {
   const [error, setError] = useState('');
   const selectAnime = useAppStore((state) => state.selectAnime);
   const playEpisode = useAppStore((state) => state.playEpisode);
-  const toggleFavorite = useAppStore((state) => state.toggleFavorite);
-  const favorites = useAppStore((state) => state.favorites);
+  const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
+  const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
+  const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
+  const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
+  const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
   const seasonMeta = useMemo(() => (anime ? resolveAnimeSeason(anime) : null), [anime]);
   const episodeTotalLabel = useMemo(() => (anime ? formatEpisodeTotalLabel(anime.episodes, anime.status) : '?/?'), [anime]);
+  const currentLibraryStatus = useMemo(
+    () => (anime ? getLibraryStatusForAnime(anime.id, anime.jikanId) : null),
+    [anime, getLibraryStatusForAnime],
+  );
 
   const queryEpisode = useMemo(() => {
     const raw = Number(searchParams.get('episode'));
@@ -105,10 +113,14 @@ export default function AnimeDetail() {
   useEffect(() => {
     let alive = true;
     if (!id) return;
-    const animeId: string = id;
+    const jikanId = Number(id);
+    if (!Number.isFinite(jikanId) || jikanId <= 0) {
+      setError('Could not load this tape from the active source.');
+      return;
+    }
     async function load() {
       try {
-        const payload = await getAnimeDetailEpisodeBundle(animeId, episodePage);
+        const payload = await getJikanDetailEpisodeBundle(Math.floor(jikanId), episodePage);
         if (!alive) return;
         setAnime(payload.detail);
         setEpisodes(payload.episodes);
@@ -195,12 +207,15 @@ export default function AnimeDetail() {
             </button>
             <button
               type="button"
-              onClick={() => void toggleFavorite(anime.id)}
+              onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+                setLibraryPickerAnchorElement(event.currentTarget);
+                setIsLibraryPickerOpen(true);
+              }}
               className="vhs-button-ghost py-3 retro-tooltip"
-              data-tooltip={favorites.includes(anime.id) ? 'Remove Favorite' : 'Add Favorite'}
+              data-tooltip={currentLibraryStatus ? 'Update Library Status' : 'Add to Library'}
             >
-              <Heart size={17} className={favorites.includes(anime.id) ? 'fill-rust text-rust' : ''} />
-              {favorites.includes(anime.id) ? 'Favorited' : 'Favorite'}
+              <ListPlus size={17} />
+              {currentLibraryStatus ? 'In Library' : 'Add to Library'}
             </button>
             {anime.trailerUrl ? (
               <a href={anime.trailerUrl} target="_blank" rel="noreferrer" className="vhs-button-ghost inline-flex items-center gap-2 py-3 retro-tooltip" data-tooltip="Open Trailer Source">
@@ -324,6 +339,31 @@ export default function AnimeDetail() {
           </div>
         )}
       </section>
+
+      <LibraryStatusPickerModal
+        open={isLibraryPickerOpen}
+        title={getDisplayTitle(anime, titleLanguage)}
+        anchorElement={libraryPickerAnchorElement}
+        initialStatus={currentLibraryStatus}
+        onClose={() => {
+          setIsLibraryPickerOpen(false);
+          setLibraryPickerAnchorElement(null);
+        }}
+        onConfirm={(status: LibraryStatus) => {
+          void setAnimeLibraryStatus(anime, status);
+          setIsLibraryPickerOpen(false);
+          setLibraryPickerAnchorElement(null);
+        }}
+        onRemove={
+          currentLibraryStatus
+            ? () => {
+                void removeAnimeFromLibrary(anime.jikanId ?? anime.id);
+                setIsLibraryPickerOpen(false);
+              setLibraryPickerAnchorElement(null);
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

@@ -1,7 +1,8 @@
-import { Filter, Flower2, History, Info, Leaf, ListPlus, Play, RotateCcw, Snowflake, Sun, Tv2, X } from 'lucide-react';
+import { BookmarkPlus, Filter, Flower2, History, Info, Leaf, ListPlus, Play, RotateCcw, Snowflake, Sun, Tv2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import HeroSeeAllMenu from '../components/HeroSeeAllMenu';
+import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
 import {
   getLatestPromoAnime,
@@ -14,7 +15,7 @@ import {
   resolveCanonicalDetailRouteId,
 } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
-import type { AnimeSummary } from '../types/anime';
+import type { AnimeSummary, LibraryStatus } from '../types/anime';
 import { formatReleaseDateTimeLocal, getReleaseBadgeLabel, isUpcomingByReleaseTime } from '../utils/releaseTime';
 import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import {
@@ -206,6 +207,9 @@ export default function SeeAll() {
   const titleLanguage = useAppStore((state) => state.titleLanguage);
   const upcomingSeasonFilter = useAppStore((state) => state.upcomingSeasonFilter);
   const setUpcomingSeasonFilter = useAppStore((state) => state.setUpcomingSeasonFilter);
+  const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
+  const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
+  const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
 
   const [items, setItems] = useState<AnimeSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -219,6 +223,8 @@ export default function SeeAll() {
   const [airingRatingFilter, setAiringRatingFilter] = useState<AiringRatingFilter>('none');
   const [seasonTypeFilter, setSeasonTypeFilter] = useState<SeasonTypeFilter>('all');
   const [seasonContinuingEnabled, setSeasonContinuingEnabled] = useState(true);
+  const [libraryPickerAnime, setLibraryPickerAnime] = useState<AnimeSummary | null>(null);
+  const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -460,9 +466,32 @@ export default function SeeAll() {
     await playAnimeSeries(anime);
   };
 
-  const addToQueue = async (anime: AnimeSummary) => {
-    if (!anime.trailerUrl?.trim()) return;
-    await addTrailerToQueue(anime);
+  const addToQueue = async (anime: AnimeSummary, queueMode: ShelfPlayableMode) => {
+    if (queueMode === 'trailer') {
+      await addTrailerToQueue(anime);
+      return;
+    }
+    if (queueMode === 'episode') {
+      await addEpisodeToQueue(anime, Math.max(1, anime.currentEpisode ?? anime.episodes ?? 1));
+      return;
+    }
+    await addAnimeSeriesToQueue(anime);
+  };
+
+  const openLibraryPicker = (anime: AnimeSummary, anchorElement?: HTMLElement | null) => {
+    setLibraryPickerAnime(anime);
+    setLibraryPickerAnchorElement(anchorElement ?? null);
+  };
+
+  const handleLibraryStatusConfirm = async (status: LibraryStatus) => {
+    if (!libraryPickerAnime) return;
+    await setAnimeLibraryStatus(libraryPickerAnime, status);
+  };
+
+  const handleLibraryRemove = async () => {
+    if (!libraryPickerAnime) return;
+    await removeAnimeFromLibrary(libraryPickerAnime.jikanId ?? libraryPickerAnime.id);
+    setLibraryPickerAnime(null);
   };
 
   if (!safeType) {
@@ -723,7 +752,6 @@ export default function SeeAll() {
           const isResumeAction = Boolean(resumeEntry);
           const canPlayAnime = safeType !== 'promo' && (isResumeAction || !isNotYetAired(anime));
           const playLabel = isResumeAction ? 'Resume' : 'Play Now';
-          const hasQueueableTrailer = Boolean(anime.trailerUrl?.trim());
           const watchEntry = watchProgress[anime.jikanId ?? anime.id] ?? watchProgress[anime.id];
           const isWatchedCompleted = Boolean(watchEntry?.completed || (watchEntry?.progress ?? 0) >= 100);
           const releaseBadgeLabel = getReleaseBadgeLabel(anime.airingDate, anime.mediaType, isWatchedCompleted);
@@ -798,11 +826,16 @@ export default function SeeAll() {
                       <RotateCcw size={14} /> Start Over
                     </button>
                   ) : null}
-                  {hasQueueableTrailer ? (
-                    <button type="button" className="vhs-button-ghost seeall-row-action-btn" onClick={() => void addToQueue(anime)}>
-                      <ListPlus size={14} /> Add to Queue
-                    </button>
-                  ) : null}
+                  <button type="button" className="vhs-button-ghost seeall-row-action-btn" onClick={() => void addToQueue(anime, mode)}>
+                    <ListPlus size={14} /> Add to Queue
+                  </button>
+                  <button
+                    type="button"
+                    className="vhs-button-ghost seeall-row-action-btn"
+                    onClick={(event) => openLibraryPicker(anime, event.currentTarget)}
+                  >
+                    <BookmarkPlus size={14} /> Add to Library
+                  </button>
                   <button type="button" className="vhs-button-ghost seeall-row-action-btn" onClick={() => void openDetails(anime)}>
                     <Info size={14} /> Info
                   </button>
@@ -820,6 +853,33 @@ export default function SeeAll() {
           {!loading && visibleCount < sortedItems.length ? 'Loading more tapes...' : 'End of shelf'}
         </div>
       </section>
+
+      <LibraryStatusPickerModal
+        open={Boolean(libraryPickerAnime)}
+        title={libraryPickerAnime ? getDisplayTitle(libraryPickerAnime, titleLanguage) : 'Anime'}
+        anchorElement={libraryPickerAnchorElement}
+        initialStatus={
+          libraryPickerAnime
+            ? getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.jikanId)
+            : null
+        }
+        onClose={() => {
+          setLibraryPickerAnime(null);
+          setLibraryPickerAnchorElement(null);
+        }}
+        onConfirm={(status) => {
+          void handleLibraryStatusConfirm(status);
+          setLibraryPickerAnime(null);
+          setLibraryPickerAnchorElement(null);
+        }}
+        onRemove={
+          libraryPickerAnime && getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.jikanId)
+            ? () => {
+                void handleLibraryRemove();
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

@@ -361,7 +361,7 @@ export function useHlsPlayer({
         enableWorker: false,
         lowLatencyMode: false,
         debug: false,
-        loader: NativeAwareLoader as typeof Hls.DefaultConfig.loader,
+        loader: NativeAwareLoader as unknown as typeof Hls.DefaultConfig.loader,
         xhrSetup: (xhr) => {
           xhr.withCredentials = false;
           if (!requestHeaders) return;

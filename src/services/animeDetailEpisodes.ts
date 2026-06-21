@@ -10,6 +10,12 @@ const NEXT_WEEK_EPISODE_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
 const MAX_REASONABLE_MAL_ID = 2_000_000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
+type NextWeekEpisodeCacheValue = {
+  latestEpisode: number;
+  nextEpisodeNumber?: number;
+  nextEpisodeReleaseAt?: number;
+};
+
 function toJikanAnimeId(detail: { id: number; jikanId?: number }) {
   const candidates = [detail.jikanId];
   for (const candidate of candidates) {
@@ -74,25 +80,63 @@ function toNextWeekEpisodeCacheKey(
   return `episode-fallback:upcoming:${weekTag}:id:${id}`;
 }
 
-async function readCachedEpisodeCount(cacheKey: string): Promise<number | null> {
+function normalizeNextWeekEpisodeCacheValue(rawValue: unknown): NextWeekEpisodeCacheValue | null {
+  if (Number.isFinite(rawValue)) {
+    return { latestEpisode: toEpisodeCount(rawValue as number) };
+  }
+
+  if (!rawValue || typeof rawValue !== 'object') return null;
+  const raw = rawValue as Record<string, unknown>;
+  const latestEpisode = toEpisodeCount(typeof raw.latestEpisode === 'number' ? raw.latestEpisode : undefined);
+  const nextEpisodeNumber = toEpisodeCount(typeof raw.nextEpisodeNumber === 'number' ? raw.nextEpisodeNumber : undefined);
+  const nextEpisodeReleaseAt =
+    typeof raw.nextEpisodeReleaseAt === 'number' && Number.isFinite(raw.nextEpisodeReleaseAt) && raw.nextEpisodeReleaseAt > 0
+      ? raw.nextEpisodeReleaseAt
+      : undefined;
+
+  if (latestEpisode <= 0 && !(nextEpisodeNumber > 0 && nextEpisodeReleaseAt)) return null;
+  return {
+    latestEpisode,
+    nextEpisodeNumber: nextEpisodeNumber > 0 ? nextEpisodeNumber : undefined,
+    nextEpisodeReleaseAt,
+  };
+}
+
+async function readCachedEpisodeCount(cacheKey: string): Promise<NextWeekEpisodeCacheValue | null> {
   const now = Date.now();
   const cache = await getStoredValue('animeScheduleCache', {} as Record<string, CachedPayload<unknown>>);
   const cached = cache[cacheKey];
   if (!cached || !Number.isFinite(cached.expiresAt) || (cached.expiresAt as number) <= now) return null;
 
-  const value = toEpisodeCount(cached.value as number | undefined);
-  return value > 0 ? value : 0;
+  const value = normalizeNextWeekEpisodeCacheValue(cached.value);
+  if (!value) return null;
+
+  // If we know a next episode release time and it has passed, force a fresh recheck.
+  if (value.nextEpisodeReleaseAt && value.nextEpisodeReleaseAt <= now) return null;
+
+  return value;
 }
 
-async function writeCachedEpisodeCount(cacheKey: string, value: number): Promise<void> {
-  const safeValue = Math.max(0, toEpisodeCount(value));
-  if (safeValue <= 0) return;
+async function writeCachedEpisodeCount(cacheKey: string, value: NextWeekEpisodeCacheValue): Promise<void> {
+  const safeValue = Math.max(0, toEpisodeCount(value.latestEpisode));
+  const safeNextEpisodeNumber = toEpisodeCount(value.nextEpisodeNumber);
+  const safeNextEpisodeReleaseAt =
+    Number.isFinite(value.nextEpisodeReleaseAt) && (value.nextEpisodeReleaseAt as number) > 0
+      ? (value.nextEpisodeReleaseAt as number)
+      : undefined;
+
+  if (safeValue <= 0 && !(safeNextEpisodeNumber > 0 && safeNextEpisodeReleaseAt)) return;
+
   const now = Date.now();
   const cache = await getStoredValue('animeScheduleCache', {} as Record<string, CachedPayload<unknown>>);
   await setStoredValue('animeScheduleCache', {
     ...cache,
     [cacheKey]: {
-      value: safeValue,
+      value: {
+        latestEpisode: safeValue,
+        nextEpisodeNumber: safeNextEpisodeNumber > 0 ? safeNextEpisodeNumber : undefined,
+        nextEpisodeReleaseAt: safeNextEpisodeReleaseAt,
+      },
       savedAt: now,
       expiresAt: now + NEXT_WEEK_EPISODE_CACHE_TTL_MS,
     },
@@ -187,7 +231,7 @@ async function findLatestEpisodeCountFromNextWeekTimetable(
   const targetWeeks = [previousWeek, currentWeek, nextWeek];
   const cacheKey = toNextWeekEpisodeCacheKey(detail, targetWeeks);
   const cached = await readCachedEpisodeCount(cacheKey);
-  if (cached !== null) return cached;
+  if (cached !== null) return cached.latestEpisode;
 
   const allowNsfw = Boolean(await getStoredValue('allowNsfw', false));
   const latestReleased = await getLatestReleasedTimetableAnime(RECENT_TIMETABLE_SCAN_LIMIT).catch(() => []);
@@ -235,12 +279,16 @@ async function findLatestEpisodeCountFromNextWeekTimetable(
       nearestNextReleaseEpisode = episodeNumber;
     }
   }
-
+  
   const upcomingDerived = releasedFromUpcomingMax > 0
     ? releasedFromUpcomingMax
     : Math.max(0, nearestNextReleaseEpisode - 1);
   const resolvedLatest = releasedMax > 0 ? releasedMax : upcomingDerived;
-  await writeCachedEpisodeCount(cacheKey, resolvedLatest);
+  await writeCachedEpisodeCount(cacheKey, {
+    latestEpisode: resolvedLatest,
+    nextEpisodeNumber: nearestNextReleaseEpisode > 0 ? nearestNextReleaseEpisode : undefined,
+    nextEpisodeReleaseAt: Number.isFinite(nearestNextReleaseTimestamp) ? nearestNextReleaseTimestamp : undefined,
+  });
   return resolvedLatest;
 }
 
@@ -260,20 +308,21 @@ function toEstimatedWeeklyEpisodeCount(airingDate?: string): number {
 
 async function resolveKnownEpisodeCount(detail: Awaited<ReturnType<typeof getAnimeDetails>>, known: number): Promise<number> {
   const airingTimestamp = Date.parse(detail.airingDate ?? '');
-  if (!Number.isFinite(airingTimestamp) || airingTimestamp <= Date.now()) {
-    return known;
-  }
-
   const timetableDerived = await findLatestEpisodeCountFromNextWeekTimetable(detail);
   if (timetableDerived > 0) {
     return Math.min(known, timetableDerived);
+  }
+
+  if (!Number.isFinite(airingTimestamp) || airingTimestamp <= Date.now()) {
+    return known;
   }
 
   return Math.max(0, known - 1);
 }
 
 async function resolveFallbackEpisodeCount(detail: Awaited<ReturnType<typeof getAnimeDetails>>): Promise<number> {
-  const known = toEpisodeCount(detail.episodes);
+  const known = toEpisodeCount(detail.currentEpisode);
+  console.log('resolveFallbackEpisodeCount', { detailId: detail.id, known });
   if (known > 0) return await resolveKnownEpisodeCount(detail, known);
 
   const nextWeekDerived = await findLatestEpisodeCountFromNextWeekTimetable(detail);
@@ -365,19 +414,25 @@ async function resolveCurrentEpisodeCount(
   const existingCurrent = toEpisodeCount(detail.currentEpisode);
   if (existingCurrent > 0) return existingCurrent;
 
+  let bestObservedEpisode = Math.max(0, fallbackEpisodeCount);
   const safeJikanId = toEpisodeCount(jikanId);
   if (safeJikanId > 0) {
     const maxPagesFromPayload = Math.max(1, toEpisodeCount(jikanPayload?.pagination.lastVisiblePage));
     const maxPages = maxPagesFromPayload > 0 ? maxPagesFromPayload : 8;
     const allEpisodes = await getAnimeEpisodesAll(safeJikanId, maxPages).catch(() => [] as AnimeEpisode[]);
     const jikanTotal = getMaxEpisodeNumber(allEpisodes);
-    if (jikanTotal > 0) return jikanTotal;
+    if (jikanTotal > bestObservedEpisode) {
+      bestObservedEpisode = jikanTotal;
+    }
   }
 
   const payloadTotal = getMaxEpisodeNumber(jikanPayload?.data ?? []);
-  if (payloadTotal > 0) return payloadTotal;
+  if (payloadTotal > bestObservedEpisode) {
+    bestObservedEpisode = payloadTotal;
+  }
 
-  if (fallbackEpisodeCount > 0) return fallbackEpisodeCount;
+  if (bestObservedEpisode > 0) return bestObservedEpisode;
+
   return toEpisodeCount(detail.episodes);
 }
 
@@ -399,7 +454,7 @@ async function toBundleFromDetail(
     : {
         ...detail,
         episodes: detail.episodes,
-        currentEpisode: fallbackEpisodeCount,
+        currentEpisode: currentEpisode,
       };
 
   if (!jikanEpisodes.length) {
@@ -423,6 +478,13 @@ async function toBundleFromDetail(
     hasPrevPage: safePage > 1,
   };
 
+  console.log('toBundleFromDetail', {
+    detailId: detail.id,
+    jikanId,
+    episodeCountFromDetail: detail.episodes,
+    fallbackEpisodeCount,
+    currentEpisode,
+  });
   return {
     detail: detailWithEpisodeTotal,
     episodes,
@@ -437,24 +499,4 @@ export async function getJikanDetailEpisodeBundle(jikanId: number, page = 1): Pr
   const detail = await getJikanAnimeDetails(safeJikanId);
   const payload = await getAnimeEpisodes(safeJikanId, safePage).catch(() => null);
   return await toBundleFromDetail(detail, payload, safePage, safeJikanId);
-}
-
-export async function getAnimeDetailEpisodeBundle(id: string | number, page = 1): Promise<AnimeDetailEpisodeBundle> {
-  const safePage = Math.max(1, Math.floor(page));
-  const detail = await getAnimeDetails(id);
-  const canonicalId = toJikanAnimeId(detail);
-  const uniqueIds = canonicalId ? [canonicalId] : [];
-
-  let effectivePayload: Awaited<ReturnType<typeof getAnimeEpisodes>> | null = null;
-  let effectiveJikanId: number | undefined;
-  for (const candidateId of uniqueIds) {
-    const payload = await getAnimeEpisodes(candidateId, safePage).catch(() => null);
-    if (!payload) continue;
-
-    effectivePayload = payload;
-    effectiveJikanId = candidateId;
-    if (payload.data.length > 0) break;
-  }
-
-  return await toBundleFromDetail(detail, effectivePayload, safePage, effectiveJikanId ?? canonicalId);
 }

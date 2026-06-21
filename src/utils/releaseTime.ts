@@ -1,29 +1,35 @@
 const RECENT_RELEASE_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 const UPCOMING_WINDOW_MS = 24 * 60 * 60 * 1000;
-const HAS_TIMEZONE_SUFFIX_RE = /(Z|[+-]\d{2}:?\d{2})$/i;
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function normalizeServerDateInput(input?: string) {
+function parseLocalDateOnly(raw: string): number | null {
+  const [yearText, monthText, dayText] = raw.split('-');
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+
+  // Build date-only values in local time so release comparisons respect user locale.
+  const localDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+  const timestamp = localDate.getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function parseServerDateInput(input?: string): number | null {
   const raw = input?.trim();
   if (!raw) return null;
 
   if (DATE_ONLY_RE.test(raw)) {
-    return `${raw}T00:00:00Z`;
+    return parseLocalDateOnly(raw);
   }
 
-  if (raw.includes('T') && !HAS_TIMEZONE_SUFFIX_RE.test(raw)) {
-    return `${raw}Z`;
-  }
-
-  return raw;
+  // If source omits timezone, Date.parse treats date-time values as local time.
+  const timestamp = Date.parse(raw);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 export function parseReleaseTimestamp(input?: string): number | null {
-  const normalized = normalizeServerDateInput(input);
-  if (!normalized) return null;
-
-  const timestamp = Date.parse(normalized);
-  return Number.isFinite(timestamp) ? timestamp : null;
+  return parseServerDateInput(input);
 }
 
 export function isUpcomingByReleaseTime(input?: string, now = Date.now()) {

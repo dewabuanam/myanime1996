@@ -3,6 +3,7 @@ export type TitleLanguage = 'japanese' | 'english';
 export type RightPanelView = 'now-playing' | 'detail' | 'plugins';
 export type PlayableKind = 'episode' | 'movie' | 'ova' | 'ona' | 'special' | 'trailer';
 export type PlayableSourceKind = 'anime-card' | 'episode-card' | 'trailer-card';
+export type LibraryStatus = 'plan-to-watch' | 'watching' | 'on-hold' | 'dropped' | 'completed';
 
 export interface UserSession {
   mode: SessionMode;
@@ -117,6 +118,37 @@ export interface WatchProgress {
   episodeDurationSeconds?: number;
   completed?: boolean;
   updatedAt: string;
+}
+
+export interface LibraryAnimeItem {
+  animeId: number;
+  jikanId?: number;
+  animeScheduleRoute?: string;
+  title: string;
+  titleEnglish?: string;
+  titleJapanese?: string;
+  image: string;
+  mediaType?: string;
+  year?: number;
+  episodes?: number;
+  currentEpisode?: number;
+  status: LibraryStatus;
+  addedAt: string;
+  updatedAt: string;
+}
+
+export type LibraryStatusNotificationSettings = Record<LibraryStatus, boolean>;
+
+export interface LibraryNotificationFeedItem {
+  id: string;
+  animeId: number;
+  episode: number;
+  title: string;
+  image?: string;
+  message: string;
+  createdAt: string;
+  channel: 'in-app' | 'os';
+  read: boolean;
 }
 
 export interface CachedPayload<T> {

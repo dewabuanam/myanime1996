@@ -1,5 +1,4 @@
 export function formatEpisodeTotalLabel(currentEpisodes?: number | null, totalEpisodesOrStatus?: number | string | null, status?: string) {
-  console.log('formatEpisodeTotalLabel called with', { currentEpisodes, totalEpisodesOrStatus, status });
   const totalEpisodes = typeof totalEpisodesOrStatus === 'number' ? totalEpisodesOrStatus : undefined;
   const resolvedStatus = typeof totalEpisodesOrStatus === 'string' ? totalEpisodesOrStatus : status;
 
@@ -9,8 +8,7 @@ export function formatEpisodeTotalLabel(currentEpisodes?: number | null, totalEp
   const isOpenEnded =
     totalEpisodesOrStatus == null;
 
-  console.log('formatEpisodeTotalLabel', { currentEpisodes, totalEpisodesOrStatus, status, safeCurrentEpisodes, safeTotalEpisodes, normalizedStatus, isOpenEnded });
-  if (safeTotalEpisodes) return `${safeCurrentEpisodes}/${safeTotalEpisodes}`;
+    if (safeTotalEpisodes) return `${safeCurrentEpisodes}/${safeTotalEpisodes}`;
   if (isOpenEnded) return `${safeCurrentEpisodes}/?`;
   return `${safeCurrentEpisodes}/${safeTotalEpisodes}`;
 }

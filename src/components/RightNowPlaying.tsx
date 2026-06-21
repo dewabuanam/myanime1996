@@ -20,6 +20,7 @@ import { useHlsPlayer } from '../hooks/useHlsPlayer';
 import { usePlaybackSourceResolver } from '../hooks/usePlaybackSourceResolver';
 import { useYouTubeTrailerPlayer } from '../hooks/useYouTubeTrailerPlayer';
 import { pickSourceOption, type LogoSelectItem } from './SourceSelector';
+import LibraryStatusPickerModal from './LibraryStatusPickerModal';
 import PluginsPanel from './PluginsPanel';
 import RightNowDetailPane from './RightNowDetailPane';
 import RightNowFullscreenOverlays from './RightNowFullscreenOverlays';
@@ -51,6 +52,8 @@ export default function RightNowPlaying() {
   const removeFromQueue = useAppStore((state) => state.removeFromQueue);
   const playFromQueue = useAppStore((state) => state.playFromQueue);
   const playEpisode = useAppStore((state) => state.playEpisode);
+  const addAnimeSeriesToQueue = useAppStore((state) => state.addAnimeSeriesToQueue);
+  const addEpisodeToQueue = useAppStore((state) => state.addEpisodeToQueue);
   const isRightPanelFullpage = useAppStore((state) => state.isRightPanelFullpage);
   const toggleRightPanelFullpage = useAppStore((state) => state.toggleRightPanelFullpage);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
@@ -97,6 +100,9 @@ export default function RightNowPlaying() {
   const requestSeekTo = useAppStore((state) => state.requestSeekTo);
   const setAnimeSkipButtonSegment = useAppStore((state) => state.setAnimeSkipButtonSegment);
   const setEpisodeMetadata = useAppStore((state) => state.setEpisodeMetadata);
+  const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
+  const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
+  const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
 
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const queueDrawerRef = useRef<HTMLDivElement | null>(null);
@@ -144,6 +150,8 @@ export default function RightNowPlaying() {
     typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false,
   );
   const [sourceCacheVersion, setSourceCacheVersion] = useState(0);
+  const [isLibraryPickerOpen, setIsLibraryPickerOpen] = useState(false);
+  const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
 
   const trailerVideoId = useMemo(
     () => (currentlyPlayingItem?.kind === 'trailer' ? extractYouTubeVideoId(currentlyPlayingItem.anime.trailerUrl) : ''),
@@ -195,6 +203,9 @@ export default function RightNowPlaying() {
     return null;
   }, [selectedAnime?.jikanId]);
   const detailDisplayTitle = detailAnimeView ? getDisplayTitle(detailAnimeView, titleLanguage) : '';
+  const detailLibraryStatus = detailAnimeView
+    ? getLibraryStatusForAnime(detailAnimeView.id, detailAnimeView.jikanId)
+    : null;
   const detailYearLabel = formatAnimeYear(detailAnimeView?.year, detailAnime?.aired);
   const filteredDetailEpisodes = useMemo(() => {
     const term = detailEpisodeSearchQuery.trim().toLowerCase();
@@ -1613,6 +1624,19 @@ export default function RightNowPlaying() {
               if (!detailAnimeView) return;
               void handleDetailEpisodeToggle(detailAnimeView.id, episodeNumber);
             }}
+            onAddToLibrary={(anchorElement) => {
+              setLibraryPickerAnchorElement(anchorElement ?? null);
+              setIsLibraryPickerOpen(true);
+            }}
+            onAddToQueue={() => {
+              if (!detailAnimeView) return;
+              void addAnimeSeriesToQueue(detailAnimeView);
+            }}
+            onAddEpisodeToQueue={(episodeNumber) => {
+              if (!detailAnimeView) return;
+              void addEpisodeToQueue(detailAnimeView, episodeNumber);
+            }}
+            isInLibrary={Boolean(detailLibraryStatus)}
           />
         ) : isPluginsView ? (
           <PluginsPanel />
@@ -1647,6 +1671,33 @@ export default function RightNowPlaying() {
             />
           </div>
         </div>
+      ) : null}
+
+      {detailAnimeView ? (
+        <LibraryStatusPickerModal
+          open={isLibraryPickerOpen}
+          title={detailDisplayTitle || detailAnimeView.title}
+          anchorElement={libraryPickerAnchorElement}
+          initialStatus={detailLibraryStatus}
+          onClose={() => {
+            setIsLibraryPickerOpen(false);
+            setLibraryPickerAnchorElement(null);
+          }}
+          onConfirm={(status) => {
+            void setAnimeLibraryStatus(detailAnimeView, status);
+            setIsLibraryPickerOpen(false);
+            setLibraryPickerAnchorElement(null);
+          }}
+          onRemove={
+            detailLibraryStatus
+              ? () => {
+                  void removeAnimeFromLibrary(detailAnimeView.jikanId ?? detailAnimeView.id);
+                  setIsLibraryPickerOpen(false);
+                  setLibraryPickerAnchorElement(null);
+                }
+              : undefined
+          }
+        />
       ) : null}
     </aside>
   );

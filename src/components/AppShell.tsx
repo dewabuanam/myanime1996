@@ -1,10 +1,11 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalPosition } from '@tauri-apps/api/dpi';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import BottomPlayer from './BottomPlayer';
 import GlobalTooltip from './GlobalTooltip';
+import InAppNotificationToasts from './InAppNotificationToasts';
 import RightPanelNav from './RightPanelNav';
 import RightNowPlaying from './RightNowPlaying';
 import AnimeScheduleRateLimitGuideModal from './AnimeScheduleRateLimitGuideModal';
@@ -27,13 +28,24 @@ export default function AppShell() {
   const isRightPanelFullpage = useAppStore((state) => state.isRightPanelFullpage);
   const rightPanelWidth = useAppStore((state) => state.rightPanelWidth);
   const setRightPanelWidth = useAppStore((state) => state.setRightPanelWidth);
+  const [liveRightPanelWidth, setLiveRightPanelWidth] = useState<number | null>(null);
+  const liveRightPanelWidthRef = useRef<number | null>(null);
+  const isResizingRightPanelRef = useRef(false);
   const compactSidebarWidth = '88px';
   const rightRailWidth = '56px';
+
+  useEffect(() => {
+    if (liveRightPanelWidth !== null) {
+      liveRightPanelWidthRef.current = liveRightPanelWidth;
+    }
+  }, [liveRightPanelWidth]);
 
   useEffect(() => {
     if (isRightPanelHidden || isRightPanelFullpage) return;
 
     const clampRightPanelToViewport = () => {
+      if (isResizingRightPanelRef.current) return;
+
       const sidebarWidthPx = isSidebarCompact ? SIDEBAR_COMPACT_WIDTH_PX : SIDEBAR_EXPANDED_WIDTH_PX;
       const availableForPanel = Math.floor(window.innerWidth - sidebarWidthPx - RIGHT_RAIL_WIDTH_PX - MAIN_CONTENT_MIN_WIDTH_PX);
       const viewportMaxWidth = Math.max(
@@ -41,8 +53,10 @@ export default function AppShell() {
         Math.min(RIGHT_PANEL_MAX_WIDTH_PX, availableForPanel),
       );
 
-      if (rightPanelWidth > viewportMaxWidth) {
+      const currentWidth = liveRightPanelWidthRef.current ?? rightPanelWidth;
+      if (currentWidth > viewportMaxWidth) {
         void setRightPanelWidth(viewportMaxWidth);
+        setLiveRightPanelWidth(null);
       }
     };
 
@@ -53,26 +67,58 @@ export default function AppShell() {
     };
   }, [isRightPanelFullpage, isRightPanelHidden, isSidebarCompact, rightPanelWidth, setRightPanelWidth]);
 
+  const resolvedRightPanelWidth = liveRightPanelWidth ?? rightPanelWidth;
+
   const shellGridColumns = isRightPanelHidden
     ? `${isSidebarCompact ? compactSidebarWidth : '220px'} minmax(0,1fr) 0px ${rightRailWidth}`
-    : `${isSidebarCompact ? compactSidebarWidth : '220px'} minmax(0,1fr) ${rightPanelWidth}px ${rightRailWidth}`;
+    : `${isSidebarCompact ? compactSidebarWidth : '220px'} minmax(0,1fr) ${resolvedRightPanelWidth}px ${rightRailWidth}`;
 
   const handleRightResizeStart = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (isRightPanelHidden || isRightPanelFullpage) return;
     event.preventDefault();
+    isResizingRightPanelRef.current = true;
 
     const startX = event.clientX;
     const startWidth = rightPanelWidth;
 
+    const getViewportPanelMaxWidth = () => {
+      const sidebarWidthPx = isSidebarCompact ? SIDEBAR_COMPACT_WIDTH_PX : SIDEBAR_EXPANDED_WIDTH_PX;
+      const availableForPanel = Math.floor(window.innerWidth - sidebarWidthPx - RIGHT_RAIL_WIDTH_PX - MAIN_CONTENT_MIN_WIDTH_PX);
+      return Math.max(RIGHT_PANEL_MIN_WIDTH_PX, Math.min(RIGHT_PANEL_MAX_WIDTH_PX, availableForPanel));
+    };
+
+    let rafId: number | null = null;
+    let pendingWidth = startWidth;
+
+    const flushPendingWidth = () => {
+      rafId = null;
+      setLiveRightPanelWidth(pendingWidth);
+    };
+
     const onMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = startX - moveEvent.clientX;
-      const nextWidth = startWidth + deltaX;
-      void setRightPanelWidth(nextWidth);
+      const viewportMaxWidth = getViewportPanelMaxWidth();
+      pendingWidth = Math.max(RIGHT_PANEL_MIN_WIDTH_PX, Math.min(viewportMaxWidth, Math.round(startWidth + deltaX)));
+
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(flushPendingWidth);
     };
 
     const onMouseUp = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+        rafId = null;
+        setLiveRightPanelWidth(pendingWidth);
+      }
+
+      const committedWidth = liveRightPanelWidthRef.current ?? pendingWidth ?? startWidth;
+      setLiveRightPanelWidth(null);
+      liveRightPanelWidthRef.current = null;
+      isResizingRightPanelRef.current = false;
+      void setRightPanelWidth(committedWidth);
     };
 
     window.addEventListener('mousemove', onMouseMove);
@@ -202,6 +248,7 @@ export default function AppShell() {
           </div>
         </div>
         <GlobalTooltip />
+        <InAppNotificationToasts />
         <SettingsModal />
         <AnimeScheduleRateLimitGuideModal />
       </div>

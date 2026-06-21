@@ -460,6 +460,9 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
     getString(toRecord(record.anime), ['route']);
   if (route) {
     routeByNumericId.set(id, route);
+    if (isValidMalId(jikanId)) {
+      routeByNumericId.set(Math.floor(jikanId), route);
+    }
   }
 
   const image =

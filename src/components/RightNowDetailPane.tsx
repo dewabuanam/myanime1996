@@ -1,16 +1,20 @@
-import { useState } from 'react';
-import { CalendarDays, ChevronDown, Clock3, List, Play, RotateCcw } from 'lucide-react';
-import SeasonLinkBadge from './SeasonLinkBadge';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { BookmarkPlus, CalendarDays, ChevronDown, Clock3, List, ListPlus, Minus, Play, Plus, RotateCcw, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import type { AnimeDetail, AnimeEpisode, AnimeEpisodePagination, TitleLanguage } from '../types/anime';
 import { formatEpisodeDuration, formatEpisodeScoreOutOfTen } from '../utils/episodeFormatters';
 import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
 import { resolveAnimeSeason } from '../utils/season';
+import SeasonLinkBadge from './SeasonLinkBadge';
 
 type DetailEpisodeIcon = {
   iconDataUri: string;
   pluginName: string;
 };
+
+const MIN_POSTER_ZOOM = 1;
+const MAX_POSTER_ZOOM = 4;
 
 type RightNowDetailPaneProps = {
   detailAnimeView: AnimeDetail | null;
@@ -27,6 +31,10 @@ type RightNowDetailPaneProps = {
   detailEpisodeResolvedIconByEpisode: Record<number, DetailEpisodeIcon>;
   onPlayEpisode: (episodeNumber: number) => void;
   onToggleEpisodeExpand: (episodeNumber: number) => void;
+  onAddToQueue?: () => void;
+  onAddEpisodeToQueue?: (episodeNumber: number) => void;
+  onAddToLibrary?: (anchorElement?: HTMLElement | null) => void;
+  isInLibrary?: boolean;
 };
 
 export default function RightNowDetailPane({
@@ -44,14 +52,102 @@ export default function RightNowDetailPane({
   detailEpisodeResolvedIconByEpisode,
   onPlayEpisode,
   onToggleEpisodeExpand,
+  onAddToQueue,
+  onAddEpisodeToQueue,
+  onAddToLibrary,
+  isInLibrary = false,
 }: RightNowDetailPaneProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
+  const [isCompactPane, setIsCompactPane] = useState(false);
+  const [isPosterModalOpen, setIsPosterModalOpen] = useState(false);
+  const [posterZoom, setPosterZoom] = useState(1);
+  const [posterPan, setPosterPan] = useState({ x: 0, y: 0 });
+  const [isPosterDragging, setIsPosterDragging] = useState(false);
   const seasonMeta = detailAnimeView ? resolveAnimeSeason(detailAnimeView) : null;
   const scoreLabel = detailAnimeView?.score?.toFixed(1) ?? 'N/A';
   const membersLabel = detailAnimeView?.members ? detailAnimeView.members.toLocaleString('en-US') : 'N/A';
   const rankLabel = detailAnimeView?.rank ? String(detailAnimeView.rank) : 'N/A';
   const popularityLabel = detailAnimeView?.popularity ? String(detailAnimeView.popularity) : 'N/A';
   const episodeTotalLabel = formatEpisodeTotalLabel(detailAnimeView?.currentEpisode, detailAnimeView?.episodes);
+  const genreList = detailAnimeView?.genres?.filter(Boolean) ?? [];
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    const updateCompactState = () => {
+      setIsCompactPane(root.clientWidth <= 430);
+    };
+
+    updateCompactState();
+    const observer = new ResizeObserver(updateCompactState);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!isPosterModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsPosterModalOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isPosterModalOpen]);
+
+  const adjustPosterZoom = (delta: number) => {
+    setPosterZoom((current) => {
+      const next = Math.min(MAX_POSTER_ZOOM, Math.max(MIN_POSTER_ZOOM, Number((current + delta).toFixed(2))));
+      if (next <= MIN_POSTER_ZOOM) {
+        setPosterPan({ x: 0, y: 0 });
+      }
+      return next;
+    });
+  };
+
+  const openPosterModal = () => {
+    setPosterZoom(1);
+    setPosterPan({ x: 0, y: 0 });
+    setIsPosterDragging(false);
+    setIsPosterModalOpen(true);
+  };
+
+  const handlePosterDragStart = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (posterZoom <= MIN_POSTER_ZOOM) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startPan = { ...posterPan };
+    setIsPosterDragging(true);
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      setPosterPan({
+        x: startPan.x + (moveEvent.clientX - startX),
+        y: startPan.y + (moveEvent.clientY - startY),
+      });
+    };
+
+    const onMouseUp = () => {
+      setIsPosterDragging(false);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
 
   if (isDetailLoading && !detailAnimeView) {
     return (
@@ -72,60 +168,179 @@ export default function RightNowDetailPane({
   }
 
   return (
-    <div className="space-y-2.5">
-      <div className="grid grid-cols-[140px_minmax(0,1fr)] items-start gap-2.5">
-        <div className="relative overflow-hidden rounded-xl border border-cream/12 bg-black/45">
-          <img src={detailAnimeView.image} alt="" className="aspect-[3/4] h-full w-full object-cover" />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-        </div>
+    <div ref={rootRef} className="space-y-2.5">
+      <div className="anime-card media-thumb-card rounded-xl border border-cream/14 bg-black/22 p-2.5">
+        <div className={`${isCompactPane ? 'space-y-2' : 'grid grid-cols-[140px_minmax(0,1fr)] items-start gap-2.5'}`}>
+          <div
+            className="anime-card-poster-wrap w-full rounded-xl border border-cream/12 bg-black/45 min-h-[260px]"
+            style={{ aspectRatio: '2 / 3' }}
+          >
+            <button
+              type="button"
+              className="absolute inset-0 z-[1] cursor-zoom-in"
+              onClick={openPosterModal}
+              aria-label="Open poster in fullscreen"
+            >
+              <img src={detailAnimeView.image} alt={`${detailAnimeView.title} poster`} className="anime-card-poster" />
+            </button>
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+            {isCompactPane ? (
+              <>
+                <div className="absolute left-1 top-1 z-[2]">
+                  <div className="rounded-md border border-amberline/55 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-left shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.09em] text-cream/72">Rank</p>
+                    <p className="font-display text-[13px] leading-none text-amberline/95">{rankLabel}</p>
+                  </div>
+                </div>
+                <div className="absolute right-1 top-1 z-[2] space-y-1">
+                  <div className="rounded-md border border-amberline/60 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-right shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.09em] text-cream/70">Score</p>
+                    <p className="font-display text-[13px] leading-none text-amberline">{scoreLabel}</p>
+                    <p className="mt-0.5 font-mono text-[7px] uppercase tracking-[0.09em] text-cream/62">{membersLabel}</p>
+                  </div>
+                  <div className="rounded-md border border-amberline/54 bg-[rgba(43,27,17,0.60)] px-1.5 py-1 text-right shadow-[0_4px_14px_rgba(0,0,0,0.55)]">
+                    <p className="font-mono text-[8px] uppercase tracking-[0.09em] text-cream/70">Popularity</p>
+                    <p className="font-display text-[13px] leading-none text-amberline/95">{popularityLabel}</p>
+                  </div>
+                </div>
 
-        <div className="min-w-0 space-y-1.5">
-          <div className="flex flex-wrap items-stretch gap-2">
-            <div className="inline-flex rounded-lg border border-amberline/35 bg-amberline/12 px-2.5 py-1.5">
-              <div className="grid place-items-center text-center">
-                <p className="font-display text-[30px] leading-[0.9] text-amberline">{scoreLabel}</p>
-                <p className="mt-1 rounded-full border border-cream/22 bg-black/24 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/84 retro-tooltip" data-tooltip={detailAnimeView.members ? `${detailAnimeView.members.toLocaleString('en-US')} Members` : 'Members unavailable'}>
-                  {membersLabel}
-                </p>
+                <div className="absolute inset-x-1 bottom-1 z-[2] space-y-1 rounded-lg border border-amberline/45 bg-[rgba(36,22,14,0.60)] p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur-[1px]">
+                <div className="flex flex-wrap gap-1">
+                  <span className="inline-flex items-center gap-1 rounded-md border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                    <List size={9} className="text-amberline" /> {episodeTotalLabel}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-md border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                    <CalendarDays size={9} className="text-amberline" /> {detailYearLabel}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-md border border-amberline/40 bg-[rgba(52,33,21,0.60)] px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-cream/84">
+                    <Clock3 size={9} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
+                  </span>
+                  {seasonMeta ? (
+                    <SeasonLinkBadge
+                      season={seasonMeta.season}
+                      year={seasonMeta.year}
+                      variant="compact"
+                      showLabel
+                      interaction="link"
+                      className="!bg-[rgba(52,33,21,0.60)] !border-amberline/45"
+                    />
+                  ) : null}
+                </div>
+                {genreList.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {genreList.slice(0, 4).map((genre) => (
+                      <span
+                        key={genre}
+                        className="inline-flex items-center rounded-md border border-amberline/42 bg-amberline/18 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.08em] text-amberline/95"
+                      >
+                        {genre}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap justify-end gap-1.5 pt-0.5">
+                  {onAddToQueue ? (
+                    <button
+                      type="button"
+                      className="vhs-button-ghost inline-flex items-center gap-1 px-2 py-1 text-[9px]"
+                      onClick={onAddToQueue}
+                      aria-label="Add to queue"
+                    >
+                      <ListPlus size={11} />
+                      <span className="font-mono uppercase tracking-[0.08em]">Queue</span>
+                    </button>
+                  ) : null}
+                  {onAddToLibrary ? (
+                    <button
+                      type="button"
+                      className="vhs-button-ghost inline-flex items-center gap-1 px-2 py-1 text-[9px]"
+                      onClick={(event) => onAddToLibrary(event.currentTarget)}
+                      aria-label={isInLibrary ? 'Update library status' : 'Add to library'}
+                    >
+                      <BookmarkPlus size={11} />
+                      <span className="font-mono uppercase tracking-[0.08em]">Library</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-
-            <div className="inline-flex rounded-lg border border-amberline/35 bg-amberline/10 px-2.5 py-1">
-              <div className="flex min-w-[76px] flex-col items-center justify-center gap-0.5 text-center">
-                <p className="font-mono text-[10px] uppercase leading-none tracking-[0.1em] text-cream/68">Rank</p>
-                <span className="inline-flex items-center justify-center retro-tooltip font-display text-[24px] leading-none text-amberline/95" data-tooltip="Rank">{rankLabel}</span>
-              </div>
-            </div>
-
-            <div className="inline-flex rounded-lg border border-amberline/35 bg-amberline/10 px-2.5 py-1">
-              <div className="flex min-w-[76px] flex-col items-center justify-center gap-0.5 text-center">
-                <p className="font-mono text-[10px] uppercase leading-none tracking-[0.1em] text-cream/68">Popularity</p>
-                <span className="inline-flex items-center justify-center retro-tooltip font-display text-[24px] leading-none text-amberline/95" data-tooltip="Popularity">{popularityLabel}</span>
-              </div>
-            </div>
+              </>
+            ) : null}
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Episodes">
-              <List size={11} className="text-amberline" /> {episodeTotalLabel}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Year">
-              <CalendarDays size={11} className="text-amberline" /> {detailYearLabel}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-cream/15 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/68 retro-tooltip" data-tooltip="Status">
-              <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
-            </span>
-          </div>
+          <div className="min-w-0 flex h-full flex-col space-y-1.5">
+            {!isCompactPane ? (
+              <div className="grid grid-cols-3 gap-1.5">
+                <div className="rounded-lg border border-amberline/35 bg-amberline/10 px-2.5 py-1.5 text-center">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/65">Score</p>
+                  <p className="mt-0.5 font-display text-[24px] leading-none text-amberline">{scoreLabel}</p>
+                  <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-cream/60">{membersLabel}</p>
+                </div>
+                <div className="rounded-lg border border-cream/18 bg-black/26 px-2.5 py-1.5 text-center">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/65">Rank</p>
+                  <p className="mt-0.5 font-display text-[22px] leading-none text-amberline/95">{rankLabel}</p>
+                </div>
+                <div className="rounded-lg border border-cream/18 bg-black/26 px-2.5 py-1.5 text-center">
+                  <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-cream/65">Popularity</p>
+                  <p className="mt-0.5 font-display text-[22px] leading-none text-amberline/95">{popularityLabel}</p>
+                </div>
+              </div>
+            ) : null}
 
-          <div className="flex flex-wrap gap-1.5">
-            {(detailAnimeView.genres?.length ? detailAnimeView.genres.slice(0, 4) : ['Anime']).map((genre) => (
-              <span key={genre} className="inline-flex items-center rounded-full border border-amberline/30 bg-amberline/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.09em] text-amberline/90">
-                {genre}
+            <div className={`flex flex-wrap gap-1.5 ${isCompactPane ? 'hidden' : ''}`}>
+              <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Episodes">
+                <List size={11} className="text-amberline" /> {episodeTotalLabel}
               </span>
-            ))}
-          </div>
+              <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Year">
+                <CalendarDays size={11} className="text-amberline" /> {detailYearLabel}
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-md border border-cream/15 bg-black/22 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-cream/72 retro-tooltip" data-tooltip="Status">
+                <Clock3 size={11} className="text-amberline" /> {detailAnimeView.status ?? 'Unknown'}
+              </span>
+              {seasonMeta ? (
+                <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="compact" showLabel interaction="link" />
+              ) : null}
+            </div>
 
-          {seasonMeta ? <SeasonLinkBadge season={seasonMeta.season} year={seasonMeta.year} variant="full" showLabel /> : null}
+            {genreList.length > 0 && !isCompactPane ? (
+              <div className="flex flex-wrap gap-1.5">
+                {genreList.map((genre) => (
+                  <span
+                    key={genre}
+                    className="inline-flex items-center rounded-md border border-amberline/30 bg-amberline/10 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.09em] text-amberline/90"
+                  >
+                    {genre}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+
+            <div className={`mt-auto flex flex-wrap justify-end gap-2 pt-2 ${isCompactPane ? 'hidden' : ''}`}>
+              {onAddToQueue ? (
+                <button
+                  type="button"
+                  className="vhs-button-ghost inline-flex items-center gap-1.5 px-3.5 py-2 text-[11px] retro-tooltip"
+                  onClick={onAddToQueue}
+                  data-tooltip="Add to Queue"
+                  aria-label="Add to queue"
+                >
+                  <ListPlus size={15} />
+                  <span className="font-mono uppercase tracking-[0.08em]">Add Queue</span>
+                </button>
+              ) : null}
+              {onAddToLibrary ? (
+                <button
+                  type="button"
+                  className="vhs-button-ghost inline-flex items-center gap-1.5 px-3.5 py-2 text-[11px] retro-tooltip"
+                  onClick={(event) => onAddToLibrary(event.currentTarget)}
+                  data-tooltip={isInLibrary ? 'Update Library Status' : 'Add to Library'}
+                  aria-label={isInLibrary ? 'Update library status' : 'Add to library'}
+                >
+                  <BookmarkPlus size={15} />
+                  <span className="font-mono uppercase tracking-[0.08em]">Add Library</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -181,7 +396,7 @@ export default function RightNowDetailPane({
             const isExpanded = detailExpandedEpisode === episode.episodeNumber;
             const labels = getEpisodeDisplayTitles(episode, detailAnimeView, titleLanguage);
             return (
-              <article key={episode.episodeNumber} className="rounded-xl border border-cream/10 bg-carbon/35 px-2.5 py-2">
+              <article key={episode.episodeNumber} className="group/episode rounded-xl border border-cream/10 bg-carbon/35 px-2.5 py-2">
                 <div className="flex items-start gap-2">
                   <button
                     type="button"
@@ -194,19 +409,6 @@ export default function RightNowDetailPane({
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-start justify-between gap-2">
                       <p className="line-clamp-1 font-display text-sm uppercase text-cream">{labels.primary}</p>
-                      {detailEpisodeResolvedIconByEpisode[episode.episodeNumber] ? (
-                        <div
-                          className="shrink-0 rounded-md bg-black/62 p-1 shadow-[0_4px_14px_rgba(0,0,0,0.45)] retro-tooltip"
-                          data-tooltip={`${detailEpisodeResolvedIconByEpisode[episode.episodeNumber].pluginName} Available`}
-                        >
-                          <img
-                            src={detailEpisodeResolvedIconByEpisode[episode.episodeNumber].iconDataUri}
-                            alt="Resolved source"
-                            className="h-4 w-4 rounded-sm object-contain"
-                            loading="lazy"
-                          />
-                        </div>
-                      ) : null}
                     </div>
                     {labels.secondary ? <p className="anime-card-jp line-clamp-1">{labels.secondary}</p> : null}
                     <div className="mt-1 flex flex-wrap gap-1 text-[10px] font-mono uppercase tracking-[0.09em] text-cream/55">
@@ -215,19 +417,44 @@ export default function RightNowDetailPane({
                       {episode.recap ? <span className="rounded-full bg-amberline/85 px-1.5 py-0.5 text-ink">Recap</span> : null}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="vhs-button-ghost p-1.5 text-[10px] retro-tooltip"
-                    onClick={() => onToggleEpisodeExpand(episode.episodeNumber)}
-                    data-tooltip={isExpanded ? 'Collapse Episode' : 'Expand Episode'}
-                    aria-label={isExpanded ? 'Collapse Episode' : 'Expand Episode'}
-                  >
-                    {detailLoadingEpisode === episode.episodeNumber ? (
-                      <RotateCcw size={12} className="animate-spin" />
-                    ) : (
-                      <ChevronDown size={12} className={isExpanded ? 'rotate-180 transition-transform' : 'transition-transform'} />
-                    )}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {detailEpisodeResolvedIconByEpisode[episode.episodeNumber] ? (
+                      <div
+                        className="shrink-0 rounded-md bg-black/62 p-1 shadow-[0_4px_14px_rgba(0,0,0,0.45)] retro-tooltip"
+                        data-tooltip={`${detailEpisodeResolvedIconByEpisode[episode.episodeNumber].pluginName} Available`}
+                      >
+                        <img
+                          src={detailEpisodeResolvedIconByEpisode[episode.episodeNumber].iconDataUri}
+                          alt="Resolved source"
+                          className="h-4 w-4 rounded-sm object-contain"
+                          loading="lazy"
+                        />
+                      </div>
+                    ) : null}
+                    {onAddEpisodeToQueue ? (
+                      <button
+                        type="button"
+                        className="vhs-button-ghost p-1.5 text-[10px] opacity-0 transition-opacity duration-150 group-hover/episode:opacity-100 group-focus-within/episode:opacity-100"
+                        onClick={() => onAddEpisodeToQueue(episode.episodeNumber)}
+                        aria-label={`Add episode ${episode.episodeNumber} to queue`}
+                      >
+                        <ListPlus size={12} />
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="vhs-button-ghost p-1.5 text-[10px] opacity-0 transition-opacity duration-150 group-hover/episode:opacity-100 group-focus-within/episode:opacity-100"
+                      onClick={() => onToggleEpisodeExpand(episode.episodeNumber)}
+                      data-tooltip={isExpanded ? 'Collapse Episode' : 'Expand Episode'}
+                      aria-label={isExpanded ? 'Collapse Episode' : 'Expand Episode'}
+                    >
+                      {detailLoadingEpisode === episode.episodeNumber ? (
+                        <RotateCcw size={12} className="animate-spin" />
+                      ) : (
+                        <ChevronDown size={12} className={isExpanded ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                      )}
+                    </button>
+                  </div>
                 </div>
                 {isExpanded ? (
                   <div className="mt-1.5 rounded-lg border border-cream/10 bg-black/20 p-2">
@@ -266,6 +493,90 @@ export default function RightNowDetailPane({
           <p className="text-cream/60">No episode metadata available yet.</p>
         )}
       </div>
+
+      {isPosterModalOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[220] bg-black/62 backdrop-blur-md"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Poster fullscreen preview"
+              onClick={() => setIsPosterModalOpen(false)}
+            >
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.08)_0%,rgba(0,0,0,0.42)_72%,rgba(0,0,0,0.62)_100%)]" />
+              <div className="absolute right-3 top-3 z-[2] flex items-center gap-1.5">
+                <button
+                  type="button"
+                  className="vhs-button-ghost p-2"
+                  aria-label="Zoom out"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    adjustPosterZoom(-0.2);
+                  }}
+                >
+                  <Minus size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="vhs-button-ghost p-2"
+                  aria-label="Reset zoom"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setPosterZoom(1);
+                    setPosterPan({ x: 0, y: 0 });
+                  }}
+                >
+                  <RotateCcw size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="vhs-button-ghost p-2"
+                  aria-label="Zoom in"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    adjustPosterZoom(0.2);
+                  }}
+                >
+                  <Plus size={14} />
+                </button>
+                <button
+                  type="button"
+                  className="vhs-button-ghost p-2"
+                  aria-label="Close poster preview"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsPosterModalOpen(false);
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div
+                className={`flex h-full w-full items-center justify-center p-5 ${posterZoom > MIN_POSTER_ZOOM ? (isPosterDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'}`}
+                onClick={(event) => event.stopPropagation()}
+                onMouseDown={handlePosterDragStart}
+                onWheel={(event) => {
+                  event.preventDefault();
+                  adjustPosterZoom(event.deltaY < 0 ? 0.15 : -0.15);
+                }}
+              >
+                <img
+                  src={detailAnimeView.image}
+                  alt={`${detailAnimeView.title} poster fullscreen`}
+                  draggable={false}
+                  className="max-h-[92vh] max-w-[92vw] rounded-lg border border-amberline/45 object-contain shadow-[0_16px_42px_rgba(0,0,0,0.6)]"
+                  style={{ transform: `translate(${posterPan.x}px, ${posterPan.y}px) scale(${posterZoom})`, transformOrigin: 'center center' }}
+                />
+              </div>
+
+              <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-md border border-amberline/35 bg-black/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-cream/84">
+                Zoom {Math.round(posterZoom * 100)}% · Mouse wheel, buttons, drag to pan
+              </p>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

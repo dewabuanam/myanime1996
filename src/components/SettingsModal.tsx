@@ -8,7 +8,7 @@ import { DEFAULT_ANIMESCHEDULE_TOKEN } from '../services/animeSchedule';
 import { clearPluginResolverCacheByKey, getPluginResolverCacheSnapshot, replacePluginResolverCacheByKey } from '../services/pluginExecutor';
 import { clearSourceResolveCache } from '../services/sourceCache';
 import { getStoredValue, setStoredValue } from '../services/store';
-import { useAppStore } from '../state/appStore';
+import { DEFAULT_NOTIFICATION_POSTER, useAppStore } from '../state/appStore';
 import type { UpcomingSeasonFilter } from '../state/appStore';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -217,6 +217,7 @@ export default function SettingsModal() {
   const factoryReset = useAppStore((state) => state.factoryReset);
   const animeScheduleApiToken = useAppStore((state) => state.animeScheduleApiToken);
   const setAnimeScheduleApiToken = useAppStore((state) => state.setAnimeScheduleApiToken);
+  const testWindowsNotification = useAppStore((state) => state.testWindowsNotification);
   const openAnimeScheduleRateLimitGuide = useAppStore((state) => state.openAnimeScheduleRateLimitGuide);
   const autoSkipOpening = useAppStore((state) => state.autoSkipOpening);
   const autoSkipEnding = useAppStore((state) => state.autoSkipEnding);
@@ -247,6 +248,9 @@ export default function SettingsModal() {
   const [statusMessage, setStatusMessage] = useState('');
   const [pendingConfirmActionId, setPendingConfirmActionId] = useState<string | null>(null);
   const [tokenDraft, setTokenDraft] = useState('');
+  const [testNotificationTitle, setTestNotificationTitle] = useState('My Anime 1996');
+  const [testNotificationEpisode, setTestNotificationEpisode] = useState('1');
+  const [testNotificationCount, setTestNotificationCount] = useState('1');
   const [assumeEpisodeCountFromReleaseDate, setAssumeEpisodeCountFromReleaseDate] = useState(false);
   const [isCacheViewerOpen, setCacheViewerOpen] = useState(false);
   const [cacheViewerLoading, setCacheViewerLoading] = useState(false);
@@ -279,6 +283,9 @@ export default function SettingsModal() {
       setStatusMessage('');
       setPendingConfirmActionId(null);
       setTokenDraft(animeScheduleApiToken);
+      setTestNotificationTitle('My Anime 1996');
+      setTestNotificationEpisode('1');
+      setTestNotificationCount('1');
       setCacheViewerOpen(false);
       setCacheViewerLoading(false);
       setBusyCacheCardId(null);
@@ -505,12 +512,12 @@ export default function SettingsModal() {
       {
         id: 'factory-reset',
         title: 'Factory Reset',
-        description: 'Reset UI settings, watchlist data, favorites, and history while keeping the current login session.',
+        description: 'Reset UI settings, library data, and history while keeping the current login session.',
         actionLabel: 'Reset now',
         tone: 'danger',
         confirm: {
           title: 'Factory reset app data?',
-          message: 'This deletes user settings, watch data, favorites, playlists, and history while keeping your current login session.',
+          message: 'This deletes user settings, library data, playlists, and history while keeping your current login session.',
           confirmLabel: 'Reset all',
         },
         onAction: async () => {
@@ -727,6 +734,60 @@ export default function SettingsModal() {
                           >
                             Trigger Rate-Limit Guide (Dev)
                           </button>
+                        ) : null}
+                        {isDevMode ? (
+                          <>
+                            <div className="w-full rounded-xl border border-cream/20 bg-black/25 p-3">
+                              <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Test Notification Poster</p>
+                              <div className="flex items-center gap-3">
+                                <img
+                                  src={DEFAULT_NOTIFICATION_POSTER}
+                                  alt="Default test notification poster"
+                                  className="h-16 w-12 rounded-md border border-cream/20 object-cover"
+                                />
+                                <p className="text-xs text-cream/70">Uses the same notification icon pipeline as library notifications.</p>
+                              </div>
+                            </div>
+                            <input
+                              type="text"
+                              className="w-full rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream outline-none focus:border-amberline"
+                              value={testNotificationTitle}
+                              onChange={(event) => setTestNotificationTitle(event.target.value)}
+                              placeholder="Test anime title"
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              className="w-full rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream outline-none focus:border-amberline"
+                              value={testNotificationEpisode}
+                              onChange={(event) => setTestNotificationEpisode(event.target.value)}
+                              placeholder="Episode"
+                            />
+                            <input
+                              type="number"
+                              min={1}
+                              max={30}
+                              step={1}
+                              className="w-full rounded-xl border border-cream/20 bg-black/25 px-3 py-2 text-sm text-cream outline-none focus:border-amberline"
+                              value={testNotificationCount}
+                              onChange={(event) => setTestNotificationCount(event.target.value)}
+                              placeholder="How many notifications"
+                            />
+                            <button
+                              type="button"
+                              className="settings-action-btn"
+                              onClick={() => {
+                                const safeEpisode = Math.max(1, Math.floor(Number(testNotificationEpisode) || 1));
+                                const safeCount = Math.min(30, Math.max(1, Math.floor(Number(testNotificationCount) || 1)));
+                                void testWindowsNotification(testNotificationTitle, safeEpisode, safeCount).then(() => {
+                                  setStatusMessage(`Test Windows notifications sent: ${safeCount}.`);
+                                });
+                              }}
+                            >
+                              Test Windows Notifications
+                            </button>
+                          </>
                         ) : null}
                       </div>
                     </div>

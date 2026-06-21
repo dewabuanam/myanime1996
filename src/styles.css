@@ -2386,8 +2386,11 @@ button {
 .settings-modal {
   position: relative;
   width: min(52rem, calc(100vw - 2rem));
+  height: 44rem;
   max-height: calc(100vh - 3.5rem);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(236, 183, 104, 0.38);
   border-radius: 1rem;
   background:
@@ -2429,7 +2432,9 @@ button {
   display: grid;
   grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
   gap: 0.85rem;
-  min-height: 20rem;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .settings-sidebar {
@@ -2443,6 +2448,8 @@ button {
   grid-template-rows: auto minmax(0, 1fr);
   gap: 0.55rem;
   box-shadow: 0 0 0 1px rgba(245, 234, 210, 0.05) inset;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .settings-modal-header {
@@ -2549,6 +2556,8 @@ button {
     rgba(255, 255, 255, 0.02);
   padding: 0.72rem;
   box-shadow: 0 0 0 1px rgba(245, 234, 210, 0.05) inset;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .settings-action-card {
@@ -2668,6 +2677,7 @@ button {
 @media (max-width: 720px) {
   .settings-modal {
     width: calc(100vw - 1rem);
+    height: calc(100vh - 1rem);
     padding: 0.85rem;
   }
 
@@ -3211,12 +3221,12 @@ button {
   position: absolute;
   right: 0.55rem;
   top: 0.55rem;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid rgba(240, 182, 96, 0.56);
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid rgba(236, 183, 104, 0.66);
   border-radius: 999px;
   background: rgba(245, 234, 210, 0.95);
-  color: #1a1410;
+  color: #1c140f;
   display: inline-flex;
   align-items: center;
   justify-content: center;

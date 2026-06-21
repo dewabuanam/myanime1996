@@ -1,8 +1,22 @@
 import { create } from 'zustand';
-import type { AnimeSummary, PlayableItem, PlayableKind, Playlist, RightPanelView, TitleLanguage, UserSession, WatchProgress } from '../types/anime';
+import { getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
+import type {
+  AnimeSummary,
+  LibraryAnimeItem,
+  LibraryNotificationFeedItem,
+  LibraryStatus,
+  LibraryStatusNotificationSettings,
+  PlayableItem,
+  PlayableKind,
+  Playlist,
+  RightPanelView,
+  TitleLanguage,
+  UserSession,
+  WatchProgress,
+} from '../types/anime';
 import type { ImportedSourcePluginDefinition, SourceAudioLanguage } from '../types/plugin';
 import type { BaseCatalogSource } from '../services/catalogSource';
-import { DEFAULT_BASE_CATALOG_SOURCE, getAnimeTrailerUrl } from '../services/catalogSource';
+import { DEFAULT_BASE_CATALOG_SOURCE, getAnimeTrailerUrl, resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { clearAnimeScheduleDataCache, DEFAULT_ANIMESCHEDULE_TOKEN, onAnimeScheduleRateLimit } from '../services/animeSchedule';
 import { clearJikanDataCache } from '../services/jikan';
 import { getStoredValue, removeStoredValue, setStoredValue } from '../services/store';
@@ -22,11 +36,39 @@ export type PlaybackSupportMode = 'fully-supported' | 'fullscreen-only' | 'fully
 export type AnimeSkipType = 'op' | 'ed' | 'recap';
 export type UpcomingSeasonFilter = 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
 
+const LIBRARY_STATUSES: LibraryStatus[] = ['watching', 'plan-to-watch', 'on-hold', 'dropped', 'completed'];
+const MAX_LIBRARY_NOTIFICATIONS = 100;
+const LIBRARY_EPISODE_POLL_INTERVAL_MS = 60_000;
+const OS_NOTIFICATION_DEDUPE_WINDOW_MS = 90_000;
+const MAX_ACTION_TOASTS = 4;
+const ACTION_TOAST_DURATION_MS = 3600;
+export const DEFAULT_NOTIFICATION_POSTER = '/assets/logo.png';
+let libraryEpisodePollTimer: ReturnType<typeof setInterval> | null = null;
+let libraryEpisodeCheckInFlight = false;
+let libraryEpisodeCheckPromise: Promise<void> | null = null;
+let libraryNotificationActionListenerBound = false;
+const lastOsNotificationSentAtByKey = new Map<string, number>();
+const localNotificationAttachmentUrlBySource = new Map<string, string>();
+const actionToastTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function ensureLibraryEpisodePolling(runCheck: () => void) {
+  if (libraryEpisodePollTimer) return;
+  libraryEpisodePollTimer = setInterval(() => {
+    runCheck();
+  }, LIBRARY_EPISODE_POLL_INTERVAL_MS);
+}
+
 export type AnimeSkipButtonSegment = {
   type: AnimeSkipType;
   startTime: number;
   endTime: number;
   skipId: string;
+};
+
+export type InAppActionToast = {
+  id: string;
+  kind: 'queue' | 'library';
+  message: string;
 };
 
 function getLocalDateStamp(date = new Date()) {
@@ -72,6 +114,12 @@ interface AppState {
   playlists: Playlist[];
   watchHistory: WatchProgress[];
   favorites: number[];
+  libraryItems: Record<number, LibraryAnimeItem>;
+  libraryStatusNotificationSettings: LibraryStatusNotificationSettings;
+  libraryLastNotifiedEpisodeByAnimeId: Record<number, number>;
+  libraryNotifications: LibraryNotificationFeedItem[];
+  actionToasts: InAppActionToast[];
+  libraryLastDailyEpisodeCheckDate: string | null;
   watchProgress: Record<number, WatchProgress>;
   homeRefreshVersion: number;
   isPlaying: boolean;
@@ -134,6 +182,18 @@ interface AppState {
     details?: { elapsedSeconds?: number; durationSeconds?: number },
   ) => Promise<void>;
   toggleFavorite: (animeId: number) => Promise<void>;
+  setAnimeLibraryStatus: (anime: AnimeSummary, status: LibraryStatus) => Promise<void>;
+  removeAnimeFromLibrary: (animeId: number) => Promise<void>;
+  getLibraryStatusForAnime: (animeId: number, jikanId?: number) => LibraryStatus | null;
+  setLibraryStatusNotificationEnabled: (status: LibraryStatus, enabled: boolean) => Promise<void>;
+  markLibraryNotificationRead: (notificationId: string) => void;
+  playLibraryNotification: (notificationId: string) => Promise<void>;
+  testWindowsNotification: (animeTitle: string, episode: number, count?: number) => Promise<void>;
+  markAllLibraryNotificationsRead: () => void;
+  clearLibraryNotifications: () => Promise<void>;
+  pushActionToast: (toast: Omit<InAppActionToast, 'id'>) => void;
+  dismissActionToast: (toastId: string) => void;
+  runLibraryEpisodeDailyCheck: (force?: boolean) => Promise<void>;
   setPlaying: (playing: boolean) => void;
   setPlaybackTime: (seconds: number) => void;
   setPlaybackDuration: (seconds: number) => void;
@@ -533,6 +593,16 @@ function buildSeriesPlayableItems(anime: AnimeSummary): PlayableItem[] {
   return Array.from({ length: totalEpisodes }, (_, index) => makeEpisodeItem(anime, index + 1, 'anime-card'));
 }
 
+function buildQueuePlayableItems(anime: AnimeSummary): PlayableItem[] {
+  const inferredKind = inferMediaKindFromAnime(anime);
+  if (inferredKind !== 'episode') {
+    return [makeSingleMediaItem(anime, inferredKind)];
+  }
+
+  const latestEpisode = Math.max(1, anime.currentEpisode ?? anime.episodes ?? 1);
+  return Array.from({ length: latestEpisode }, (_, index) => makeEpisodeItem(anime, index + 1, 'anime-card'));
+}
+
 function sortHistory(history: WatchProgress[]) {
   return [...history].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
@@ -595,6 +665,384 @@ function normalizeWatchProgressMap(map: Record<number, WatchProgress>) {
     normalized[clean.animeId] = clean;
   }
   return normalized;
+}
+
+function isLibraryStatus(value: unknown): value is LibraryStatus {
+  return value === 'plan-to-watch' || value === 'watching' || value === 'on-hold' || value === 'dropped' || value === 'completed';
+}
+
+function getDefaultLibraryStatusNotificationSettings(): LibraryStatusNotificationSettings {
+  return {
+    'plan-to-watch': false,
+    watching: true,
+    'on-hold': false,
+    dropped: false,
+    completed: false,
+  };
+}
+
+function normalizeLibraryStatusNotificationSettings(value: unknown): LibraryStatusNotificationSettings {
+  const defaults = getDefaultLibraryStatusNotificationSettings();
+  if (!value || typeof value !== 'object') return defaults;
+  const source = value as Record<string, unknown>;
+  return {
+    'plan-to-watch': typeof source['plan-to-watch'] === 'boolean' ? source['plan-to-watch'] : defaults['plan-to-watch'],
+    watching: typeof source.watching === 'boolean' ? source.watching : defaults.watching,
+    'on-hold': typeof source['on-hold'] === 'boolean' ? source['on-hold'] : defaults['on-hold'],
+    dropped: typeof source.dropped === 'boolean' ? source.dropped : defaults.dropped,
+    completed: typeof source.completed === 'boolean' ? source.completed : defaults.completed,
+  };
+}
+
+function normalizeLibraryLastNotifiedEpisodeMap(value: unknown): Record<number, number> {
+  if (!value || typeof value !== 'object') return {};
+  const normalized: Record<number, number> = {};
+  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    const animeId = Math.max(1, Math.floor(Number(key) || 0));
+    const episode = Math.max(0, Math.floor(Number(rawValue) || 0));
+    if (animeId > 0 && episode >= 0) {
+      normalized[animeId] = episode;
+    }
+  }
+  return normalized;
+}
+
+function normalizeLibraryNotifications(value: unknown): LibraryNotificationFeedItem[] {
+  if (!Array.isArray(value)) return [];
+  const cleaned = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const item = entry as Partial<LibraryNotificationFeedItem>;
+      const animeId = Math.max(1, Math.floor(Number(item.animeId) || 0));
+      const episode = Math.max(0, Math.floor(Number(item.episode) || 0));
+      if (!item.id || typeof item.id !== 'string') return null;
+      if (!item.title || typeof item.title !== 'string') return null;
+      if (!item.message || typeof item.message !== 'string') return null;
+      if (!item.createdAt || typeof item.createdAt !== 'string') return null;
+      if (animeId <= 0) return null;
+      return {
+        id: item.id,
+        animeId,
+        episode,
+        title: item.title,
+        image: typeof item.image === 'string' ? item.image : undefined,
+        message: item.message,
+        createdAt: item.createdAt,
+        channel: item.channel === 'os' ? 'os' : 'in-app',
+        read: Boolean(item.read),
+      } as LibraryNotificationFeedItem;
+    })
+    .filter((entry): entry is LibraryNotificationFeedItem => Boolean(entry));
+
+  const deduped = new Map<string, LibraryNotificationFeedItem>();
+  for (const entry of cleaned) {
+    const key = `${entry.animeId}|${entry.episode}|${entry.title.trim().toLowerCase()}|${entry.message.trim().toLowerCase()}`;
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, entry);
+      continue;
+    }
+
+    const existingCreatedAt = new Date(existing.createdAt).getTime();
+    const nextCreatedAt = new Date(entry.createdAt).getTime();
+    if (nextCreatedAt >= existingCreatedAt) {
+      deduped.set(key, entry);
+    }
+  }
+
+  return Array.from(deduped.values())
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, MAX_LIBRARY_NOTIFICATIONS);
+}
+
+function normalizeLibraryItems(value: unknown): Record<number, LibraryAnimeItem> {
+  if (!value || typeof value !== 'object') return {};
+  const normalized: Record<number, LibraryAnimeItem> = {};
+  for (const entry of Object.values(value as Record<string, unknown>)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const item = entry as Partial<LibraryAnimeItem>;
+    if (!isLibraryStatus(item.status)) continue;
+    const animeId = Math.max(1, Math.floor(Number(item.animeId) || 0));
+    if (!animeId) continue;
+    const jikanIdRaw = Math.floor(Number(item.jikanId) || 0);
+    const canonicalAnimeId = jikanIdRaw > 0 ? jikanIdRaw : animeId;
+    const nextItem: LibraryAnimeItem = {
+      animeId: canonicalAnimeId,
+      jikanId: jikanIdRaw > 0 ? jikanIdRaw : undefined,
+      animeScheduleRoute: typeof item.animeScheduleRoute === 'string' ? item.animeScheduleRoute : undefined,
+      title: typeof item.title === 'string' && item.title.trim().length > 0 ? item.title : 'Unknown Title',
+      titleEnglish: typeof item.titleEnglish === 'string' ? item.titleEnglish : undefined,
+      titleJapanese: typeof item.titleJapanese === 'string' ? item.titleJapanese : undefined,
+      image: typeof item.image === 'string' ? item.image : '',
+      mediaType: typeof item.mediaType === 'string' ? item.mediaType : undefined,
+      year: Number.isFinite(item.year) ? Number(item.year) : undefined,
+      episodes: Number.isFinite(item.episodes) ? Number(item.episodes) : undefined,
+      currentEpisode: Number.isFinite(item.currentEpisode) ? Number(item.currentEpisode) : undefined,
+      status: item.status,
+      addedAt: typeof item.addedAt === 'string' ? item.addedAt : new Date().toISOString(),
+      updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString(),
+    };
+
+    const existing = normalized[canonicalAnimeId];
+    if (!existing) {
+      normalized[canonicalAnimeId] = nextItem;
+      continue;
+    }
+
+    const existingUpdatedAt = new Date(existing.updatedAt).getTime();
+    const nextUpdatedAt = new Date(nextItem.updatedAt).getTime();
+    if (nextUpdatedAt >= existingUpdatedAt) {
+      normalized[canonicalAnimeId] = {
+        ...nextItem,
+        addedAt: existing.addedAt || nextItem.addedAt,
+      };
+    }
+  }
+  return normalized;
+}
+
+function buildLibraryItemFromAnime(anime: AnimeSummary, status: LibraryStatus, existing?: LibraryAnimeItem): LibraryAnimeItem {
+  const now = new Date().toISOString();
+  const canonicalAnimeId = getCanonicalAnimeId(anime);
+  return {
+    animeId: canonicalAnimeId,
+    jikanId: anime.jikanId,
+    animeScheduleRoute: anime.animeScheduleRoute,
+    title: anime.title,
+    titleEnglish: anime.titleEnglish,
+    titleJapanese: anime.titleJapanese,
+    image: anime.image,
+    mediaType: anime.mediaType,
+    year: anime.year,
+    episodes: anime.episodes,
+    currentEpisode: anime.currentEpisode,
+    status,
+    addedAt: existing?.addedAt ?? now,
+    updatedAt: now,
+  };
+}
+
+function resolveLibraryAnimeId(animeId: number, jikanId: number | undefined) {
+  const parsedAnimeId = Math.max(1, Math.floor(Number(animeId) || 0));
+  const parsedJikanId = Math.max(1, Math.floor(Number(jikanId) || 0));
+  return parsedJikanId > 0 ? parsedJikanId : parsedAnimeId;
+}
+
+function isTauriRuntime() {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+function resolveNotificationIconUrl(image?: string) {
+  const candidate = image?.trim() || DEFAULT_NOTIFICATION_POSTER;
+  if (typeof window === 'undefined') return candidate;
+  try {
+    return new URL(candidate, window.location.origin).toString();
+  } catch {
+    return candidate;
+  }
+}
+
+function getPosterExtensionFromUrl(urlValue: string) {
+  const normalized = urlValue.trim().toLowerCase();
+  if (normalized.includes('.webp')) return '.webp';
+  if (normalized.includes('.gif')) return '.gif';
+  if (normalized.includes('.jpg') || normalized.includes('.jpeg')) return '.jpg';
+  return '.png';
+}
+
+function toFileProtocolUrl(absolutePath: string) {
+  const normalized = absolutePath.replace(/\\/g, '/');
+  const prefixed = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  return `file://${encodeURI(prefixed)}`;
+}
+
+async function resolveTauriAttachmentUrl(posterUrl: string, animeId: number) {
+  const source = posterUrl.trim();
+  if (!source) return null;
+
+  const cached = localNotificationAttachmentUrlBySource.get(source);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(source);
+    if (!response.ok) return null;
+
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!bytes.byteLength) return null;
+
+    const [
+      { writeFile, BaseDirectory },
+      { appLocalDataDir, cacheDir, tempDir, join },
+    ] = await Promise.all([
+      import('@tauri-apps/plugin-fs'),
+      import('@tauri-apps/api/path'),
+    ]);
+
+    const fileName = `notification-poster-${animeId}-${hashString(source)}${getPosterExtensionFromUrl(source)}`;
+    const candidates: Array<{
+      baseDir: (typeof BaseDirectory)[keyof typeof BaseDirectory];
+      getRoot: () => Promise<string>;
+    }> = [
+      { baseDir: BaseDirectory.AppLocalData, getRoot: appLocalDataDir },
+      { baseDir: BaseDirectory.Cache, getRoot: cacheDir },
+      { baseDir: BaseDirectory.Temp, getRoot: tempDir },
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        await writeFile(fileName, bytes, {
+          baseDir: candidate.baseDir,
+        });
+        const absolutePath = await join(await candidate.getRoot(), fileName);
+        const attachmentUrl = toFileProtocolUrl(absolutePath);
+        localNotificationAttachmentUrlBySource.set(source, attachmentUrl);
+        return attachmentUrl;
+      } catch {
+        // Try the next writable location.
+      }
+    }
+
+    return source;
+  } catch (error) {
+    console.warn('[Notification] Failed to prepare local attachment URL:', error);
+    return null;
+  }
+}
+
+async function sendLibraryEpisodeOsNotification(options: {
+  animeId: number;
+  episode: number;
+  animeTitle: string;
+  image?: string;
+  skipDedupe?: boolean;
+}) {
+  const animeId = Math.max(1, Math.floor(Number(options.animeId) || 0));
+  const episode = Math.max(1, Math.floor(Number(options.episode) || 0));
+  if (animeId <= 0 || episode <= 0) return;
+
+  if (!options.skipDedupe) {
+    const now = Date.now();
+    const dedupeKey = `${animeId}|${episode}`;
+    const lastSentAt = lastOsNotificationSentAtByKey.get(dedupeKey) ?? 0;
+    if (now - lastSentAt < OS_NOTIFICATION_DEDUPE_WINDOW_MS) return;
+    lastOsNotificationSentAtByKey.set(dedupeKey, now);
+  }
+
+  const title = options.animeTitle?.trim() || 'Anime';
+  const message = `Episode ${episode} is now available.`;
+  const posterUrl = resolveNotificationIconUrl(options.image);
+
+  if (isTauriRuntime()) {
+    try {
+      const notificationModule = await import('@tauri-apps/plugin-notification');
+      const permission = await notificationModule.requestPermission();
+      if (permission === 'granted') {
+        const mediaUrl = (await resolveTauriAttachmentUrl(posterUrl, animeId)) ?? posterUrl;
+        notificationModule.sendNotification({
+          title,
+          body: message,
+          icon: mediaUrl,
+          attachments: mediaUrl
+            ? [
+                {
+                  id: `poster-${animeId}`,
+                  url: mediaUrl,
+                },
+              ]
+            : undefined,
+          extra: {
+            animeId,
+            episode,
+          },
+        });
+        return;
+      }
+    } catch {
+      // Ignore Tauri notification channel failures and continue.
+    }
+  }
+
+  try {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        const notification = new Notification(title, {
+          body: message,
+          icon: posterUrl,
+        });
+        notification.onclick = () => {
+          window.focus();
+        };
+      } else if (Notification.permission !== 'denied') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          const notification = new Notification(title, {
+            body: message,
+            icon: posterUrl,
+          });
+          notification.onclick = () => {
+            window.focus();
+          };
+        }
+      }
+    }
+  } catch {
+    // Ignore web notification channel failures and continue.
+  }
+}
+
+function findLibraryNotificationAnime(
+  libraryItems: Record<number, LibraryAnimeItem>,
+  notification: LibraryNotificationFeedItem,
+): AnimeSummary | null {
+  const direct = libraryItems[notification.animeId];
+  const byCanonical = Object.values(libraryItems).find(
+    (item) => resolveLibraryAnimeId(item.animeId, item.jikanId) === notification.animeId,
+  );
+  const source = direct ?? byCanonical;
+  if (!source) return null;
+
+  return {
+    id: source.jikanId ?? source.animeId,
+    jikanId: source.jikanId,
+    animeScheduleRoute: source.animeScheduleRoute,
+    title: source.title,
+    titleEnglish: source.titleEnglish,
+    titleJapanese: source.titleJapanese,
+    image: source.image,
+    synopsis: '',
+    studios: [],
+    genres: [],
+    mediaType: source.mediaType,
+    year: source.year,
+    episodes: source.episodes,
+    currentEpisode: source.currentEpisode,
+  };
+}
+
+function bindLibraryNotificationActionListener(getState: () => AppState) {
+  if (libraryNotificationActionListenerBound || !isTauriRuntime()) return;
+  libraryNotificationActionListenerBound = true;
+
+  void import('@tauri-apps/plugin-notification')
+    .then((notificationModule) =>
+      notificationModule.onAction((notification) => {
+        const extra = notification.extra as Record<string, unknown> | undefined;
+        const animeId = Math.max(1, Math.floor(Number(extra?.animeId) || 0));
+        const episode = Math.max(1, Math.floor(Number(extra?.episode) || 0));
+        if (animeId <= 0 || episode <= 0) return;
+
+        const current = getState();
+        const match = current.libraryNotifications.find(
+          (entry) => entry.animeId === animeId && entry.episode === episode,
+        );
+        if (match) {
+          void current.playLibraryNotification(match.id);
+        }
+      }),
+    )
+    .catch(() => {
+      libraryNotificationActionListenerBound = false;
+    });
 }
 
 function looksLikeAnimeSummary(value: unknown): value is AnimeSummary {
@@ -712,6 +1160,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   playlists: [],
   watchHistory: [],
   favorites: [],
+  libraryItems: {},
+  libraryStatusNotificationSettings: getDefaultLibraryStatusNotificationSettings(),
+  libraryLastNotifiedEpisodeByAnimeId: {},
+  libraryNotifications: [],
+  actionToasts: [],
+  libraryLastDailyEpisodeCheckDate: null,
   watchProgress: {},
   homeRefreshVersion: 0,
   isPlaying: false,
@@ -791,6 +1245,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawQueueCursor,
         playlists,
         favorites,
+        rawLibraryItems,
+        rawLibraryStatusNotificationSettings,
+        rawLibraryLastNotifiedEpisodeByAnimeId,
+        rawLibraryNotifications,
+        rawLibraryLastDailyEpisodeCheckDate,
       ] = await Promise.all([
         getStoredValue('session', null),
         getStoredValue('isSidebarCompact', false),
@@ -834,6 +1293,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('queueCursor', -1),
         getStoredValue('playlists', []),
         getStoredValue('favorites', []),
+        getStoredValue('libraryItems', {}),
+        getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
+        getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
+        getStoredValue('libraryNotifications', []),
+        getStoredValue('libraryLastDailyEpisodeCheckDate', null),
       ]);
       const { watchHistory, watchProgress } = await readProfilePlayback(session);
 
@@ -992,6 +1456,34 @@ export const useAppStore = create<AppState>((set, get) => ({
         await setStoredValue('queueCursor', queueCursor);
       }
 
+      const libraryItems = normalizeLibraryItems(rawLibraryItems);
+      if (JSON.stringify(rawLibraryItems) !== JSON.stringify(libraryItems)) {
+        await setStoredValue('libraryItems', libraryItems);
+      }
+
+      const libraryStatusNotificationSettings = normalizeLibraryStatusNotificationSettings(rawLibraryStatusNotificationSettings);
+      if (JSON.stringify(rawLibraryStatusNotificationSettings) !== JSON.stringify(libraryStatusNotificationSettings)) {
+        await setStoredValue('libraryStatusNotificationSettings', libraryStatusNotificationSettings);
+      }
+
+      const libraryLastNotifiedEpisodeByAnimeId = normalizeLibraryLastNotifiedEpisodeMap(rawLibraryLastNotifiedEpisodeByAnimeId);
+      if (JSON.stringify(rawLibraryLastNotifiedEpisodeByAnimeId) !== JSON.stringify(libraryLastNotifiedEpisodeByAnimeId)) {
+        await setStoredValue('libraryLastNotifiedEpisodeByAnimeId', libraryLastNotifiedEpisodeByAnimeId);
+      }
+
+      const libraryNotifications = normalizeLibraryNotifications(rawLibraryNotifications);
+      if (JSON.stringify(rawLibraryNotifications) !== JSON.stringify(libraryNotifications)) {
+        await setStoredValue('libraryNotifications', libraryNotifications);
+      }
+
+      const libraryLastDailyEpisodeCheckDate =
+        typeof rawLibraryLastDailyEpisodeCheckDate === 'string' && rawLibraryLastDailyEpisodeCheckDate.trim().length > 0
+          ? rawLibraryLastDailyEpisodeCheckDate
+          : null;
+      if (rawLibraryLastDailyEpisodeCheckDate !== libraryLastDailyEpisodeCheckDate) {
+        await setStoredValue('libraryLastDailyEpisodeCheckDate', libraryLastDailyEpisodeCheckDate);
+      }
+
       const restoredProgressEntry = currentlyPlayingItem
         ? findWatchProgressEntryForAnime(currentlyPlayingItem.anime, watchProgress)
         : null;
@@ -1054,6 +1546,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         playlists,
         watchHistory: sortHistory(watchHistory),
         favorites,
+        libraryItems,
+        libraryStatusNotificationSettings,
+        libraryLastNotifiedEpisodeByAnimeId,
+        libraryNotifications,
+        libraryLastDailyEpisodeCheckDate,
         watchProgress,
         homeRefreshVersion: 0,
         playbackTime: restoredPlaybackTime,
@@ -1063,6 +1560,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         activePlaybackUrl: null,
         pendingSeekTo: restoredPlaybackTime > 0 ? restoredPlaybackTime : null,
         isTrailerPlayerReady: false,
+      });
+
+      bindLibraryNotificationActionListener(get);
+
+      void get().runLibraryEpisodeDailyCheck();
+      ensureLibraryEpisodePolling(() => {
+        void get().runLibraryEpisodeDailyCheck();
       });
 
       if (!animeScheduleRateLimitListenerBound) {
@@ -1128,6 +1632,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         playlists: [],
         watchHistory: [],
         favorites: [],
+        libraryItems: {},
+        libraryStatusNotificationSettings: getDefaultLibraryStatusNotificationSettings(),
+        libraryLastNotifiedEpisodeByAnimeId: {},
+        libraryNotifications: [],
+        libraryLastDailyEpisodeCheckDate: null,
         watchProgress: {},
         homeRefreshVersion: 0,
         playbackTime: 0,
@@ -1137,6 +1646,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         activePlaybackUrl: null,
         pendingSeekTo: null,
         isTrailerPlayerReady: false,
+      });
+
+      bindLibraryNotificationActionListener(get);
+
+      void get().runLibraryEpisodeDailyCheck();
+      ensureLibraryEpisodePolling(() => {
+        void get().runLibraryEpisodeDailyCheck();
       });
 
       if (!animeScheduleRateLimitListenerBound) {
@@ -1340,11 +1856,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addAnimeSeriesToQueue: async (anime) => {
-    const additions = buildSeriesPlayableItems(anime);
+    const additions = buildQueuePlayableItems(anime);
     const existingQueue = get().queue;
     const mergedQueue = [...existingQueue, ...additions];
     await setStoredValue('queue', mergedQueue);
     set({ queue: mergedQueue });
+    get().pushActionToast({
+      kind: 'queue',
+      message: `${anime.title} added to queue (${additions.length}).`,
+    });
   },
 
   addEpisodeToQueue: async (anime, episodeNumber) => {
@@ -1354,6 +1874,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const mergedQueue = [...existingQueue, item];
     await setStoredValue('queue', mergedQueue);
     set({ queue: mergedQueue });
+    get().pushActionToast({
+      kind: 'queue',
+      message: `${anime.title} episode ${safeEpisode} added to queue.`,
+    });
   },
 
   addTrailerToQueue: async (anime) => {
@@ -1632,6 +2156,411 @@ export const useAppStore = create<AppState>((set, get) => ({
       : [...get().favorites, animeId];
     await setStoredValue('favorites', favorites);
     set({ favorites });
+  },
+
+  setAnimeLibraryStatus: async (anime, status) => {
+    if (!isLibraryStatus(status)) return;
+    const current = get();
+    const initialAnimeId = getCanonicalAnimeId(anime);
+
+    let canonicalJikanId = Number.isFinite(anime.jikanId) && Number(anime.jikanId) > 0
+      ? Math.floor(Number(anime.jikanId))
+      : undefined;
+
+    if (!canonicalJikanId) {
+      canonicalJikanId = await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
+    }
+
+    let resolvedAnime: AnimeSummary = canonicalJikanId ? { ...anime, jikanId: canonicalJikanId } : anime;
+    let jikanDetailBundle: Awaited<ReturnType<typeof getJikanDetailEpisodeBundle>> | null = null;
+
+    if (canonicalJikanId) {
+      jikanDetailBundle = await getJikanDetailEpisodeBundle(canonicalJikanId, 1).catch(() => null);
+      const detail = jikanDetailBundle?.detail;
+      if (detail) {
+        resolvedAnime = {
+          ...anime,
+          id: canonicalJikanId,
+          jikanId: canonicalJikanId,
+          title: detail.title || anime.title,
+          titleEnglish: detail.titleEnglish ?? anime.titleEnglish,
+          titleJapanese: detail.titleJapanese ?? anime.titleJapanese,
+          image: detail.image || anime.image,
+          synopsis: detail.synopsis || anime.synopsis,
+          studios: detail.studios?.length ? detail.studios : anime.studios,
+          genres: detail.genres?.length ? detail.genres : anime.genres,
+          mediaType: detail.mediaType ?? anime.mediaType,
+          year: detail.year ?? anime.year,
+          episodes: detail.episodes ?? anime.episodes,
+          currentEpisode: detail.currentEpisode ?? anime.currentEpisode,
+          status: detail.status ?? anime.status,
+          trailerUrl: detail.trailerUrl ?? anime.trailerUrl,
+        };
+      }
+    }
+
+    const animeId = getCanonicalAnimeId(resolvedAnime);
+    const existing = Object.values(current.libraryItems).find(
+      (item) => resolveLibraryAnimeId(item.animeId, item.jikanId) === animeId,
+    );
+    const libraryLastNotifiedEpisodeByAnimeId = { ...current.libraryLastNotifiedEpisodeByAnimeId };
+
+    let baselineEpisode = Math.max(
+      0,
+      Math.floor(Number(existing?.currentEpisode ?? resolvedAnime.currentEpisode ?? 0) || 0),
+    );
+
+    if (!existing && baselineEpisode <= 0) {
+      const bundle = canonicalJikanId
+        ? (jikanDetailBundle ?? await getJikanDetailEpisodeBundle(canonicalJikanId, 1).catch(() => null))
+        : null;
+      const resolvedLatestEpisode = Math.max(
+        0,
+        Math.floor(
+          Number(
+            resolvedAnime.currentEpisode ??
+              bundle?.detail?.currentEpisode ??
+              0,
+          ) || 0,
+        ),
+      );
+      if (resolvedLatestEpisode > 0) {
+        baselineEpisode = resolvedLatestEpisode;
+      }
+    }
+
+    if (!existing && baselineEpisode > 0) {
+      libraryLastNotifiedEpisodeByAnimeId[animeId] = baselineEpisode;
+      if (resolvedAnime.jikanId && resolvedAnime.jikanId > 0) {
+        libraryLastNotifiedEpisodeByAnimeId[Math.floor(resolvedAnime.jikanId)] = baselineEpisode;
+      }
+    }
+
+    const libraryItems = { ...current.libraryItems };
+    const duplicateIds: number[] = [];
+    for (const [rawId, item] of Object.entries(libraryItems)) {
+      const itemId = Math.max(1, Math.floor(Number(rawId) || 0));
+      const itemCanonicalId = resolveLibraryAnimeId(item.animeId, item.jikanId);
+      if (itemCanonicalId !== animeId) continue;
+      duplicateIds.push(itemId);
+      delete libraryItems[itemId];
+    }
+
+    libraryItems[animeId] = {
+      ...buildLibraryItemFromAnime(resolvedAnime, status, existing),
+      currentEpisode: baselineEpisode > 0 ? baselineEpisode : resolvedAnime.currentEpisode,
+    };
+
+    for (const duplicateId of duplicateIds) {
+      if (duplicateId === animeId) continue;
+      delete libraryLastNotifiedEpisodeByAnimeId[duplicateId];
+    }
+
+    if (animeId !== initialAnimeId && initialAnimeId in libraryItems) {
+      delete libraryItems[initialAnimeId];
+      delete libraryLastNotifiedEpisodeByAnimeId[initialAnimeId];
+    }
+
+    await Promise.all([
+      setStoredValue('libraryItems', libraryItems),
+      setStoredValue('libraryLastNotifiedEpisodeByAnimeId', libraryLastNotifiedEpisodeByAnimeId),
+    ]);
+    set({ libraryItems, libraryLastNotifiedEpisodeByAnimeId });
+    get().pushActionToast({
+      kind: 'library',
+      message: `${resolvedAnime.title} set to ${status.replace(/-/g, ' ')}.`,
+    });
+  },
+
+  removeAnimeFromLibrary: async (animeId) => {
+    const normalizedAnimeId = Math.max(1, Math.floor(Number(animeId) || 0));
+    if (normalizedAnimeId <= 0) return;
+
+    const current = get();
+    const libraryItems = { ...current.libraryItems };
+    const candidateIds = new Set<number>([normalizedAnimeId]);
+
+    const byId = libraryItems[normalizedAnimeId];
+    if (byId?.jikanId) {
+      candidateIds.add(Math.max(1, Math.floor(byId.jikanId)));
+    }
+
+    for (const [itemIdRaw, item] of Object.entries(libraryItems)) {
+      const itemId = Math.max(1, Math.floor(Number(itemIdRaw) || 0));
+      if (candidateIds.has(itemId) || candidateIds.has(Math.max(1, Math.floor(item.jikanId || 0)))) {
+        delete libraryItems[itemId];
+      }
+    }
+
+    const libraryLastNotifiedEpisodeByAnimeId = { ...current.libraryLastNotifiedEpisodeByAnimeId };
+    for (const itemId of candidateIds) {
+      delete libraryLastNotifiedEpisodeByAnimeId[itemId];
+    }
+
+    await Promise.all([
+      setStoredValue('libraryItems', libraryItems),
+      setStoredValue('libraryLastNotifiedEpisodeByAnimeId', libraryLastNotifiedEpisodeByAnimeId),
+    ]);
+
+    set({ libraryItems, libraryLastNotifiedEpisodeByAnimeId });
+  },
+
+  getLibraryStatusForAnime: (animeId, jikanId) => {
+    const current = get();
+    const targetAnimeId = Math.max(1, Math.floor(Number(animeId) || 0));
+    const targetJikanId = Math.max(1, Math.floor(Number(jikanId) || 0));
+
+    const direct = current.libraryItems[targetAnimeId];
+    if (direct) return direct.status;
+
+    if (targetJikanId > 0 && current.libraryItems[targetJikanId]) {
+      return current.libraryItems[targetJikanId].status;
+    }
+
+    const byJikan = Object.values(current.libraryItems).find((item) => item.jikanId && Math.floor(item.jikanId) === targetJikanId);
+    return byJikan?.status ?? null;
+  },
+
+  setLibraryStatusNotificationEnabled: async (status, enabled) => {
+    if (!isLibraryStatus(status)) return;
+    const current = get();
+    const libraryStatusNotificationSettings = {
+      ...current.libraryStatusNotificationSettings,
+      [status]: Boolean(enabled),
+    };
+    await setStoredValue('libraryStatusNotificationSettings', libraryStatusNotificationSettings);
+    set({ libraryStatusNotificationSettings });
+  },
+
+  markLibraryNotificationRead: (notificationId) => {
+    const current = get();
+    const libraryNotifications = current.libraryNotifications.map((item) =>
+      item.id === notificationId ? { ...item, read: true } : item,
+    );
+    void setStoredValue('libraryNotifications', libraryNotifications);
+    set({ libraryNotifications });
+  },
+
+  playLibraryNotification: async (notificationId) => {
+    const current = get();
+    const notification = current.libraryNotifications.find((item) => item.id === notificationId);
+    if (!notification) return;
+
+    const anime = findLibraryNotificationAnime(current.libraryItems, notification);
+    if (!anime) {
+      current.markLibraryNotificationRead(notificationId);
+      return;
+    }
+
+    await current.playEpisode(anime, Math.max(1, notification.episode));
+    current.markLibraryNotificationRead(notificationId);
+  },
+
+  testWindowsNotification: async (animeTitle, episode, count = 1) => {
+    const safeEpisode = Math.max(1, Math.floor(Number(episode) || 1));
+    const safeCount = Math.min(30, Math.max(1, Math.floor(Number(count) || 1)));
+
+    for (let index = 0; index < safeCount; index += 1) {
+      await sendLibraryEpisodeOsNotification({
+        animeId: 1996,
+        episode: safeEpisode + index,
+        animeTitle: animeTitle?.trim() || 'My Anime 1996',
+        image: DEFAULT_NOTIFICATION_POSTER,
+        skipDedupe: true,
+      });
+    }
+  },
+
+  markAllLibraryNotificationsRead: () => {
+    const current = get();
+    const libraryNotifications = current.libraryNotifications.map((item) => ({ ...item, read: true }));
+    void setStoredValue('libraryNotifications', libraryNotifications);
+    set({ libraryNotifications });
+  },
+
+  clearLibraryNotifications: async () => {
+    await setStoredValue('libraryNotifications', []);
+    set({ libraryNotifications: [] });
+  },
+
+  pushActionToast: (toast) => {
+    const toastId = createId('action-toast');
+    const nextToast: InAppActionToast = {
+      id: toastId,
+      kind: toast.kind,
+      message: toast.message,
+    };
+
+    const existingTimer = actionToastTimers.get(toastId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      actionToastTimers.delete(toastId);
+    }
+
+    set((current) => {
+      const nextToasts = [nextToast, ...current.actionToasts].slice(0, MAX_ACTION_TOASTS);
+
+      if (current.actionToasts.length >= MAX_ACTION_TOASTS) {
+        const removed = current.actionToasts.slice(MAX_ACTION_TOASTS - 1);
+        removed.forEach((entry) => {
+          const timer = actionToastTimers.get(entry.id);
+          if (timer) {
+            clearTimeout(timer);
+            actionToastTimers.delete(entry.id);
+          }
+        });
+      }
+
+      return { actionToasts: nextToasts };
+    });
+
+    const timer = setTimeout(() => {
+      actionToastTimers.delete(toastId);
+      set((current) => ({
+        actionToasts: current.actionToasts.filter((entry) => entry.id !== toastId),
+      }));
+    }, ACTION_TOAST_DURATION_MS);
+
+    actionToastTimers.set(toastId, timer);
+  },
+
+  dismissActionToast: (toastId) => {
+    const timer = actionToastTimers.get(toastId);
+    if (timer) {
+      clearTimeout(timer);
+      actionToastTimers.delete(toastId);
+    }
+    set((current) => ({ actionToasts: current.actionToasts.filter((entry) => entry.id !== toastId) }));
+  },
+
+  runLibraryEpisodeDailyCheck: async (_force = false) => {
+    if (libraryEpisodeCheckInFlight) {
+      await (libraryEpisodeCheckPromise ?? Promise.resolve());
+      return;
+    }
+    libraryEpisodeCheckInFlight = true;
+
+    libraryEpisodeCheckPromise = (async () => {
+      try {
+    const current = get();
+    if (!current.hydrated) return;
+
+    const today = getLocalDateStamp();
+
+    const candidates = Object.values(current.libraryItems);
+    if (candidates.length === 0) {
+      await setStoredValue('libraryLastDailyEpisodeCheckDate', today);
+      set({ libraryLastDailyEpisodeCheckDate: today });
+      return;
+    }
+
+    const libraryLastNotifiedEpisodeByAnimeId = { ...current.libraryLastNotifiedEpisodeByAnimeId };
+    const nextNotifications = [...current.libraryNotifications];
+    const libraryItems = { ...current.libraryItems };
+
+    for (const item of candidates) {
+      const detailJikanId = item.jikanId && item.jikanId > 0
+        ? Math.floor(item.jikanId)
+        : await resolveCanonicalDetailRouteId({
+          id: item.animeId,
+          jikanId: item.jikanId,
+          animeScheduleRoute: item.animeScheduleRoute,
+        }).catch(() => undefined);
+      if (!detailJikanId || detailJikanId <= 0) continue;
+
+      const episodeBundle = await getJikanDetailEpisodeBundle(detailJikanId, 1).catch(() => null);
+      if (!episodeBundle?.detail) continue;
+
+      const latestEpisode = Math.max(
+        0,
+        Math.floor(
+          Number(
+            episodeBundle.detail.currentEpisode ??
+              item.currentEpisode ??
+              0,
+          ) || 0,
+        ),
+      );
+      if (latestEpisode <= 0) continue;
+
+      libraryItems[item.animeId] = {
+        ...item,
+        currentEpisode: latestEpisode,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const resolvedAnimeId = resolveLibraryAnimeId(item.animeId, item.jikanId);
+      const progressEntry = current.watchProgress[resolvedAnimeId] ?? current.watchProgress[item.animeId];
+      const lastNotifiedEpisode = Math.max(
+        0,
+        Math.floor(
+          Number(
+            libraryLastNotifiedEpisodeByAnimeId[item.animeId] ??
+              libraryLastNotifiedEpisodeByAnimeId[resolvedAnimeId] ??
+              progressEntry?.episode ??
+              0,
+          ) || 0,
+        ),
+      );
+
+      if (latestEpisode <= lastNotifiedEpisode) continue;
+
+      const title =
+        episodeBundle.detail.titleEnglish?.trim() ||
+        episodeBundle.detail.title?.trim() ||
+        item.titleEnglish?.trim() ||
+        item.title?.trim() ||
+        'Anime';
+
+      for (let episode = lastNotifiedEpisode + 1; episode <= latestEpisode; episode += 1) {
+        const message = `Episode ${episode} is now available.`;
+        nextNotifications.unshift({
+          id: createId('library-notification'),
+          animeId: item.animeId,
+          episode,
+          title,
+          image: item.image,
+          message,
+          createdAt: new Date().toISOString(),
+          channel: 'in-app',
+          read: false,
+        });
+        await sendLibraryEpisodeOsNotification({
+          animeId: resolvedAnimeId,
+          episode,
+          animeTitle: title,
+          image: episodeBundle.detail.image || item.image,
+        });
+      }
+
+      libraryLastNotifiedEpisodeByAnimeId[item.animeId] = latestEpisode;
+      if (resolvedAnimeId !== item.animeId) {
+        libraryLastNotifiedEpisodeByAnimeId[resolvedAnimeId] = latestEpisode;
+      }
+    }
+
+    const libraryNotifications = normalizeLibraryNotifications(nextNotifications);
+
+    await Promise.all([
+      setStoredValue('libraryItems', libraryItems),
+      setStoredValue('libraryLastNotifiedEpisodeByAnimeId', libraryLastNotifiedEpisodeByAnimeId),
+      setStoredValue('libraryNotifications', libraryNotifications),
+      setStoredValue('libraryLastDailyEpisodeCheckDate', today),
+    ]);
+
+    set({
+      libraryItems,
+      libraryLastNotifiedEpisodeByAnimeId,
+      libraryNotifications,
+      libraryLastDailyEpisodeCheckDate: today,
+    });
+      } finally {
+        libraryEpisodeCheckInFlight = false;
+        libraryEpisodeCheckPromise = null;
+      }
+    })();
+
+    await libraryEpisodeCheckPromise;
   },
 
   setPlaying: (playing) => {
@@ -2074,6 +3003,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       isTrailerMuted,
       playlists,
       favorites,
+      libraryItems,
+      libraryStatusNotificationSettings,
+      libraryLastNotifiedEpisodeByAnimeId,
+      libraryNotifications,
+      libraryLastDailyEpisodeCheckDate,
     ] = await Promise.all([
       getStoredValue('session', null),
       getStoredValue('isSidebarCompact', false),
@@ -2084,6 +3018,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       getStoredValue('isTrailerMuted', false),
       getStoredValue('playlists', []),
       getStoredValue('favorites', []),
+      getStoredValue('libraryItems', {}),
+      getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
+      getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
+      getStoredValue('libraryNotifications', []),
+      getStoredValue('libraryLastDailyEpisodeCheckDate', null),
     ]);
 
     return {
@@ -2127,6 +3066,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         playlists,
         watchHistory: current.watchHistory,
         favorites,
+        libraryItems,
+        libraryStatusNotificationSettings,
+        libraryLastNotifiedEpisodeByAnimeId,
+        libraryNotifications,
+        libraryLastDailyEpisodeCheckDate,
         watchProgress: current.watchProgress,
       },
     };
@@ -2191,6 +3135,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('playlists', []),
       setStoredValue('watchHistory', []),
       setStoredValue('favorites', []),
+      setStoredValue('libraryItems', {}),
+      setStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
+      setStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
+      setStoredValue('libraryNotifications', []),
+      setStoredValue('libraryLastDailyEpisodeCheckDate', null),
       setStoredValue('watchProgress', {}),
       setStoredValue('sourceResolveCache', {}),
       setStoredValue('aniSkipCache', {}),
@@ -2199,6 +3148,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       clearAniSkipDataCache(),
       removeStoredValue('localCredentials'),
     ]);
+
+    actionToastTimers.forEach((timer) => clearTimeout(timer));
+    actionToastTimers.clear();
 
     set({
       session,
@@ -2247,6 +3199,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       playlists: [],
       watchHistory: [],
       favorites: [],
+      libraryItems: {},
+      libraryStatusNotificationSettings: getDefaultLibraryStatusNotificationSettings(),
+      libraryLastNotifiedEpisodeByAnimeId: {},
+      libraryNotifications: [],
+      actionToasts: [],
+      libraryLastDailyEpisodeCheckDate: null,
       watchProgress: {},
       homeRefreshVersion: 0,
       isPlaying: false,

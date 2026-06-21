@@ -1,5 +1,5 @@
-import { History, Info, ListPlus, Play, RotateCcw, Star, Users, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { BookmarkPlus, History, Info, ListPlus, Play, RotateCcw, Star, Tv2, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import SeasonLinkBadge from './SeasonLinkBadge';
 import { getAnimeTrailerUrl } from '../services/catalogSource';
@@ -20,6 +20,9 @@ type AnimeHoverPreviewProps = {
   isResumeAction?: boolean;
   onStartOver?: () => void;
   onAddToQueue?: () => void;
+  onAddToLibrary?: (anchorElement?: HTMLElement | null) => void;
+  isLibraryModalOpen?: boolean;
+  onRemove?: () => void;
   onOpenDetail?: () => void;
   children: ReactNode;
   delayMs?: number;
@@ -104,6 +107,9 @@ export default function AnimeHoverPreview({
   isResumeAction = false,
   onStartOver,
   onAddToQueue,
+  onAddToLibrary,
+  isLibraryModalOpen = false,
+  onRemove,
   onOpenDetail,
   children,
   delayMs = 1000,
@@ -120,6 +126,7 @@ export default function AnimeHoverPreview({
   const staticTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visible, setVisible] = useState(false);
   const [staticActive, setStaticActive] = useState(false);
+  const [isPinnedOpen, setPinnedOpen] = useState(false);
   const [position, setPosition] = useState<Position>({ left: 0, top: 0, width: PREVIEW_WIDTH });
   const [resolvedTrailerUrl, setResolvedTrailerUrl] = useState(anime.trailerUrl);
 
@@ -189,12 +196,20 @@ export default function AnimeHoverPreview({
   };
 
   const scheduleHide = () => {
+    if (isPinnedOpen || isLibraryModalOpen) return;
     clearShowTimer();
     clearHideTimer();
     hideTimerRef.current = setTimeout(() => {
       setVisible(false);
     }, HIDE_DELAY_MS);
   };
+
+  useEffect(() => {
+    if (isLibraryModalOpen) return;
+    if (!isPinnedOpen) return;
+    setPinnedOpen(false);
+    setVisible(false);
+  }, [isLibraryModalOpen, isPinnedOpen]);
 
   useEffect(() => {
     return () => {
@@ -338,7 +353,7 @@ export default function AnimeHoverPreview({
             aria-label="Play trailer"
             data-tooltip="Play Trailer"
           >
-            <Play size={14} />
+            <Tv2 size={14} />
           </button>
         ) : null}
         {episodeLabel ? <span className="anime-hover-preview-episode-overlay">{episodeLabel}</span> : null}
@@ -376,9 +391,34 @@ export default function AnimeHoverPreview({
               <RotateCcw size={14} />
             </button>
           ) : null}
-          {hasQueueableTrailer && onAddToQueue ? (
+          {onAddToQueue ? (
             <button type="button" className="anime-hover-btn anime-hover-btn-add retro-tooltip" aria-label="Add to queue" onClick={onAddToQueue} data-tooltip="Add to Queue">
               <ListPlus size={14} />
+            </button>
+          ) : null}
+          {onAddToLibrary ? (
+            <button
+              type="button"
+              className="anime-hover-btn anime-hover-btn-add retro-tooltip"
+              aria-label="Add to library"
+              onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
+                setPinnedOpen(true);
+                onAddToLibrary(event.currentTarget);
+              }}
+              data-tooltip="Add to Library"
+            >
+              <BookmarkPlus size={14} />
+            </button>
+          ) : null}
+          {onRemove ? (
+            <button
+              type="button"
+              className="anime-hover-btn anime-hover-btn-info retro-tooltip"
+              aria-label="Remove from continue watching"
+              onClick={onRemove}
+              data-tooltip="Remove"
+            >
+              <X size={14} />
             </button>
           ) : null}
           <button type="button" className="anime-hover-btn anime-hover-btn-info retro-tooltip" aria-label="Open details" onClick={onOpenDetail} data-tooltip="Open Details">

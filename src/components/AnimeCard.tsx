@@ -1,9 +1,11 @@
-import { Info, ListPlus, Play, Star } from 'lucide-react';
+import { BookmarkPlus, Info, ListPlus, Play, Star } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import LibraryStatusPickerModal from './LibraryStatusPickerModal';
 import SeasonLinkBadge from './SeasonLinkBadge';
 import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
-import type { AnimeSummary } from '../types/anime';
+import type { AnimeSummary, LibraryStatus } from '../types/anime';
 import { getReleaseBadgeLabel } from '../utils/releaseTime';
 import { resolveAnimeSeason } from '../utils/season';
 import { formatEpisodeTotalLabel } from '../utils/episodeCountLabel';
@@ -21,10 +23,14 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
   const addAnimeSeriesToQueue = useAppStore((state) => state.addAnimeSeriesToQueue);
   const watchProgress = useAppStore((state) => state.watchProgress);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
+  const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
+  const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
+  const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
+  const [libraryPickerOpen, setLibraryPickerOpen] = useState(false);
+  const libraryButtonRef = useRef<HTMLButtonElement | null>(null);
   const displayTitle = getDisplayTitle(anime, titleLanguage);
   const detailAnimeId = anime.jikanId;
   const mediaType = anime.mediaType?.trim().toLowerCase() ?? '';
-  const hasTrailer = Boolean(anime.trailerUrl?.trim());
   const watchEntry = (detailAnimeId ? watchProgress[detailAnimeId] : undefined) ?? watchProgress[anime.id];
   const isWatchedCompleted = Boolean(watchEntry?.completed || (watchEntry?.progress ?? 0) >= 100);
   const posterStatusLabel = getReleaseBadgeLabel(anime.airingDate, anime.mediaType, isWatchedCompleted);
@@ -58,6 +64,17 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
   const addAnimeToQueue = async () => {
     await addAnimeSeriesToQueue(anime);
   };
+
+  const handleLibraryStatusConfirm = async (status: LibraryStatus) => {
+    await setAnimeLibraryStatus(anime, status);
+  };
+
+  const handleRemoveFromLibrary = async () => {
+    await removeAnimeFromLibrary(anime.jikanId ?? anime.id);
+    setLibraryPickerOpen(false);
+  };
+
+  const currentLibraryStatus = getLibraryStatusForAnime(anime.id, anime.jikanId);
 
   return (
     <article className="group app-card overflow-hidden transition hover:-translate-y-0.5 hover:bg-carbon/78">
@@ -107,17 +124,37 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
             <button type="button" onClick={() => void openDetailPanel()} className="vhs-button-ghost px-2.5 py-1.5 retro-tooltip" aria-label="Open detail panel" data-tooltip="Open Detail Panel">
               <Info size={13} />
             </button>
-            {hasTrailer ? (
-              <button type="button" onClick={() => void addAnimeToQueue()} className="vhs-button-ghost px-2.5 py-1.5 retro-tooltip" aria-label="Add to queue" data-tooltip="Add to Queue">
-                <ListPlus size={13} />
-              </button>
-            ) : null}
+            <button type="button" onClick={() => void addAnimeToQueue()} className="vhs-button-ghost px-2.5 py-1.5 retro-tooltip" aria-label="Add to queue" data-tooltip="Add to Queue">
+              <ListPlus size={13} />
+            </button>
+            <button ref={libraryButtonRef} type="button" onClick={() => setLibraryPickerOpen(true)} className="vhs-button-ghost px-2.5 py-1.5 retro-tooltip" aria-label="Add to library" data-tooltip="Add to Library">
+              <BookmarkPlus size={13} />
+            </button>
             <button type="button" onClick={() => void playFromCard()} className="vhs-button-ghost px-3 py-1.5 retro-tooltip" data-tooltip="Cue Tape">
               <Play size={14} /> Cue
             </button>
           </div>
         </div>
       </div>
+
+      <LibraryStatusPickerModal
+        open={libraryPickerOpen}
+        title={displayTitle}
+        initialStatus={currentLibraryStatus}
+        anchorElement={libraryButtonRef.current}
+        onClose={() => setLibraryPickerOpen(false)}
+        onConfirm={(status) => {
+          void handleLibraryStatusConfirm(status);
+          setLibraryPickerOpen(false);
+        }}
+        onRemove={
+          currentLibraryStatus
+            ? () => {
+                void handleRemoveFromLibrary();
+              }
+            : undefined
+        }
+      />
     </article>
   );
 }

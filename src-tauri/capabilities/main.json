@@ -29,6 +29,7 @@
       ]
     },
     "dialog:default",
+    "notification:default",
     "window-state:default"
   ]
 }

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import HeroSeeAllMenu from '../components/HeroSeeAllMenu';
 import AnimeHoverPreview from '../components/AnimeHoverPreview';
 import AnimeShelfScrollable from '../components/AnimeShelfScrollable';
+import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
 import {
   getLatestPromoAnime,
@@ -17,7 +18,7 @@ import {
   resolveCanonicalDetailRouteId,
 } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
-import type { AnimeSummary } from '../types/anime';
+import type { AnimeSummary, LibraryStatus } from '../types/anime';
 import {
   formatReleaseDateTimeLocal,
   getReleaseBadgeLabel,
@@ -206,9 +207,17 @@ export default function Home() {
   const setPlaybackTime = useAppStore((state) => state.setPlaybackTime);
   const setPlaybackDuration = useAppStore((state) => state.setPlaybackDuration);
   const watchHistory = useAppStore((state) => state.watchHistory);
+  const removeHistoryItem = useAppStore((state) => state.removeHistoryItem);
   const watchProgress = useAppStore((state) => state.watchProgress);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
   const homeRefreshVersion = useAppStore((state) => state.homeRefreshVersion);
+  const runLibraryEpisodeDailyCheck = useAppStore((state) => state.runLibraryEpisodeDailyCheck);
+  const setAnimeLibraryStatus = useAppStore((state) => state.setAnimeLibraryStatus);
+  const removeAnimeFromLibrary = useAppStore((state) => state.removeAnimeFromLibrary);
+  const getLibraryStatusForAnime = useAppStore((state) => state.getLibraryStatusForAnime);
+  const [libraryPickerAnime, setLibraryPickerAnime] = useState<AnimeSummary | null>(null);
+  const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
+  const [libraryPickerAllowRemove, setLibraryPickerAllowRemove] = useState(true);
 
   const getCardActionMode = (shelfKey: string): ShelfPlayableMode => {
     if (shelfKey === 'latest' || shelfKey === 'upcoming-update' || shelfKey === 'continue') return 'episode';
@@ -313,6 +322,7 @@ export default function Home() {
 
     const refreshIfNeeded = () => {
       void refreshHomeShelvesIfNeeded(SHELF_LIMIT, refreshCallbacks);
+      void runLibraryEpisodeDailyCheck();
     };
 
     async function load() {
@@ -368,7 +378,7 @@ export default function Home() {
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [activeSeasonMeta.season, activeSeasonMeta.year, homeRefreshVersion]);
+  }, [activeSeasonMeta.season, activeSeasonMeta.year, homeRefreshVersion, runLibraryEpisodeDailyCheck]);
 
   const heroPool = useMemo(() => {
     const poolMap = new Map<number, AnimeSummary>();
@@ -633,6 +643,23 @@ export default function Home() {
     await openRightPanelWithView('detail');
   };
 
+  const openLibraryPickerFromCard = (item: ContinueWatchingItem | AnimeSummary, shelfKey: string, anchorElement?: HTMLElement | null) => {
+    setLibraryPickerAnime(toAnimeSummary(item));
+    setLibraryPickerAnchorElement(anchorElement ?? null);
+    setLibraryPickerAllowRemove(!(shelfKey === 'continue' || shelfKey === 'history'));
+  };
+
+  const handleLibraryStatusConfirm = async (status: LibraryStatus) => {
+    if (!libraryPickerAnime) return;
+    await setAnimeLibraryStatus(libraryPickerAnime, status);
+  };
+
+  const handleLibraryRemove = async () => {
+    if (!libraryPickerAnime) return;
+    await removeAnimeFromLibrary(libraryPickerAnime.jikanId ?? libraryPickerAnime.id);
+    setLibraryPickerAnime(null);
+  };
+
   const getResumeEntry = (anime: AnimeSummary) => {
     const canonicalAnimeId = anime.jikanId ?? anime.id;
     const entry = watchProgress[canonicalAnimeId] ?? watchProgress[anime.id];
@@ -764,6 +791,15 @@ export default function Home() {
                   onPlay={() => void playFromCard(item, shelf.key)}
                   onPlayTrailer={() => void playTrailerFromCard(item)}
                   onAddToQueue={() => void addToQueueFromCard(item, shelf.key)}
+                  onAddToLibrary={(anchorElement) => openLibraryPickerFromCard(item, shelf.key, anchorElement)}
+                  isLibraryModalOpen={Boolean(libraryPickerAnime)}
+                  onRemove={
+                    shelf.key === 'continue' && isContinueWatchingItem(item)
+                      ? () => {
+                          void removeHistoryItem(item.id);
+                        }
+                      : undefined
+                  }
                   onOpenDetail={() => void openDetailFromCard(item)}
                 >
                   <button
@@ -801,6 +837,35 @@ export default function Home() {
           />
         </section>
       ))}
+
+      <LibraryStatusPickerModal
+        open={Boolean(libraryPickerAnime)}
+        title={libraryPickerAnime ? getDisplayTitle(libraryPickerAnime, titleLanguage) : 'Anime'}
+        anchorElement={libraryPickerAnchorElement}
+        initialStatus={
+          libraryPickerAnime
+            ? getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.jikanId)
+            : null
+        }
+        onClose={() => {
+          setLibraryPickerAnime(null);
+          setLibraryPickerAnchorElement(null);
+          setLibraryPickerAllowRemove(true);
+        }}
+        onConfirm={(status) => {
+          void handleLibraryStatusConfirm(status);
+          setLibraryPickerAnime(null);
+          setLibraryPickerAnchorElement(null);
+          setLibraryPickerAllowRemove(true);
+        }}
+        onRemove={
+          libraryPickerAllowRemove && libraryPickerAnime && getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.jikanId)
+            ? () => {
+                void handleLibraryRemove();
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

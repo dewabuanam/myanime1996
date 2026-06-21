@@ -1,4 +1,15 @@
-import type { CachedPayload, PlayableItem, Playlist, RightPanelView, TitleLanguage, UserSession, WatchProgress } from '../types/anime';
+import type {
+  CachedPayload,
+  LibraryAnimeItem,
+  LibraryNotificationFeedItem,
+  LibraryStatusNotificationSettings,
+  PlayableItem,
+  Playlist,
+  RightPanelView,
+  TitleLanguage,
+  UserSession,
+  WatchProgress,
+} from '../types/anime';
 import type { ImportedSourcePluginDefinition, ResolvedSource, SourceAudioLanguage } from '../types/plugin';
 
 type StoreShape = {
@@ -41,6 +52,11 @@ type StoreShape = {
   playlists: Playlist[];
   watchHistory: WatchProgress[];
   favorites: number[];
+  libraryItems: Record<number, LibraryAnimeItem>;
+  libraryStatusNotificationSettings: LibraryStatusNotificationSettings;
+  libraryLastNotifiedEpisodeByAnimeId: Record<number, number>;
+  libraryNotifications: LibraryNotificationFeedItem[];
+  libraryLastDailyEpisodeCheckDate: string | null;
   watchProgress: Record<number, WatchProgress>;
   watchHistoryByProfile: Record<string, WatchProgress[]>;
   watchProgressByProfile: Record<string, Record<number, WatchProgress>>;

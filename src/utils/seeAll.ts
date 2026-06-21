@@ -29,8 +29,12 @@ export const SEE_ALL_TYPE_META: Record<SeeAllType, { title: string; ranked: bool
 
 export const HERO_SEE_ALL_SHORTCUTS: Array<{ type: SeeAllType; label: string }> = [
   { type: 'season', label: 'Current Season' },
-  { type: 'latest', label: 'Latest Update' },
   { type: 'upcoming-update', label: 'Upcoming Update' },
+  { type: 'latest', label: 'Latest Update' },
+  { type: 'promo', label: 'Latest Promo' },
+  { type: 'airing', label: 'Top Airing' },
+  { type: 'popular', label: 'Popular on My Anime 1996' },
+  { type: 'upcoming', label: 'Top Upcoming' },
 ];
 
 export const HOME_SHELF_TO_SEE_ALL_TYPE: Partial<Record<string, SeeAllType>> = {
