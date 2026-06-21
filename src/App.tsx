@@ -43,6 +43,35 @@ export default function App() {
   }, [initialize]);
 
   useEffect(() => {
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const ctrlOrMeta = event.ctrlKey || event.metaKey;
+      const blockedShortcut =
+        key === 'f12' ||
+        (ctrlOrMeta && key === 'p') ||
+        (ctrlOrMeta && key === 'u') ||
+        (ctrlOrMeta && event.shiftKey && (key === 'i' || key === 'j' || key === 'c'));
+
+      if (blockedShortcut) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    window.addEventListener('contextmenu', onContextMenu);
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.removeEventListener('contextmenu', onContextMenu);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hydrated) return;
     void completeStartupHandoff();
 
