@@ -13,6 +13,7 @@ import Search from './pages/Search';
 import SearchResults from './pages/SearchResults';
 import SeeAll from './pages/SeeAll';
 import { useAppStore } from './state/appStore';
+import { applyThemeStylesheets, normalizeThemeId } from './theme';
 
 function ProtectedShell() {
   const session = useAppStore((state) => state.session);
@@ -25,7 +26,7 @@ function ProtectedShell() {
 export default function App() {
   const hydrated = useAppStore((state) => state.hydrated);
   const initialize = useAppStore((state) => state.initialize);
-  const appTheme = useAppStore((state) => state.appTheme);
+  const appTheme = useAppStore((state) => (state as any).appTheme as string);
   const startupHandoffDoneRef = useRef(false);
 
   const completeStartupHandoff = async () => {
@@ -79,9 +80,10 @@ export default function App() {
 
   useEffect(() => {
     if (!hydrated) return;
-    const nextTheme = appTheme === 'myanime2077' ? 'myanime2077' : 'myanime1996';
+    const nextTheme = normalizeThemeId(appTheme);
     document.documentElement.setAttribute('data-theme', nextTheme);
     document.body.setAttribute('data-theme', nextTheme);
+    applyThemeStylesheets(nextTheme);
   }, [appTheme, hydrated]);
 
   useEffect(() => {

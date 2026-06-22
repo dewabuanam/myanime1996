@@ -9,8 +9,8 @@ import { clearPluginResolverCacheByKey, getPluginResolverCacheSnapshot, replaceP
 import { clearSourceResolveCache } from '../services/sourceCache';
 import { getStoredValue, setStoredValue } from '../services/store';
 import { DEFAULT_NOTIFICATION_POSTER, useAppStore } from '../state/appStore';
-import type { AppTheme } from '../state/appStore';
 import type { UpcomingSeasonFilter } from '../state/appStore';
+import { listThemeOptions } from '../theme';
 import ConfirmDialog from './ConfirmDialog';
 
 type SettingAction = {
@@ -50,10 +50,7 @@ const UPCOMING_FILTER_OPTIONS: Array<{ value: UpcomingSeasonFilter; label: strin
   { value: 'music', label: 'Music' },
 ];
 
-const APP_THEME_OPTIONS: Array<{ value: AppTheme; label: string }> = [
-  { value: 'myanime1996', label: 'My Anime 1996' },
-  { value: 'myanime2077', label: 'My Anime 2077' },
-];
+const APP_THEME_OPTIONS = listThemeOptions();
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
   return !!value && typeof value === 'object' && !Array.isArray(value);

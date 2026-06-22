@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { LogIn, UserRound } from 'lucide-react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../state/appStore';
+import { resolveTheme } from '../theme';
 import WindowControls from '../components/WindowControls';
 
 export default function Login() {
@@ -12,7 +13,7 @@ export default function Login() {
   const continueAsGuest = useAppStore((state) => state.continueAsGuest);
   const loginWithEmail = useAppStore((state) => state.loginWithEmail);
   const navigate = useNavigate();
-  const brandLogoSrc = appTheme === 'myanime2077' ? '/assets/logo-2077.png' : '/assets/logo.png';
+  const brandLogoSrc = resolveTheme(appTheme).logos.primary;
 
   useEffect(() => {
     if (session) navigate('/home', { replace: true });

@@ -2,6 +2,7 @@ import { History, Home, Library, ListMusic, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAppStore } from '../state/appStore';
+import { resolveTheme } from '../theme';
 import ConfirmDialog from './ConfirmDialog';
 import WindowControls from './WindowControls';
 
@@ -22,7 +23,7 @@ export default function Sidebar() {
   const setActivePlaylist = useAppStore((state) => state.setActivePlaylist);
   const deletePlaylist = useAppStore((state) => state.deletePlaylist);
   const [pendingDeletePlaylist, setPendingDeletePlaylist] = useState<{ id: string; name: string } | null>(null);
-  const brandLogoSrc = appTheme === 'myanime2077' ? '/assets/logo-2077.png' : '/assets/logo.png';
+  const brandLogoSrc = resolveTheme(appTheme).logos.primary;
   const sidebarPlaylists = playlists.map((playlist) => ({
     id: playlist.id,
     name: playlist.name,
