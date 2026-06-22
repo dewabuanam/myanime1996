@@ -347,6 +347,25 @@ function createResolverNativeFetchText(
       for (const [key, value] of response.headers.entries()) {
         responseHeaders[key.toLowerCase()] = value;
       }
+
+      // Tauri HTTP may expose Set-Cookie via getSetCookie() even when entries()
+      // does not include a readable set-cookie header.
+      const headersWithSetCookie = response.headers as Headers & {
+        getSetCookie?: () => string[];
+      };
+      if (typeof headersWithSetCookie.getSetCookie === 'function') {
+        const setCookies = headersWithSetCookie.getSetCookie();
+        if (Array.isArray(setCookies) && setCookies.length > 0) {
+          responseHeaders['set-cookie'] = setCookies.join(', ');
+        }
+      }
+
+      if (!responseHeaders['set-cookie']) {
+        const directSetCookie = response.headers.get('set-cookie');
+        if (directSetCookie) {
+          responseHeaders['set-cookie'] = directSetCookie;
+        }
+      }
     } catch {
       // Ignore header parsing issues and return text payload regardless.
     }
@@ -356,6 +375,205 @@ function createResolverNativeFetchText(
       status: response.status,
       text,
       headers: responseHeaders,
+    };
+  };
+}
+
+function parseJsonSafe(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function parseAoSessionFromSetCookieHeader(setCookieHeaderValue: string): string {
+  const headerValue = String(setCookieHeaderValue || '');
+  if (!headerValue) return '';
+  const match = headerValue.match(/(?:^|,\s*)ao\.session=([^;]+)/i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
+function decodeAoSessionToBearer(rawCookieValue: string): string {
+  const decodedCookie = decodeURIComponent(String(rawCookieValue || '').trim());
+  if (!decodedCookie) return '';
+
+  try {
+    // ao.session uses URL-safe base64; normalize before atob.
+    const normalizedBase64 = decodedCookie
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const padLength = (4 - (normalizedBase64.length % 4)) % 4;
+    const paddedBase64 = normalizedBase64 + '='.repeat(padLength);
+
+    const binary = atob(paddedBase64);
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    const baseText = new TextDecoder('utf-8').decode(bytes);
+    if (!baseText) return '';
+    return baseText
+      .split('')
+      .reduce((acc, ch) => acc + String.fromCharCode(ch.charCodeAt(0) + 1), '');
+  } catch {
+    return '';
+  }
+}
+
+async function invokeAnimeonsenRelayVideoCommand(
+  contentId: string,
+  episodeNumber: number,
+): Promise<{ status: number; data: unknown } | null> {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const result = await invoke<unknown>('animeonsen_relay_video', {
+      payload: {
+        contentId,
+        episodeNumber,
+      },
+    });
+
+    if (!result || typeof result !== 'object') {
+      return null;
+    }
+
+    const candidate = result as { status?: unknown; data?: unknown };
+    const status = Number(candidate.status || 0);
+    if (!Number.isFinite(status) || status <= 0) {
+      return null;
+    }
+
+    return {
+      status,
+      data: candidate.data,
+    };
+  } catch {
+    // Command is unavailable in web/dev runtime; caller can fall back.
+    return null;
+  }
+}
+
+function createAnimeonsenRelayVideo(
+  plugin: ImportedSourcePluginDefinition,
+  signal: AbortSignal,
+): PluginResolverRuntimeApi['animeonsenRelayVideo'] {
+  const nativeFetchTextImpl = createResolverNativeFetchText(plugin, signal);
+  return async (contentId, episodeNumber) => {
+    const safeContentId = String(contentId || '').trim();
+    const safeEpisode = Math.max(1, Number(episodeNumber || 1));
+    if (!safeContentId) {
+      return {
+        status: 400,
+        data: { message: 'Missing content id.' },
+      };
+    }
+
+    // Prefer true server-side relay in Tauri backend to avoid JS header/cookie
+    // visibility differences for Set-Cookie.
+    const commandRelay = await invokeAnimeonsenRelayVideoCommand(safeContentId, safeEpisode);
+    if (commandRelay) {
+      return commandRelay;
+    }
+
+    if (!nativeFetchTextImpl) {
+      return {
+        status: 501,
+        data: {
+          message:
+            'AnimeOnsen relay fallback unavailable because native fetch bridge is not ready and backend command is unavailable.',
+        },
+      };
+    }
+
+    const watchUrl = `https://www.animeonsen.xyz/watch/${encodeURIComponent(safeContentId)}?episode=${encodeURIComponent(String(safeEpisode))}`;
+    const watchResponse = await nativeFetchTextImpl(watchUrl, {
+      method: 'GET',
+      headers: {
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'accept-language': 'en-US,en;q=0.9',
+        'cache-control': 'no-cache',
+        origin: 'https://www.animeonsen.xyz',
+        priority: 'u=0, i',
+        referer: 'https://www.animeonsen.xyz/',
+        'sec-ch-ua': '"Google Chrome";v="126", "Chromium";v="126", "Not.A/Brand";v="24"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'same-origin',
+        'upgrade-insecure-requests': '1',
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      },
+    });
+
+    if (!watchResponse.ok) {
+      return {
+        status: Number(watchResponse.status || 502),
+        data: { message: 'Failed to load AnimeOnsen watch page for relay auth.' },
+      };
+    }
+
+    const setCookieHeader = String(watchResponse.headers?.['set-cookie'] || '');
+    const aoSession = parseAoSessionFromSetCookieHeader(setCookieHeader);
+    const relayBearer = decodeAoSessionToBearer(aoSession);
+    if (!relayBearer) {
+      const availableHeaderKeys = Object.keys(watchResponse.headers || {}).slice(0, 16).join(', ');
+      return {
+        status: 401,
+        data: {
+          message: 'Failed to derive AnimeOnsen relay bearer from ao.session cookie.',
+          detail: {
+            hasSetCookieHeader: Boolean(setCookieHeader),
+            setCookieHeaderLength: setCookieHeader.length,
+            availableHeaderKeys,
+          },
+        },
+      };
+    }
+
+    const videoUrl = `https://api.animeonsen.xyz/v4/content/${encodeURIComponent(safeContentId)}/video/${encodeURIComponent(String(safeEpisode))}`;
+    const videoResponse = await nativeFetchTextImpl(videoUrl, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json, text/plain, */*',
+        authorization: `Bearer ${relayBearer}`,
+        origin: 'https://www.animeonsen.xyz',
+        referer: 'https://www.animeonsen.xyz/',
+      },
+    });
+
+    const bodyText = String(videoResponse.text || '');
+    const payload = parseJsonSafe(bodyText);
+    const status = Number(videoResponse.status || 0);
+
+    if (!videoResponse.ok) {
+      return {
+        status,
+        data: payload && typeof payload === 'object'
+          ? payload
+          : { message: bodyText.slice(0, 220).trim() || 'AnimeOnsen video relay request failed.' },
+      };
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      return {
+        status: 502,
+        data: { message: 'AnimeOnsen video relay returned non-JSON payload.' },
+      };
+    }
+
+    const enriched = {
+      ...(payload as Record<string, unknown>),
+      meta: {
+        ...((payload as Record<string, unknown>).meta && typeof (payload as Record<string, unknown>).meta === 'object'
+          ? ((payload as Record<string, unknown>).meta as Record<string, unknown>)
+          : {}),
+        relayBearer,
+      },
+    };
+
+    return {
+      status,
+      data: enriched,
     };
   };
 }
@@ -707,7 +925,11 @@ export async function executeImportedPluginResolver(
 
   const api: PluginResolverRuntimeApi = {
     fetch: createResolverFetch(plugin),
+    env: {
+      VITE_ANIMEONSEN_SEARCH_TOKEN: import.meta.env.VITE_ANIMEONSEN_SEARCH_TOKEN,
+    },
     nativeFetchText: createResolverNativeFetchText(plugin, controller.signal),
+    animeonsenRelayVideo: createAnimeonsenRelayVideo(plugin, controller.signal),
     URL,
     URLSearchParams,
     JSON,

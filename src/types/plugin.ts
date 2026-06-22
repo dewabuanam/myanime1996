@@ -28,6 +28,9 @@ export interface PluginResolverRuntimeRequest {
 
 export interface PluginResolverRuntimeApi {
   fetch: typeof fetch;
+  env?: {
+    VITE_ANIMEONSEN_SEARCH_TOKEN?: string;
+  };
   nativeFetchText?: (
     url: string,
     init?: {
@@ -40,6 +43,13 @@ export interface PluginResolverRuntimeApi {
     status: number;
     text: string;
     headers?: Record<string, string>;
+  }>;
+  animeonsenRelayVideo?: (
+    contentId: string,
+    episodeNumber: number,
+  ) => Promise<{
+    status: number;
+    data: unknown;
   }>;
   URL: typeof URL;
   URLSearchParams: typeof URLSearchParams;
