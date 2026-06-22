@@ -228,9 +228,13 @@ export default function SettingsModal() {
   const autoSkipOpening = useAppStore((state) => state.autoSkipOpening);
   const autoSkipEnding = useAppStore((state) => state.autoSkipEnding);
   const autoSkipRecap = useAppStore((state) => state.autoSkipRecap);
+  const runInBackgroundOnClose = useAppStore((state) => state.runInBackgroundOnClose);
+  const runOnStartup = useAppStore((state) => state.runOnStartup);
   const setAutoSkipOpening = useAppStore((state) => state.setAutoSkipOpening);
   const setAutoSkipEnding = useAppStore((state) => state.setAutoSkipEnding);
   const setAutoSkipRecap = useAppStore((state) => state.setAutoSkipRecap);
+  const setRunInBackgroundOnClose = useAppStore((state) => state.setRunInBackgroundOnClose);
+  const setRunOnStartup = useAppStore((state) => state.setRunOnStartup);
   const allowNsfw = useAppStore((state) => state.allowNsfw);
   const setAllowNsfw = useAppStore((state) => state.setAllowNsfw);
   const upcomingSeasonFilter = useAppStore((state) => state.upcomingSeasonFilter);
@@ -741,6 +745,40 @@ export default function SettingsModal() {
                       >
                         <span className="text-sm text-cream/80">Allow NSFW Content</span>
                         {allowNsfw ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        onClick={() => {
+                          const next = !runInBackgroundOnClose;
+                          void setRunInBackgroundOnClose(next).then(() => {
+                            setStatusMessage(`Run in background on close ${next ? 'enabled' : 'disabled'}.`);
+                          });
+                        }}
+                        aria-label={`${runInBackgroundOnClose ? 'Disable' : 'Enable'} run in background on close`}
+                      >
+                        <span className="text-sm text-cream/80">Run In Background On Close</span>
+                        {runInBackgroundOnClose ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="settings-toggle-btn w-full flex items-center justify-between rounded-xl border border-cream/20 bg-black/25 px-4 py-3 hover:border-cream/40 transition-colors"
+                        onClick={() => {
+                          const next = !runOnStartup;
+                          void setRunOnStartup(next)
+                            .then(() => {
+                              setStatusMessage(`Run on startup ${next ? 'enabled' : 'disabled'}.`);
+                            })
+                            .catch(() => {
+                              setStatusMessage('Unable to update run on startup setting.');
+                            });
+                        }}
+                        aria-label={`${runOnStartup ? 'Disable' : 'Enable'} run on startup`}
+                      >
+                        <span className="text-sm text-cream/80">Run On Startup</span>
+                        {runOnStartup ? <ToggleRight size={16} className="text-amberline" /> : <ToggleLeft size={16} className="text-cream/40" />}
                       </button>
 
                       <button

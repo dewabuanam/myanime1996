@@ -1,7 +1,14 @@
-use tauri::Manager;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager, WindowEvent,
+};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::path::PathBuf;
 use base64::Engine as _;
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, ORIGIN, REFERER, USER_AGENT};
+use winreg::enums::HKEY_CURRENT_USER;
+use winreg::RegKey;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +61,67 @@ fn resolve_theme_from_store_map(store_map: &serde_json::Map<String, serde_json::
     }
 
     "myanime1996".to_string()
+}
+
+const WINDOWS_RUN_REG_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+const WINDOWS_RUN_REG_NAME: &str = "MyAnime1996";
+const TRAY_MENU_REOPEN_ID: &str = "tray_reopen";
+const TRAY_MENU_QUIT_ID: &str = "tray_quit";
+
+fn resolve_profile_scoped_bool(
+    store_map: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    fallback: bool,
+) -> bool {
+    if let Some(session_value) = store_map.get("session") {
+        let parsed_session = serde_json::from_value::<SessionValue>(session_value.clone()).ok();
+        if let Some(session) = parsed_session {
+            if let Some(raw_id) = session.id {
+                let profile_id = raw_id.trim();
+                if !profile_id.is_empty() {
+                    let profile_key = format!("profile:{profile_id}:{key}");
+                    if let Some(value) = store_map.get(&profile_key).and_then(|entry| entry.as_bool()) {
+                        return value;
+                    }
+                }
+            }
+        }
+    }
+
+    store_map
+        .get(key)
+        .and_then(|entry| entry.as_bool())
+        .unwrap_or(fallback)
+}
+
+fn read_store_map(app: &tauri::AppHandle) -> serde_json::Map<String, serde_json::Value> {
+    let app_data_dir = match app.path().app_data_dir() {
+        Ok(path) => path,
+        Err(_) => return serde_json::Map::new(),
+    };
+
+    let store_path = app_data_dir.join("myanime1996.store.json");
+    let file_text = std::fs::read_to_string(store_path).unwrap_or_else(|_| "{}".to_string());
+    let parsed_json = serde_json::from_str::<serde_json::Value>(&file_text)
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+    parsed_json
+        .as_object()
+        .cloned()
+        .unwrap_or_else(serde_json::Map::new)
+}
+
+fn resolve_startup_executable_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .executable_dir()
+        .map(|dir| {
+            if cfg!(target_os = "windows") {
+                dir.join("myanime1996.exe")
+            } else {
+                dir.join("myanime1996")
+            }
+        })
+        .or_else(|_| std::env::current_exe().map_err(|error| error.to_string()))
 }
 
 #[derive(Clone)]
@@ -267,20 +335,35 @@ fn complete_startup_handoff(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn resolve_startup_theme(app: tauri::AppHandle) -> Result<String, String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?;
-    let store_path = app_data_dir.join("myanime1996.store.json");
+    let store_map = read_store_map(&app);
 
-    let file_text = std::fs::read_to_string(store_path).unwrap_or_else(|_| "{}".to_string());
-    let parsed_json = serde_json::from_str::<serde_json::Value>(&file_text).unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
-    let Some(store_map) = parsed_json.as_object() else {
+    if store_map.is_empty() {
         return Ok("myanime1996".to_string());
-    };
+    }
 
-    Ok(resolve_theme_from_store_map(store_map))
+    Ok(resolve_theme_from_store_map(&store_map))
+}
+
+#[tauri::command]
+fn set_run_on_startup(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (run_key, _) = hkcu
+        .create_subkey(WINDOWS_RUN_REG_PATH)
+        .map_err(|error| error.to_string())?;
+
+    if enabled {
+        let executable = resolve_startup_executable_path(&app)?;
+        let value = format!("\"{}\"", executable.to_string_lossy());
+        run_key
+            .set_value(WINDOWS_RUN_REG_NAME, &value)
+            .map_err(|error| error.to_string())
+    } else {
+        match run_key.delete_value(WINDOWS_RUN_REG_NAME) {
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        }
+    }
 }
 
 pub fn run() {
@@ -291,6 +374,44 @@ pub fn run() {
     tauri::Builder::default()
         .manage(startup_handoff_state.clone())
         .setup(move |app| {
+            let reopen_item = MenuItem::with_id(app, TRAY_MENU_REOPEN_ID, "Reopen", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, TRAY_MENU_QUIT_ID, "Quit", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&reopen_item, &quit_item])?;
+
+            let app_handle_for_menu = app.handle().clone();
+            let app_handle_for_tray = app.handle().clone();
+            TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().cloned().ok_or_else(|| "missing default tray icon".to_string())?)
+                .tooltip("My Anime 1996")
+                .menu(&tray_menu)
+                .on_menu_event(move |app, event| {
+                    match event.id.as_ref() {
+                        TRAY_MENU_REOPEN_ID => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        TRAY_MENU_QUIT_ID => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(move |_tray, event| {
+                    if let TrayIconEvent::Click { button, button_state, .. } = event {
+                        if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                            if let Some(window) = app_handle_for_tray.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    }
+                })
+                .build(app)?;
+
             if let Some(main_window) = app.get_webview_window("main") {
                 let _ = main_window.hide();
             }
@@ -312,12 +433,29 @@ pub fn run() {
                 }
             });
 
+            if let Some(main_window) = app.get_webview_window("main") {
+                let app_handle = app_handle_for_menu.clone();
+                main_window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        let store_map = read_store_map(&app_handle);
+                        let keep_in_background = resolve_profile_scoped_bool(&store_map, "runInBackgroundOnClose", true);
+                        if keep_in_background {
+                            api.prevent_close();
+                            if let Some(window) = app_handle.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             navigate_external_playback_window,
             complete_startup_handoff,
             resolve_startup_theme,
+            set_run_on_startup,
             animeonsen_relay_video
         ])
         .plugin(tauri_plugin_store::Builder::default().build())

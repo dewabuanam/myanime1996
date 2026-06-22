@@ -2202,6 +2202,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-window-state",
  "urlencoding",
+ "winreg",
 ]
 
 [[package]]

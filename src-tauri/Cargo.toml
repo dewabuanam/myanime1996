@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-store = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
@@ -27,6 +27,7 @@ serde_json = "1"
 base64 = "0.22"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli", "deflate", "cookies"] }
 urlencoding = "2"
+winreg = "0.55"
 
 [profile.release]
 codegen-units = 1

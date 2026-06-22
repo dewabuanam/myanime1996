@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import type {
   AnimeSummary,
@@ -42,6 +43,16 @@ const LEGACY_PLAYBACK_MIGRATED_KEY = 'legacyPlaybackMigrated';
 const GLOBAL_LAYOUT_CACHE_KEYS = ['isRightPanelHidden', 'isRightPanelFullpage', 'rightPanelView', 'rightPanelWidth'] as const;
 const WATCH_COMPLETE_THRESHOLD_PERCENT = 90;
 let animeScheduleRateLimitListenerBound = false;
+
+async function syncRunOnStartup(enabled: boolean) {
+  const shouldEnable = Boolean(enabled);
+  try {
+    await invoke('set_run_on_startup', { enabled: shouldEnable });
+  } catch (error) {
+    console.warn('Failed to sync run-on-startup setting with OS.', error);
+    throw error;
+  }
+}
 
 export type PlaybackSupportMode = 'fully-supported' | 'fullscreen-only' | 'fully-unsupported';
 export type AnimeSkipType = 'op' | 'ed' | 'recap';
@@ -152,6 +163,8 @@ interface AppState {
   autoSkipOpening: boolean;
   autoSkipEnding: boolean;
   autoSkipRecap: boolean;
+  runInBackgroundOnClose: boolean;
+  runOnStartup: boolean;
   allowNsfw: boolean;
   upcomingSeasonFilter: UpcomingSeasonFilter;
   animeSkipButtonSegment: AnimeSkipButtonSegment | null;
@@ -243,6 +256,8 @@ interface AppState {
   setAutoSkipOpening: (enabled: boolean) => Promise<void>;
   setAutoSkipEnding: (enabled: boolean) => Promise<void>;
   setAutoSkipRecap: (enabled: boolean) => Promise<void>;
+  setRunInBackgroundOnClose: (enabled: boolean) => Promise<void>;
+  setRunOnStartup: (enabled: boolean) => Promise<void>;
   setAllowNsfw: (enabled: boolean) => Promise<void>;
   setUpcomingSeasonFilter: (filter: UpcomingSeasonFilter) => Promise<void>;
   setAppTheme: (theme: AppTheme) => Promise<void>;
@@ -1523,6 +1538,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   autoSkipOpening: false,
   autoSkipEnding: false,
   autoSkipRecap: false,
+  runInBackgroundOnClose: true,
+  runOnStartup: true,
   allowNsfw: false,
   upcomingSeasonFilter: 'all',
   animeSkipButtonSegment: null,
@@ -1564,6 +1581,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawAutoSkipOpening,
         rawAutoSkipEnding,
         rawAutoSkipRecap,
+        rawRunInBackgroundOnClose,
+        rawRunOnStartup,
         rawAllowNsfw,
         rawUpcomingSeasonFilter,
         rawBaseCatalogSource,
@@ -1613,6 +1632,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('autoSkipOpening', false),
         getStoredValue('autoSkipEnding', false),
         getStoredValue('autoSkipRecap', false),
+        getStoredValue('runInBackgroundOnClose', true),
+        getStoredValue('runOnStartup', true),
         getStoredValue('allowNsfw', false),
         getStoredValue('upcomingSeasonFilter', 'all' as UpcomingSeasonFilter),
         getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
@@ -1667,6 +1688,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         scopedRawAutoSkipOpening,
         scopedRawAutoSkipEnding,
         scopedRawAutoSkipRecap,
+        scopedRawRunInBackgroundOnClose,
+        scopedRawRunOnStartup,
         scopedRawAllowNsfw,
         scopedRawUpcomingSeasonFilter,
         scopedRawBaseCatalogSource,
@@ -1712,6 +1735,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('autoSkipOpening', rawAutoSkipOpening),
         getStoredValue('autoSkipEnding', rawAutoSkipEnding),
         getStoredValue('autoSkipRecap', rawAutoSkipRecap),
+        getStoredValue('runInBackgroundOnClose', rawRunInBackgroundOnClose),
+        getStoredValue('runOnStartup', rawRunOnStartup),
         getStoredValue('allowNsfw', rawAllowNsfw),
         getStoredValue('upcomingSeasonFilter', rawUpcomingSeasonFilter),
         getStoredValue('baseCatalogSource', rawBaseCatalogSource),
@@ -1806,6 +1831,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (scopedRawAllowNsfw !== allowNsfw) {
         await setStoredValue('allowNsfw', allowNsfw);
       }
+
+      const runInBackgroundOnClose = Boolean(scopedRawRunInBackgroundOnClose);
+      if (scopedRawRunInBackgroundOnClose !== runInBackgroundOnClose) {
+        await setStoredValue('runInBackgroundOnClose', runInBackgroundOnClose);
+      }
+
+      const runOnStartup = Boolean(scopedRawRunOnStartup);
+      if (scopedRawRunOnStartup !== runOnStartup) {
+        await setStoredValue('runOnStartup', runOnStartup);
+      }
+
+      await syncRunOnStartup(runOnStartup);
 
       const upcomingSeasonFilter = normalizeUpcomingSeasonFilter(scopedRawUpcomingSeasonFilter);
       if (scopedRawUpcomingSeasonFilter !== upcomingSeasonFilter) {
@@ -1967,6 +2004,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipOpening: Boolean(scopedRawAutoSkipOpening),
         autoSkipEnding: Boolean(scopedRawAutoSkipEnding),
         autoSkipRecap: Boolean(scopedRawAutoSkipRecap),
+        runInBackgroundOnClose,
+        runOnStartup,
         allowNsfw,
         upcomingSeasonFilter,
         animeSkipButtonSegment: null,
@@ -2054,6 +2093,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipOpening: false,
         autoSkipEnding: false,
         autoSkipRecap: false,
+        runInBackgroundOnClose: true,
+        runOnStartup: true,
         allowNsfw: false,
         upcomingSeasonFilter: 'all',
         episodeMetadata: null,
@@ -2133,6 +2174,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const [
       favorites,
       appTheme,
+      runOnStartup,
       libraryItems,
       libraryStatusNotificationSettings,
       libraryLastNotifiedEpisodeByAnimeId,
@@ -2141,12 +2183,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     ] = await Promise.all([
       getStoredValue('favorites', []),
       getStoredValue('appTheme', 'myanime1996' as AppTheme),
+      getStoredValue('runOnStartup', true),
       getStoredValue('libraryItems', {}),
       getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
       getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
       getStoredValue('libraryNotifications', []),
       getStoredValue('libraryLastDailyEpisodeCheckDate', null),
     ]);
+    await syncRunOnStartup(Boolean(runOnStartup));
     set({
       session,
       watchHistory,
@@ -2179,6 +2223,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const [
       favorites,
       appTheme,
+      runOnStartup,
       libraryItems,
       libraryStatusNotificationSettings,
       libraryLastNotifiedEpisodeByAnimeId,
@@ -2187,12 +2232,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     ] = await Promise.all([
       getStoredValue('favorites', []),
       getStoredValue('appTheme', 'myanime1996' as AppTheme),
+      getStoredValue('runOnStartup', true),
       getStoredValue('libraryItems', {}),
       getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
       getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
       getStoredValue('libraryNotifications', []),
       getStoredValue('libraryLastDailyEpisodeCheckDate', null),
     ]);
+    await syncRunOnStartup(Boolean(runOnStartup));
     set({
       session,
       watchHistory,
@@ -3564,6 +3611,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ autoSkipRecap: next });
   },
 
+  setRunInBackgroundOnClose: async (enabled) => {
+    const next = Boolean(enabled);
+    await setStoredValue('runInBackgroundOnClose', next);
+    set({ runInBackgroundOnClose: next });
+  },
+
+  setRunOnStartup: async (enabled) => {
+    const next = Boolean(enabled);
+    await syncRunOnStartup(next);
+    await setStoredValue('runOnStartup', next);
+    set({ runOnStartup: next });
+  },
+
   setAllowNsfw: async (enabled) => {
     const next = Boolean(enabled);
     await Promise.all([
@@ -3887,6 +3947,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipOpening: current.autoSkipOpening,
         autoSkipEnding: current.autoSkipEnding,
         autoSkipRecap: current.autoSkipRecap,
+        runInBackgroundOnClose: current.runInBackgroundOnClose,
+        runOnStartup: current.runOnStartup,
         allowNsfw: current.allowNsfw,
         upcomingSeasonFilter: current.upcomingSeasonFilter,
         baseCatalogSource: current.baseCatalogSource,
@@ -3949,6 +4011,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const importedAutoSkipOpening = Boolean(settings.autoSkipOpening ?? current.autoSkipOpening);
     const importedAutoSkipEnding = Boolean(settings.autoSkipEnding ?? current.autoSkipEnding);
     const importedAutoSkipRecap = Boolean(settings.autoSkipRecap ?? current.autoSkipRecap);
+    const importedRunInBackgroundOnClose = Boolean(settings.runInBackgroundOnClose ?? current.runInBackgroundOnClose);
+    const importedRunOnStartup = Boolean(settings.runOnStartup ?? current.runOnStartup);
     const importedAllowNsfw = Boolean(settings.allowNsfw ?? current.allowNsfw);
     const importedUpcomingSeasonFilter = normalizeUpcomingSeasonFilter(settings.upcomingSeasonFilter ?? current.upcomingSeasonFilter);
     const importedBaseCatalogSource = normalizeBaseCatalogSource(settings.baseCatalogSource ?? current.baseCatalogSource);
@@ -4008,6 +4072,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('autoSkipOpening', importedAutoSkipOpening),
       setStoredValue('autoSkipEnding', importedAutoSkipEnding),
       setStoredValue('autoSkipRecap', importedAutoSkipRecap),
+      setStoredValue('runInBackgroundOnClose', importedRunInBackgroundOnClose),
+      setStoredValue('runOnStartup', importedRunOnStartup),
       setStoredValue('allowNsfw', importedAllowNsfw),
       setStoredValue('upcomingSeasonFilter', importedUpcomingSeasonFilter),
       setStoredValue('baseCatalogSource', importedBaseCatalogSource),
@@ -4034,6 +4100,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       writeProfilePlayback(current.session, importedWatchHistory, importedWatchProgress),
     ]);
 
+    await syncRunOnStartup(importedRunOnStartup);
+
     set({
       isSidebarCompact: importedIsSidebarCompact,
       isRightPanelHidden: importedIsRightPanelHidden,
@@ -4051,6 +4119,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       autoSkipOpening: importedAutoSkipOpening,
       autoSkipEnding: importedAutoSkipEnding,
       autoSkipRecap: importedAutoSkipRecap,
+      runInBackgroundOnClose: importedRunInBackgroundOnClose,
+      runOnStartup: importedRunOnStartup,
       allowNsfw: importedAllowNsfw,
       upcomingSeasonFilter: importedUpcomingSeasonFilter,
       baseCatalogSource: importedBaseCatalogSource,
@@ -4127,6 +4197,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('autoSkipOpening', false),
       setStoredValue('autoSkipEnding', false),
       setStoredValue('autoSkipRecap', false),
+      setStoredValue('runInBackgroundOnClose', true),
+      setStoredValue('runOnStartup', true),
       setStoredValue('allowNsfw', false),
       setStoredValue('upcomingSeasonFilter', 'all' as UpcomingSeasonFilter),
       setStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
@@ -4163,6 +4235,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       removeStoredValue('localCredentials'),
     ]);
 
+    await syncRunOnStartup(true);
+
     actionToastTimers.forEach((timer) => clearTimeout(timer));
     actionToastTimers.clear();
 
@@ -4185,6 +4259,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       autoSkipOpening: false,
       autoSkipEnding: false,
       autoSkipRecap: false,
+      runInBackgroundOnClose: true,
+      runOnStartup: true,
       allowNsfw: false,
       upcomingSeasonFilter: 'all',
       episodeMetadata: null,

@@ -36,6 +36,8 @@ type StoreShape = {
   autoSkipOpening: boolean;
   autoSkipEnding: boolean;
   autoSkipRecap: boolean;
+  runInBackgroundOnClose: boolean;
+  runOnStartup: boolean;
   assumeEpisodeCountFromReleaseDate: boolean;
   allowNsfw: boolean;
   upcomingSeasonFilter: 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
@@ -94,6 +96,8 @@ const PROFILE_SCOPED_KEYS: ReadonlySet<keyof StoreShape> = new Set<keyof StoreSh
   'autoSkipOpening',
   'autoSkipEnding',
   'autoSkipRecap',
+  'runInBackgroundOnClose',
+  'runOnStartup',
   'assumeEpisodeCountFromReleaseDate',
   'allowNsfw',
   'upcomingSeasonFilter',
