@@ -21,26 +21,15 @@ $nsisDir = Join-Path $bundleRoot 'nsis'
 $msiDir = Join-Path $bundleRoot 'msi'
 
 if (Test-Path $nsisDir) {
-  $dottedExpected = ("{0}_{1}_x64-setup.exe" -f ($productName -replace ' ', '.'), $version)
-  $spacedExpected = ("{0}_{1}_x64-setup.exe" -f $productName, $version)
-
-  $dottedPath = Join-Path $nsisDir $dottedExpected
-  $spacedPath = Join-Path $nsisDir $spacedExpected
-
-  if ((Test-Path $dottedPath) -and -not (Test-Path $spacedPath)) {
-    Rename-Item -Path $dottedPath -NewName $spacedExpected
-    Write-Host "Renamed installer: $dottedExpected -> $spacedExpected"
-  } elseif (Test-Path $spacedPath) {
-    Write-Host "Installer already uses productName: $spacedExpected"
-  } else {
-    Write-Host "No NSIS installer matched expected names for version $version"
+  # MSI-only distribution: remove stale NSIS setup files for this version.
+  $nsisMatches = Get-ChildItem -Path $nsisDir -File -Filter "*$version*x64-setup.exe" -ErrorAction SilentlyContinue
+  foreach ($oldFile in $nsisMatches) {
+    Remove-Item -Path $oldFile.FullName -Force -ErrorAction SilentlyContinue
+    Write-Host "Removed stale NSIS installer: $($oldFile.Name)"
   }
 }
 
 $filesToSign = @()
-if (Test-Path $nsisDir) {
-  $filesToSign += Get-ChildItem -Path $nsisDir -File -Filter "*$version*x64-setup.exe" -ErrorAction SilentlyContinue
-}
 if (Test-Path $msiDir) {
   $filesToSign += Get-ChildItem -Path $msiDir -File -Filter "*$version*x64*.msi" -ErrorAction SilentlyContinue
 }

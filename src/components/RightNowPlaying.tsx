@@ -12,7 +12,7 @@ import type { AniSkipSegmentMap, AniSkipType } from '../services/aniSkip';
 import type { AnimeDetail as AnimeDetailType, AnimeEpisode, AnimeEpisodePagination, PlayableItem } from '../types/anime';
 import type { ResolvedSource } from '../types/plugin';
 import { formatAnimeYear } from '../utils/episodeFormatters';
-import { buildActiveOrderedPluginIds, collectResolvedPluginsForAnime, pickPriorityPluginId, readResolvedSourceCache } from '../utils/resolvedSourceBadge';
+import { buildActiveOrderedPluginIds, collectResolvedPluginsForAnime, readResolvedSourceCache } from '../utils/resolvedSourceBadge';
 import { getDisplayTitle } from '../utils/title';
 import { extractYouTubeVideoId } from '../utils/youtubeUrl';
 import { useAniSkipOverlay } from '../hooks/useAniSkipOverlay';
@@ -166,7 +166,7 @@ export default function RightNowPlaying() {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [detailEpisodeSearchQuery, setDetailEpisodeSearchQuery] = useState('');
   const [detailEpisodeResolvedIconByEpisode, setDetailEpisodeResolvedIconByEpisode] = useState<
-    Record<number, { iconDataUri: string; pluginName: string }>
+    Record<number, Array<{ pluginId: string; iconDataUri?: string; pluginName: string }>>
   >({});
   const [hasTrailerFindingSignalTimedOut, setHasTrailerFindingSignalTimedOut] = useState(false);
   const [isDocumentFullscreen, setIsDocumentFullscreen] = useState(() =>
@@ -654,17 +654,28 @@ export default function RightNowPlaying() {
         animeIds: [detailAnimeView.id, detailAnimeView.jikanId ?? -1],
         titles: [detailAnimeView.title, detailAnimeView.titleEnglish ?? '', detailAnimeView.titleJapanese ?? ''],
       });
-      const next: Record<number, { iconDataUri: string; pluginName: string }> = {};
+      const next: Record<number, Array<{ pluginId: string; iconDataUri?: string; pluginName: string }>> = {};
+
+      const pluginOrdering = [
+        ...activeOrderedPluginIds,
+        ...sourcePlugins.map((plugin) => plugin.id).filter((pluginId) => !activeOrderedPluginIds.includes(pluginId)),
+      ];
 
       for (const [episodeNumber, resolvedPluginIds] of snapshot.episodePluginIds.entries()) {
-        const pluginId = pickPriorityPluginId(resolvedPluginIds, activeOrderedPluginIds);
-        if (!pluginId) continue;
-        const plugin = sourcePluginById.get(pluginId);
-        if (!plugin?.iconDataUri) continue;
-        next[episodeNumber] = {
-          iconDataUri: plugin.iconDataUri,
-          pluginName: plugin.name,
-        };
+        const badges: Array<{ pluginId: string; iconDataUri?: string; pluginName: string }> = [];
+        for (const pluginId of pluginOrdering) {
+          if (!resolvedPluginIds.has(pluginId)) continue;
+          const plugin = sourcePluginById.get(pluginId);
+          if (!plugin) continue;
+          badges.push({
+            pluginId,
+            iconDataUri: plugin.iconDataUri,
+            pluginName: plugin.name,
+          });
+        }
+        if (badges.length > 0) {
+          next[episodeNumber] = badges;
+        }
       }
 
       if (!cancelled) {
@@ -1793,11 +1804,6 @@ export default function RightNowPlaying() {
             onAddToLibrary={(anchorElement) => {
               setLibraryPickerAnchorElement(anchorElement ?? null);
               setIsLibraryPickerOpen(true);
-            }}
-            onAddToPlaylist={(anchorElement) => {
-              setPlaylistPickerItem(null);
-              setPlaylistPickerAnchorElement(anchorElement ?? null);
-              setIsPlaylistPickerOpen(true);
             }}
             onAddEpisodeToPlaylist={(_episode, anchorElement, item) => {
               setPlaylistPickerItem(item ?? null);

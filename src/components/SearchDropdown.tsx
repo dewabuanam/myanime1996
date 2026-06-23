@@ -2,6 +2,7 @@ import { Loader2, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { useAppStore } from '../state/appStore';
 import type { AnimeSummary } from '../types/anime';
 import type { SearchKeywordSuggestion } from '../utils/search';
 import { getDisplayTitle } from '../utils/title';
@@ -38,6 +39,8 @@ export default function SearchDropdown({
   onOpenAdvanced,
 }: SearchDropdownProps) {
   const navigate = useNavigate();
+  const selectAnime = useAppStore((state) => state.selectAnime);
+  const openRightPanelWithView = useAppStore((state) => state.openRightPanelWithView);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState({ top: 64, left: 0, width: 560 });
 
@@ -175,7 +178,11 @@ export default function SearchDropdown({
                         className="search-dropdown-anime"
                         onClick={() => {
                           onClose();
-                          navigate(`/anime/${routeId}`);
+                          void selectAnime({
+                            ...anime,
+                            id: routeId,
+                            jikanId: routeId,
+                          }).then(() => openRightPanelWithView('detail'));
                         }}
                       >
                         <img src={anime.image} alt="" className="search-dropdown-thumb" />

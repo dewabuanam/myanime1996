@@ -12,7 +12,8 @@ import { getSeasonLabelUpper, resolveAnimeSeason } from '../utils/season';
 import SeasonLinkBadge from './SeasonLinkBadge';
 
 type DetailEpisodeIcon = {
-  iconDataUri: string;
+  pluginId: string;
+  iconDataUri?: string;
   pluginName: string;
 };
 
@@ -38,12 +39,11 @@ type RightNowDetailPaneProps = {
   detailExpandedEpisode: number | null;
   detailLoadingEpisode: number | null;
   titleLanguage: TitleLanguage;
-  detailEpisodeResolvedIconByEpisode: Record<number, DetailEpisodeIcon>;
+  detailEpisodeResolvedIconByEpisode: Record<number, DetailEpisodeIcon[]>;
   onPlayEpisode: (episodeNumber: number) => void;
   onToggleEpisodeExpand: (episodeNumber: number) => void;
   onAddEpisodeToQueue?: (episodeNumber: number) => void;
   onAddToLibrary?: (anchorElement?: HTMLElement | null) => void;
-  onAddToPlaylist?: (anchorElement?: HTMLElement | null) => void;
   onAddEpisodeToPlaylist?: (episode: AnimeEpisode, anchorElement?: HTMLElement | null, item?: PlayableItem) => void;
   isInLibrary?: boolean;
 };
@@ -65,7 +65,6 @@ export default function RightNowDetailPane({
   onToggleEpisodeExpand,
   onAddEpisodeToQueue,
   onAddToLibrary,
-  onAddToPlaylist,
   onAddEpisodeToPlaylist,
   isInLibrary = false,
 }: RightNowDetailPaneProps) {
@@ -467,17 +466,6 @@ export default function RightNowDetailPane({
         <div className="flex flex-wrap items-center justify-between gap-1.5">
           <p className="font-mono text-[10px] uppercase tracking-[0.13em] text-amberline/75">Episodes</p>
           <div className="inline-flex flex-wrap items-center gap-1.5">
-            {onAddToPlaylist ? (
-              <button
-                type="button"
-                className="vhs-button-ghost p-1.5 text-[10px] retro-tooltip"
-                onClick={(event) => onAddToPlaylist(event.currentTarget)}
-                data-tooltip="Add to Playlist"
-                aria-label="Add to playlist"
-              >
-                <FolderPlus size={12} />
-              </button>
-            ) : null}
             <input
               type="search"
               value={detailEpisodeSearchQuery}
@@ -511,6 +499,9 @@ export default function RightNowDetailPane({
           filteredDetailEpisodes.map((episode) => {
             const isExpanded = detailExpandedEpisode === episode.episodeNumber;
             const labels = getEpisodeDisplayTitles(episode, detailAnimeView, titleLanguage);
+            const resolvedBadges = detailEpisodeResolvedIconByEpisode[episode.episodeNumber] ?? [];
+            const inlineResolvedBadges = resolvedBadges.slice(0, 2);
+            const remainingResolvedBadges = resolvedBadges.slice(2);
             return (
               <article key={episode.episodeNumber} className="group/episode border border-cream/10 bg-carbon/35 px-2.5 py-2">
                 <div className="flex items-start gap-2">
@@ -534,17 +525,33 @@ export default function RightNowDetailPane({
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    {detailEpisodeResolvedIconByEpisode[episode.episodeNumber] ? (
+                    {inlineResolvedBadges.map((badge) => (
                       <div
+                        key={`episode-inline-resolve-${episode.episodeNumber}-${badge.pluginId}`}
                         className="shrink-0 bg-black/62 p-1 shadow-[0_4px_14px_rgba(0,0,0,0.45)] retro-tooltip"
-                        data-tooltip={`${detailEpisodeResolvedIconByEpisode[episode.episodeNumber].pluginName} Available`}
+                        data-tooltip={`${badge.pluginName} Available`}
                       >
-                        <img
-                          src={detailEpisodeResolvedIconByEpisode[episode.episodeNumber].iconDataUri}
-                          alt="Resolved source"
-                          className="h-4 w-4 object-contain"
-                          loading="lazy"
-                        />
+                        {badge.iconDataUri ? (
+                          <img
+                            src={badge.iconDataUri}
+                            alt="Resolved source"
+                            className="h-4 w-4 object-contain"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span className="inline-flex h-4 min-w-4 items-center justify-center px-1 font-mono text-[9px] uppercase tracking-[0.08em] text-cream/80">
+                            {badge.pluginName.slice(0, 2)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                    {remainingResolvedBadges.length > 0 ? (
+                      <div
+                        className="shrink-0 bg-black/62 px-1.5 py-1 font-mono text-[10px] uppercase tracking-[0.09em] text-cream/80 shadow-[0_4px_14px_rgba(0,0,0,0.45)] retro-tooltip"
+                        data-tooltip="See More"
+                        aria-label={`See more resolved plugins for episode ${episode.episodeNumber}`}
+                      >
+                        +{remainingResolvedBadges.length}
                       </div>
                     ) : null}
                     {onAddEpisodeToQueue ? (
@@ -604,6 +611,33 @@ export default function RightNowDetailPane({
                 {isExpanded ? (
                   <div className="mt-1.5 border border-cream/10 bg-black/20 p-2">
                     <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                      {resolvedBadges.length > 0 ? (
+                        <>
+                          {resolvedBadges.map((badge) => (
+                            <div
+                              key={`episode-expanded-resolve-${episode.episodeNumber}-${badge.pluginId}`}
+                              className="inline-flex items-center gap-1 border border-cream/15 bg-black/22 px-2 py-0.5 retro-tooltip"
+                              data-tooltip={`${badge.pluginName} Available`}
+                            >
+                              {badge.iconDataUri ? (
+                                <img
+                                  src={badge.iconDataUri}
+                                  alt="Resolved source"
+                                  className="h-3.5 w-3.5 object-contain"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <span className="inline-flex h-3.5 min-w-3.5 items-center justify-center font-mono text-[8px] uppercase tracking-[0.08em] text-cream/80">
+                                  {badge.pluginName.slice(0, 2)}
+                                </span>
+                              )}
+                              <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-cream/75">
+                                {badge.pluginName}
+                              </span>
+                            </div>
+                          ))}
+                        </>
+                      ) : null}
                       {formatEpisodeScoreOutOfTen(episode.score) ? (
                         <span className="inline-flex items-center border border-cream/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.11em] text-cream/72">
                           Score {formatEpisodeScoreOutOfTen(episode.score)}

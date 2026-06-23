@@ -136,7 +136,6 @@ export default function LibraryStatusPickerModal({
                 style={{ backgroundColor: rowBackgroundColor, opacity: 1 }}
                 onClick={() => {
                   onConfirm(option.value);
-                  onClose();
                 }}
               >
                 <p className="font-display text-[12px] uppercase tracking-[0.08em] text-cream">{option.label}</p>
@@ -144,6 +143,19 @@ export default function LibraryStatusPickerModal({
             );
           })}
         </div>
+        {onRemove ? (
+          <div className="mt-2 border-t border-cream/12 pt-2">
+            <button
+              type="button"
+              className="library-status-picker-option relative z-[1] w-full cursor-pointer border border-rust/45 bg-[#1b1110] px-2.5 py-2 text-left transition-colors hover:border-rust/65"
+              onClick={() => {
+                onRemove();
+              }}
+            >
+              <p className="font-display text-[12px] uppercase tracking-[0.08em] text-rust">Remove From Library</p>
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>,
     document.body,

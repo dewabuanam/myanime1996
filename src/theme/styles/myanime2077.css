@@ -1446,6 +1446,57 @@
   font-family: var(--theme-font-ui);
 }
 
+:root[data-theme='myanime2077'] .settings-api-status-card {
+  border: 1px solid rgba(80, 243, 255, 0.52);
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  background:
+    repeating-linear-gradient(0deg, rgba(78, 242, 255, 0.08) 0 1px, transparent 1px 12px),
+    linear-gradient(165deg, rgba(8, 24, 48, 0.9), rgba(5, 13, 31, 0.94));
+}
+
+:root[data-theme='myanime2077'] .settings-api-status-row {
+  border: 1px solid rgba(80, 243, 255, 0.42);
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  background: linear-gradient(135deg, rgba(10, 26, 52, 0.86), rgba(5, 15, 34, 0.9));
+}
+
+:root[data-theme='myanime2077'] .settings-api-status-name {
+  color: rgba(224, 252, 255, 0.95);
+  font-family: var(--theme-font-ui);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:root[data-theme='myanime2077'] .settings-api-status-dot {
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 3px) 0, 100% 3px, 100% 100%, 3px 100%, 0 calc(100% - 3px));
+  border: 1px solid rgba(77, 242, 255, 0.66);
+  background: rgba(170, 236, 255, 0.88);
+  box-shadow: 0 0 8px rgba(52, 236, 255, 0.32);
+}
+
+:root[data-theme='myanime2077'] .settings-api-status-dot.is-active {
+  background: linear-gradient(135deg, rgba(76, 255, 196, 0.98), rgba(30, 218, 166, 0.96));
+  box-shadow: 0 0 10px rgba(43, 239, 178, 0.45);
+}
+
+:root[data-theme='myanime2077'] .settings-api-status-dot.is-rate-limited {
+  background: linear-gradient(135deg, rgba(255, 212, 82, 0.98), rgba(255, 148, 66, 0.96));
+  box-shadow: 0 0 10px rgba(255, 183, 74, 0.42);
+}
+
+:root[data-theme='myanime2077'] .settings-api-status-dot.is-not-active {
+  background: linear-gradient(135deg, rgba(255, 91, 162, 0.98), rgba(224, 45, 118, 0.96));
+  box-shadow: 0 0 10px rgba(255, 83, 174, 0.42);
+}
+
+:root[data-theme='myanime2077'] .settings-api-status-dot.is-unknown {
+  background: linear-gradient(135deg, rgba(205, 246, 255, 0.95), rgba(142, 230, 255, 0.9));
+  box-shadow: 0 0 9px rgba(78, 243, 255, 0.38);
+}
+
 :root[data-theme='myanime2077'] .library-tabs,
 :root[data-theme='myanime2077'] .library-tab-btn {
   border-radius: 0;

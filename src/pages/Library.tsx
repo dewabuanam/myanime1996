@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, BellOff } from 'lucide-react';
-import { BookMarked, Info, Trash2, X } from 'lucide-react';
-import AnimeHoverPreview from '../components/AnimeHoverPreview';
+import { BookMarked, Info, Play, RotateCcw, X } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
 import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
 import PlaylistPickerModal from '../components/PlaylistPickerModal';
@@ -358,83 +357,77 @@ export default function Library() {
               const playLabel = isResumeAction ? 'Resume' : 'Play Now';
               const canPlayAnime = canPlayLibraryItem(item, isResumeAction);
               return (
-                <AnimeHoverPreview
-                  key={item.animeId}
-                  anime={toAnimeSummaryFromLibraryItem(item)}
-                  episodeLabel={episodeProgressLabel}
-                  mediaLabel={item.mediaType?.toUpperCase() ?? 'ANIME'}
-                  playLabel={playLabel}
-                  isResumeAction={isResumeAction}
-                  canPlayAnime={canPlayAnime}
-                  onPlay={() => void playFromLibraryCard(item)}
-                  onStartOver={isResumeAction ? () => void startOverFromLibraryCard(item) : undefined}
-                  onAddToQueue={() => void addAnimeSeriesToQueue(toAnimeSummaryFromLibraryItem(item))}
-                  onAddToPlaylist={(anchorElement) => {
-                    setPlaylistPickerItem(item);
-                    setPlaylistPickerAnchorElement(anchorElement ?? null);
-                  }}
-                  onOpenDetail={() => void openLibraryDetailPanel(item)}
-                >
-                  <article className="anime-card media-thumb-card library-row-card border border-cream/12 bg-black/18 p-2">
-                    <div className="anime-card-poster-wrap">
-                      <img src={item.image} alt="" className="anime-card-poster" loading="lazy" />
+                <article key={item.animeId} className="anime-card media-thumb-card library-row-card border border-cream/12 bg-black/18 p-2">
+                  <div className="anime-card-poster-wrap">
+                    <img src={item.image} alt="" className="anime-card-poster" loading="lazy" />
+                    <span
+                      className="anime-hover-preview-episode-overlay retro-tooltip"
+                      data-tooltip={`Progress ${episodeProgressLabel}`}
+                      aria-label={`Progress ${episodeProgressLabel}`}
+                    >
+                      {episodeProgressLabel}
+                    </span>
+                    {unreadCount > 0 ? (
                       <span
-                        className="anime-hover-preview-episode-overlay retro-tooltip"
-                        data-tooltip={`Progress ${episodeProgressLabel}`}
-                        aria-label={`Progress ${episodeProgressLabel}`}
+                        className="absolute right-2 top-2 z-[2] inline-flex min-h-[1rem] min-w-[1rem] items-center justify-center rounded-full border border-amberline/65 bg-amberline/18 px-1 font-mono text-[10px] leading-none text-amberline"
+                        title={`${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}`}
                       >
-                        {episodeProgressLabel}
+                        {unreadCount}
                       </span>
-                      {unreadCount > 0 ? (
-                        <span
-                          className="absolute right-2 top-2 z-[2] inline-flex min-h-[1rem] min-w-[1rem] items-center justify-center rounded-full border border-amberline/65 bg-amberline/18 px-1 font-mono text-[10px] leading-none text-amberline"
-                          title={`${unreadCount} unread notification${unreadCount > 1 ? 's' : ''}`}
-                        >
-                          {unreadCount}
-                        </span>
-                      ) : null}
-                    </div>
+                    ) : null}
+                  </div>
 
-                    <div className="anime-card-copy mt-2">
-                      <p className="anime-card-title anime-card-title-slot line-clamp-2">{getLibraryDisplayTitle(item, preferEnglish)}</p>
-                      <p className="anime-card-jp anime-card-jp-slot line-clamp-1">{item.titleJapanese || '\u3000'}</p>
-                      <p className="anime-card-jp">{item.mediaType ?? 'anime'} • {item.year ?? 'tba'}</p>
-                    </div>
+                  <div className="anime-card-copy mt-2">
+                    <p className="anime-card-title anime-card-title-slot line-clamp-2">{getLibraryDisplayTitle(item, preferEnglish)}</p>
+                    <p className="anime-card-jp anime-card-jp-slot line-clamp-1">{item.titleJapanese || '\u3000'}</p>
+                    <p className="anime-card-jp">{item.mediaType ?? 'anime'} • {item.year ?? 'tba'}</p>
+                  </div>
 
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      className="vhs-button-ghost px-2 py-1 text-[10px] retro-tooltip"
+                      onClick={() => void playFromLibraryCard(item)}
+                      disabled={!canPlayAnime}
+                      aria-label={playLabel}
+                      data-tooltip={playLabel}
+                    >
+                      <Play size={13} />
+                    </button>
+                    {isResumeAction ? (
                       <button
                         type="button"
                         className="vhs-button-ghost px-2 py-1 text-[10px] retro-tooltip"
-                        onClick={() => void openLibraryDetailPanel(item)}
-                        aria-label="Open anime detail"
-                        data-tooltip="Open Detail"
+                        onClick={() => void startOverFromLibraryCard(item)}
+                        aria-label="Start over"
+                        data-tooltip="Start Over"
                       >
-                        <Info size={13} />
+                        <RotateCcw size={12} />
                       </button>
-                      <button
-                        type="button"
-                        className="vhs-button-ghost px-2 py-1 text-[10px] retro-tooltip"
-                        onClick={(event) => {
-                          setLibraryPickerAnchorElement(event.currentTarget);
-                          setEditingItem(item);
-                        }}
-                        aria-label="Update library status"
-                        data-tooltip="Status"
-                      >
-                        <BookMarked size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        className="vhs-button-ghost px-2 py-1 text-[10px] retro-tooltip"
-                        onClick={() => setPendingRemoveItem(item)}
-                        aria-label="Remove from library"
-                        data-tooltip="Remove"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </article>
-                </AnimeHoverPreview>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="vhs-button-ghost px-2 py-1 text-[10px] retro-tooltip"
+                      onClick={() => void openLibraryDetailPanel(item)}
+                      aria-label="Open anime detail"
+                      data-tooltip="Open Detail"
+                    >
+                      <Info size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className="vhs-button-ghost px-2 py-1 text-[10px] retro-tooltip"
+                      onClick={(event) => {
+                        setLibraryPickerAnchorElement(event.currentTarget);
+                        setEditingItem(item);
+                      }}
+                      aria-label="Update library status"
+                      data-tooltip="Status"
+                    >
+                      <BookMarked size={13} />
+                    </button>
+                  </div>
+                </article>
               );
             })}
           </div>
@@ -456,8 +449,7 @@ export default function Library() {
             toAnimeSummaryFromLibraryItem(editingItem),
             status,
           );
-          setEditingItem(null);
-          setLibraryPickerAnchorElement(null);
+          setEditingItem((current) => (current ? { ...current, status } : current));
         }}
         onRemove={
           editingItem
