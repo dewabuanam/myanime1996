@@ -31,6 +31,16 @@ export type AnimeScheduleRateLimitEvent = {
 
 type AnimeScheduleRateLimitListener = (event: AnimeScheduleRateLimitEvent) => void;
 
+export type AnimeScheduleApiHealthEvent = {
+  service: 'animeSchedule';
+  status: 'success' | 'failure' | 'rate-limited';
+  path: string;
+  occurredAt: number;
+  statusCode?: number;
+};
+
+type AnimeScheduleApiHealthListener = (event: AnimeScheduleApiHealthEvent) => void;
+
 type CacheFetchOptions<T> = {
   onUpdate?: (value: T) => void;
   forceRefresh?: boolean;
@@ -53,8 +63,31 @@ type AnimeScheduleNormalizeOptions = {
 const inFlightRequests = new Map<string, Promise<unknown>>();
 const routeByNumericId = new Map<number, string>();
 const animeScheduleRateLimitListeners = new Set<AnimeScheduleRateLimitListener>();
+const animeScheduleApiHealthListeners = new Set<AnimeScheduleApiHealthListener>();
+
+function notifyAnimeScheduleApiHealth(
+  status: AnimeScheduleApiHealthEvent['status'],
+  path: string,
+  statusCode?: number,
+) {
+  if (!animeScheduleApiHealthListeners.size) return;
+
+  const event: AnimeScheduleApiHealthEvent = {
+    service: 'animeSchedule',
+    status,
+    path,
+    occurredAt: Date.now(),
+    ...(typeof statusCode === 'number' ? { statusCode } : {}),
+  };
+
+  for (const listener of animeScheduleApiHealthListeners) {
+    listener(event);
+  }
+}
 
 function notifyAnimeScheduleRateLimit(path: string) {
+  notifyAnimeScheduleApiHealth('rate-limited', path, 429);
+
   if (!animeScheduleRateLimitListeners.size) return;
 
   const event: AnimeScheduleRateLimitEvent = {
@@ -73,6 +106,13 @@ export function onAnimeScheduleRateLimit(listener: AnimeScheduleRateLimitListene
   animeScheduleRateLimitListeners.add(listener);
   return () => {
     animeScheduleRateLimitListeners.delete(listener);
+  };
+}
+
+export function onAnimeScheduleApiHealth(listener: AnimeScheduleApiHealthListener) {
+  animeScheduleApiHealthListeners.add(listener);
+  return () => {
+    animeScheduleApiHealthListeners.delete(listener);
   };
 }
 
@@ -149,9 +189,13 @@ async function fetchAnimeScheduleNative(url: string, token: string, path: string
   if (!response.ok) {
     if (response.status === 429) {
       notifyAnimeScheduleRateLimit(path);
+    } else {
+      notifyAnimeScheduleApiHealth('failure', path, response.status);
     }
     throw new Error(`AnimeSchedule request failed: ${response.status}`);
   }
+
+  notifyAnimeScheduleApiHealth('success', path, response.status);
 
   return response.json();
 }
@@ -618,18 +662,32 @@ async function fetchAnimeScheduleJson(path: string) {
     }
   }
 
-  const response = await fetch(url, {
-    headers: toRequestHeaders(token),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: toRequestHeaders(token),
+    });
+  } catch {
+    notifyAnimeScheduleApiHealth('failure', path);
+    throw new Error('AnimeSchedule request failed: network');
+  }
 
   if (!response.ok) {
     if (response.status === 429) {
       notifyAnimeScheduleRateLimit(path);
+    } else {
+      notifyAnimeScheduleApiHealth('failure', path, response.status);
     }
     throw new Error(`AnimeSchedule request failed: ${response.status}`);
   }
 
+  notifyAnimeScheduleApiHealth('success', path, response.status);
+
   return response.json();
+}
+
+export async function probeAnimeScheduleApiHealth() {
+  await fetchAnimeScheduleJson('/timetables');
 }
 
 async function fetchAndStore<T>(

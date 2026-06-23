@@ -3140,6 +3140,63 @@ button {
   color: rgba(255, 246, 226, 0.97);
 }
 
+.settings-api-status-card {
+  border: 1px solid rgba(245, 234, 210, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(0, 0, 0, 0.24);
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.settings-api-status-row {
+  border: 1px solid rgba(245, 234, 210, 0.12);
+  border-radius: 0.62rem;
+  background: rgba(10, 8, 6, 0.42);
+  padding: 0.48rem 0.56rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.settings-api-status-name {
+  color: rgba(245, 234, 210, 0.86);
+  font-size: 0.78rem;
+}
+
+.settings-api-status-dot {
+  display: inline-block;
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 0.72rem;
+  border-radius: 50%;
+  background: rgb(var(--color-cream, 245 234 210));
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgba(245, 234, 210, 0.28);
+}
+
+.settings-api-status-dot.is-active {
+  background: rgb(var(--color-greenvu, 143 207 123));
+  box-shadow: 0 0 0 1px rgba(var(--color-greenvu), 0.4), 0 0 10px rgba(var(--color-greenvu), 0.35);
+}
+
+.settings-api-status-dot.is-rate-limited {
+  background: rgb(var(--color-amberline, 232 184 115));
+  box-shadow: 0 0 0 1px rgba(var(--color-amberline), 0.45), 0 0 10px rgba(var(--color-amberline), 0.35);
+}
+
+.settings-api-status-dot.is-not-active {
+  background: rgb(var(--color-rust, 198 95 77));
+  box-shadow: 0 0 0 1px rgba(var(--color-rust), 0.45), 0 0 10px rgba(var(--color-rust), 0.3);
+}
+
+.settings-api-status-dot.is-unknown {
+  background: rgb(var(--color-cream, 245 234 210));
+  box-shadow: 0 0 0 1px rgba(var(--color-cream), 0.35);
+}
+
 .settings-empty {
   margin: 0.2rem 0 0;
   border: 1px dashed rgba(245, 234, 210, 0.18);

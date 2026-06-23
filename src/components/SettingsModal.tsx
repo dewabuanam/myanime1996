@@ -10,6 +10,7 @@ import { clearSourceResolveCache } from '../services/sourceCache';
 import { getStoredValue, setStoredValue } from '../services/store';
 import { DEFAULT_NOTIFICATION_POSTER, useAppStore } from '../state/appStore';
 import type { UpcomingSeasonFilter } from '../state/appStore';
+import type { ApiHealthRuntimeEntry } from '../state/appStore';
 import { listThemeOptions } from '../theme';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -51,6 +52,32 @@ const UPCOMING_FILTER_OPTIONS: Array<{ value: UpcomingSeasonFilter; label: strin
 ];
 
 const APP_THEME_OPTIONS = listThemeOptions();
+
+type ApiStatusTone = 'active' | 'rate-limited' | 'not-active' | 'unknown';
+
+type ApiStatusView = {
+  tone: ApiStatusTone;
+};
+
+function deriveApiStatus(entry: ApiHealthRuntimeEntry): ApiStatusView {
+  const successAt = typeof entry.lastSuccessAt === 'number' && Number.isFinite(entry.lastSuccessAt) ? entry.lastSuccessAt : null;
+  const failureAt = typeof entry.lastFailureAt === 'number' && Number.isFinite(entry.lastFailureAt) ? entry.lastFailureAt : null;
+  const rateLimitedAt = typeof entry.lastRateLimitAt === 'number' && Number.isFinite(entry.lastRateLimitAt) ? entry.lastRateLimitAt : null;
+
+  if (rateLimitedAt && (!successAt || rateLimitedAt > successAt)) {
+    return { tone: 'rate-limited' };
+  }
+
+  if (successAt && (!failureAt || successAt >= failureAt) && (!rateLimitedAt || successAt >= rateLimitedAt)) {
+    return { tone: 'active' };
+  }
+
+  if (failureAt && (!successAt || failureAt > successAt)) {
+    return { tone: 'not-active' };
+  }
+
+  return { tone: 'unknown' };
+}
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -246,6 +273,9 @@ export default function SettingsModal() {
   const subtitleDropShadow = useAppStore((state) => state.subtitleDropShadow);
   const subtitleBackgroundHighlight = useAppStore((state) => state.subtitleBackgroundHighlight);
   const appTheme = useAppStore((state) => state.appTheme);
+  const apiHealthRuntime = useAppStore((state) => state.apiHealthRuntime);
+  const isRefreshingApiHealthStatus = useAppStore((state) => state.isRefreshingApiHealthStatus);
+  const refreshApiHealthStatus = useAppStore((state) => state.refreshApiHealthStatus);
   const setSubtitleFontColor = useAppStore((state) => state.setSubtitleFontColor);
   const setSubtitleFontSizeDocked = useAppStore((state) => state.setSubtitleFontSizeDocked);
   const setSubtitleFontSizeExpanded = useAppStore((state) => state.setSubtitleFontSizeExpanded);
@@ -270,6 +300,14 @@ export default function SettingsModal() {
   const [cacheSnapshot, setCacheSnapshot] = useState<Record<string, unknown>>({});
   const [cacheEditorDraftByCardId, setCacheEditorDraftByCardId] = useState<Record<string, string>>({});
   const isDevMode = (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
+
+  const apiStatusRows = useMemo(() => {
+    return [
+      { id: 'animeSchedule', label: 'AnimeSchedule', status: deriveApiStatus(apiHealthRuntime.animeSchedule) },
+      { id: 'jikan', label: 'Jikan', status: deriveApiStatus(apiHealthRuntime.jikan) },
+      { id: 'aniSkip', label: 'AniSkip', status: deriveApiStatus(apiHealthRuntime.aniSkip) },
+    ];
+  }, [apiHealthRuntime]);
 
   const cacheCards = useMemo(() => buildCacheCards(cacheSnapshot), [cacheSnapshot]);
 
@@ -917,12 +955,39 @@ export default function SettingsModal() {
                       </div>
                     </div>
 
+                    <div className="space-y-2">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">API Status</p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="settings-action-btn"
+                          onClick={() => {
+                            void refreshApiHealthStatus().then(() => {
+                              setStatusMessage('API status refreshed.');
+                            });
+                          }}
+                          disabled={isRefreshingApiHealthStatus}
+                        >
+                          {isRefreshingApiHealthStatus ? 'Refreshing...' : 'Refresh Status'}
+                        </button>
+                      </div>
+                      <div className="settings-api-status-card">
+                        {apiStatusRows.map((row) => (
+                          <div key={row.id} className="settings-api-status-row">
+                            <span className="settings-api-status-name">{row.label}</span>
+                            <span className={`settings-api-status-dot is-${row.status.tone}`} aria-hidden="true" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="space-y-1 text-sm text-cream/75">
                       <p className="font-mono text-[11px] uppercase tracking-[0.13em] text-cream/70">Tutorial</p>
                       <p>Base Source controls anime catalog metadata feeds, including the Home Latest Update shelf.</p>
                       <p>AnimeSchedule mode uses timetable endpoints: /timetables and /timetables/{'{'}airType{'}'}.</p>
                       <p>Token is stored locally in app settings. Default token is preloaded and can be replaced with your own.</p>
                       <p>If AnimeSchedule latest updates fail, the app falls back to Jikan for reliability.</p>
+                      <p>API status uses persisted request history and stays saved between app restarts.</p>
                       <p>NSFW and upcoming media type preferences apply globally (Home + See All + search/upcoming catalog fetches).</p>
                       <p>Assume Episodes From Release Date is disabled by default and only used when timetable + episode list data cannot determine latest episode count.</p>
                     </div>

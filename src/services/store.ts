@@ -14,6 +14,7 @@ import type {
   WatchProgress,
 } from '../types/anime';
 import type { ImportedSourcePluginDefinition, ResolvedSource, SourceAudioLanguage } from '../types/plugin';
+import type { ApiHealthRuntimeState } from '../state/appStore';
 
 type StoreShape = {
   session: UserSession | null;
@@ -74,6 +75,7 @@ type StoreShape = {
   baseCatalogSource: 'animeschedule' | 'jikan';
   animeScheduleApiToken: string;
   animeScheduleRateLimitGuideDismissedDate: string | null;
+  apiHealthRuntime: ApiHealthRuntimeState;
   animeScheduleCache: Record<string, CachedPayload<unknown>>;
   animeScheduleMeta: Record<string, string | number | boolean>;
   aniSkipCache: Record<string, CachedPayload<unknown>>;
@@ -128,6 +130,7 @@ const PROFILE_SCOPED_KEYS: ReadonlySet<keyof StoreShape> = new Set<keyof StoreSh
   'baseCatalogSource',
   'animeScheduleApiToken',
   'animeScheduleRateLimitGuideDismissedDate',
+  'apiHealthRuntime',
   'recentSearches',
   'searchGenreCache',
   'searchProducerCache',

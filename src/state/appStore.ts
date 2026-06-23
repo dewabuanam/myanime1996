@@ -20,8 +20,15 @@ import type {
 import type { ImportedSourcePluginDefinition, SourceAudioLanguage } from '../types/plugin';
 import type { BaseCatalogSource } from '../services/catalogSource';
 import { DEFAULT_BASE_CATALOG_SOURCE, getAnimeTrailerUrl, resolveCanonicalDetailRouteId } from '../services/catalogSource';
-import { clearAnimeScheduleDataCache, DEFAULT_ANIMESCHEDULE_TOKEN, onAnimeScheduleRateLimit } from '../services/animeSchedule';
-import { clearJikanDataCache } from '../services/jikan';
+import {
+  clearAnimeScheduleDataCache,
+  DEFAULT_ANIMESCHEDULE_TOKEN,
+  onAnimeScheduleApiHealth,
+  onAnimeScheduleRateLimit,
+  probeAnimeScheduleApiHealth,
+  type AnimeScheduleApiHealthEvent,
+} from '../services/animeSchedule';
+import { clearJikanDataCache, onJikanApiHealth, probeJikanApiHealth, type JikanApiHealthEvent } from '../services/jikan';
 import {
   getStoredValue,
   migrateLegacyStoreDataToProfile,
@@ -33,7 +40,7 @@ import {
 import { importSourcePluginFromPicker } from '../services/pluginImport';
 import { getAvailableSourcePlugins, getDefaultPluginPriority } from '../services/sourceResolver';
 import { clearSourceResolveCache } from '../services/sourceCache';
-import { clearAniSkipDataCache } from '../services/aniSkip';
+import { clearAniSkipDataCache, onAniSkipApiHealth, probeAniSkipApiHealth, type AniSkipApiHealthEvent } from '../services/aniSkip';
 import { clearPluginResolverCaches } from '../services/pluginExecutor';
 import { clearSearchFilterCaches } from '../services/searchStorage';
 import { refreshHomeShelvesIfNeeded } from '../services/catalogSource';
@@ -44,6 +51,114 @@ const LEGACY_PLAYBACK_MIGRATED_KEY = 'legacyPlaybackMigrated';
 const GLOBAL_LAYOUT_CACHE_KEYS = ['isRightPanelHidden', 'isRightPanelFullpage', 'rightPanelView', 'rightPanelWidth'] as const;
 const WATCH_COMPLETE_THRESHOLD_PERCENT = 90;
 let animeScheduleRateLimitListenerBound = false;
+let apiHealthListenerBound = false;
+
+export type ApiHealthService = 'animeSchedule' | 'jikan' | 'aniSkip';
+
+export type ApiHealthRuntimeEntry = {
+  lastSuccessAt: number | null;
+  lastFailureAt: number | null;
+  lastRateLimitAt: number | null;
+  lastStatusCode: number | null;
+};
+
+export type ApiHealthRuntimeState = Record<ApiHealthService, ApiHealthRuntimeEntry>;
+
+function createDefaultApiHealthRuntimeEntry(): ApiHealthRuntimeEntry {
+  return {
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastRateLimitAt: null,
+    lastStatusCode: null,
+  };
+}
+
+function createDefaultApiHealthRuntimeState(): ApiHealthRuntimeState {
+  return {
+    animeSchedule: createDefaultApiHealthRuntimeEntry(),
+    jikan: createDefaultApiHealthRuntimeEntry(),
+    aniSkip: createDefaultApiHealthRuntimeEntry(),
+  };
+}
+function normalizeApiHealthRuntimeEntry(value: unknown): ApiHealthRuntimeEntry {
+  const source = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const toNullableTimestamp = (entry: unknown) =>
+    typeof entry === 'number' && Number.isFinite(entry) && entry > 0 ? entry : null;
+  const toNullableStatusCode = (entry: unknown) =>
+    typeof entry === 'number' && Number.isFinite(entry) && entry >= 100 ? Math.floor(entry) : null;
+
+  return {
+    lastSuccessAt: toNullableTimestamp(source.lastSuccessAt),
+    lastFailureAt: toNullableTimestamp(source.lastFailureAt),
+    lastRateLimitAt: toNullableTimestamp(source.lastRateLimitAt),
+    lastStatusCode: toNullableStatusCode(source.lastStatusCode),
+  };
+}
+
+function normalizeApiHealthRuntimeState(value: unknown): ApiHealthRuntimeState {
+  const source = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    animeSchedule: normalizeApiHealthRuntimeEntry(source.animeSchedule),
+    jikan: normalizeApiHealthRuntimeEntry(source.jikan),
+    aniSkip: normalizeApiHealthRuntimeEntry(source.aniSkip),
+  };
+}
+
+function applyApiHealthEvent(
+  current: ApiHealthRuntimeState,
+  service: ApiHealthService,
+  event: AnimeScheduleApiHealthEvent | JikanApiHealthEvent | AniSkipApiHealthEvent,
+): ApiHealthRuntimeState {
+  const entry = current[service] ?? createDefaultApiHealthRuntimeEntry();
+  const occurredAt = Number.isFinite(event.occurredAt) ? event.occurredAt : Date.now();
+  const nextEntry: ApiHealthRuntimeEntry = {
+    ...entry,
+    ...(typeof event.statusCode === 'number' ? { lastStatusCode: event.statusCode } : {}),
+  };
+
+  if (event.status === 'success') {
+    nextEntry.lastSuccessAt = occurredAt;
+  } else if (event.status === 'rate-limited') {
+    nextEntry.lastRateLimitAt = occurredAt;
+  } else {
+    nextEntry.lastFailureAt = occurredAt;
+  }
+
+  return {
+    ...current,
+    [service]: nextEntry,
+  };
+}
+
+function bindApiHealthListenersOnce(setState: (fn: (state: AppState) => Partial<AppState>) => void) {
+  if (apiHealthListenerBound) return;
+
+  onAnimeScheduleApiHealth((event) => {
+    setState((state) => {
+      const apiHealthRuntime = applyApiHealthEvent(state.apiHealthRuntime, 'animeSchedule', event);
+      void setStoredValue('apiHealthRuntime', apiHealthRuntime);
+      return { apiHealthRuntime };
+    });
+  });
+
+  onJikanApiHealth((event) => {
+    setState((state) => {
+      const apiHealthRuntime = applyApiHealthEvent(state.apiHealthRuntime, 'jikan', event);
+      void setStoredValue('apiHealthRuntime', apiHealthRuntime);
+      return { apiHealthRuntime };
+    });
+  });
+
+  onAniSkipApiHealth((event) => {
+    setState((state) => {
+      const apiHealthRuntime = applyApiHealthEvent(state.apiHealthRuntime, 'aniSkip', event);
+      void setStoredValue('apiHealthRuntime', apiHealthRuntime);
+      return { apiHealthRuntime };
+    });
+  });
+
+  apiHealthListenerBound = true;
+}
 
 async function syncRunOnStartup(enabled: boolean) {
   const shouldEnable = Boolean(enabled);
@@ -235,6 +350,8 @@ interface AppState {
   isAnimeScheduleRateLimitGuideOpen: boolean;
   animeScheduleRateLimitGuideDismissedDate: string | null;
   animeScheduleRateLimitGuideLastTriggeredAt: number | null;
+  apiHealthRuntime: ApiHealthRuntimeState;
+  isRefreshingApiHealthStatus: boolean;
   selectedAnime: AnimeSummary | null;
   currentlyPlayingItem: PlayableItem | null;
   queue: PlayableItem[];
@@ -368,6 +485,7 @@ interface AppState {
   setAnimeSkipButtonSegment: (segment: AnimeSkipButtonSegment | null) => void;
   setBaseCatalogSource: (source: BaseCatalogSource) => Promise<void>;
   setAnimeScheduleApiToken: (token: string) => Promise<void>;
+  refreshApiHealthStatus: () => Promise<void>;
   setPlaybackSupportMode: (mode: PlaybackSupportMode) => void;
   setResolvingPlaybackSource: (resolving: boolean) => void;
   setSelectedSourceOptionId: (optionId: string | null) => void;
@@ -1686,6 +1804,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   isAnimeScheduleRateLimitGuideOpen: false,
   animeScheduleRateLimitGuideDismissedDate: null,
   animeScheduleRateLimitGuideLastTriggeredAt: null,
+  apiHealthRuntime: createDefaultApiHealthRuntimeState(),
+  isRefreshingApiHealthStatus: false,
   selectedAnime: null,
   currentlyPlayingItem: null,
   queue: [],
@@ -1768,6 +1888,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawBaseCatalogSource,
         rawAnimeScheduleApiToken,
         animeScheduleRateLimitGuideDismissedDate,
+        rawApiHealthRuntime,
         rawSubtitleFontColor,
         rawLegacySubtitleFontSize,
         rawSubtitleFontSizeDocked,
@@ -1819,6 +1940,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
         getStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
         getStoredValue('animeScheduleRateLimitGuideDismissedDate', null),
+        getStoredValue('apiHealthRuntime', createDefaultApiHealthRuntimeState()),
         getStoredValue('subtitleFontColor', '#ffffff'),
         getStoredValue('subtitleFontSize', 22),
         getStoredValue('subtitleFontSizeDocked', 19),
@@ -1875,6 +1997,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         scopedRawBaseCatalogSource,
         scopedRawAnimeScheduleApiToken,
         scopedAnimeScheduleRateLimitGuideDismissedDate,
+        scopedRawApiHealthRuntime,
         scopedRawSubtitleFontColor,
         scopedRawLegacySubtitleFontSize,
         scopedRawSubtitleFontSizeDocked,
@@ -1922,6 +2045,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('baseCatalogSource', rawBaseCatalogSource),
         getStoredValue('animeScheduleApiToken', rawAnimeScheduleApiToken),
         getStoredValue('animeScheduleRateLimitGuideDismissedDate', animeScheduleRateLimitGuideDismissedDate),
+        getStoredValue('apiHealthRuntime', rawApiHealthRuntime),
         getStoredValue('subtitleFontColor', rawSubtitleFontColor),
         getStoredValue('subtitleFontSize', rawLegacySubtitleFontSize),
         getStoredValue('subtitleFontSizeDocked', rawSubtitleFontSizeDocked),
@@ -2032,6 +2156,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       const animeScheduleApiToken = normalizeAnimeScheduleApiToken(scopedRawAnimeScheduleApiToken);
       if (scopedRawAnimeScheduleApiToken !== animeScheduleApiToken) {
         await setStoredValue('animeScheduleApiToken', animeScheduleApiToken);
+      }
+
+      const apiHealthRuntime = normalizeApiHealthRuntimeState(scopedRawApiHealthRuntime);
+      if (JSON.stringify(scopedRawApiHealthRuntime) !== JSON.stringify(apiHealthRuntime)) {
+        await setStoredValue('apiHealthRuntime', apiHealthRuntime);
       }
 
       const subtitleFontColor = normalizeSubtitleColor(scopedRawSubtitleFontColor);
@@ -2207,6 +2336,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         isAnimeScheduleRateLimitGuideOpen: false,
         animeScheduleRateLimitGuideDismissedDate: scopedAnimeScheduleRateLimitGuideDismissedDate,
         animeScheduleRateLimitGuideLastTriggeredAt: null,
+        apiHealthRuntime,
+        isRefreshingApiHealthStatus: false,
         currentlyPlayingItem,
         queue,
         queueCursor,
@@ -2252,6 +2383,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         animeScheduleRateLimitListenerBound = true;
       }
+      bindApiHealthListenersOnce(set);
     } catch (error) {
       console.warn('Initialization failed; starting with defaults.', error);
       set({
@@ -2298,6 +2430,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         isAnimeScheduleRateLimitGuideOpen: false,
         animeScheduleRateLimitGuideDismissedDate: null,
         animeScheduleRateLimitGuideLastTriggeredAt: null,
+        apiHealthRuntime: createDefaultApiHealthRuntimeState(),
+        isRefreshingApiHealthStatus: false,
         currentlyPlayingItem: null,
         queue: [],
         queueCursor: -1,
@@ -2343,6 +2477,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
         animeScheduleRateLimitListenerBound = true;
       }
+      bindApiHealthListenersOnce(set);
     }
   },
 
@@ -2357,6 +2492,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       favorites,
       appTheme,
       runOnStartup,
+      apiHealthRuntime,
       libraryItems,
       libraryStatusNotificationSettings,
       libraryLastNotifiedEpisodeByAnimeId,
@@ -2366,6 +2502,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       getStoredValue('favorites', []),
       getStoredValue('appTheme', 'myanime1996' as AppTheme),
       getStoredValue('runOnStartup', true),
+      getStoredValue('apiHealthRuntime', createDefaultApiHealthRuntimeState()),
       getStoredValue('libraryItems', {}),
       getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
       getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
@@ -2379,6 +2516,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       watchProgress,
       favorites: normalizeFavorites(favorites),
       appTheme: normalizeAppTheme(appTheme),
+      apiHealthRuntime: normalizeApiHealthRuntimeState(apiHealthRuntime),
       libraryItems: normalizeLibraryItems(libraryItems),
       libraryStatusNotificationSettings: normalizeLibraryStatusNotificationSettings(libraryStatusNotificationSettings),
       libraryLastNotifiedEpisodeByAnimeId: normalizeLibraryLastNotifiedEpisodeMap(libraryLastNotifiedEpisodeByAnimeId),
@@ -2406,6 +2544,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       favorites,
       appTheme,
       runOnStartup,
+      apiHealthRuntime,
       libraryItems,
       libraryStatusNotificationSettings,
       libraryLastNotifiedEpisodeByAnimeId,
@@ -2415,6 +2554,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       getStoredValue('favorites', []),
       getStoredValue('appTheme', 'myanime1996' as AppTheme),
       getStoredValue('runOnStartup', true),
+      getStoredValue('apiHealthRuntime', createDefaultApiHealthRuntimeState()),
       getStoredValue('libraryItems', {}),
       getStoredValue('libraryStatusNotificationSettings', getDefaultLibraryStatusNotificationSettings()),
       getStoredValue('libraryLastNotifiedEpisodeByAnimeId', {}),
@@ -2428,6 +2568,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       watchProgress,
       favorites: normalizeFavorites(favorites),
       appTheme: normalizeAppTheme(appTheme),
+      apiHealthRuntime: normalizeApiHealthRuntimeState(apiHealthRuntime),
       libraryItems: normalizeLibraryItems(libraryItems),
       libraryStatusNotificationSettings: normalizeLibraryStatusNotificationSettings(libraryStatusNotificationSettings),
       libraryLastNotifiedEpisodeByAnimeId: normalizeLibraryLastNotifiedEpisodeMap(libraryLastNotifiedEpisodeByAnimeId),
@@ -2445,6 +2586,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       removeStoredValue('currentlyPlayingItem'),
       removeStoredValue('queue'),
       removeStoredValue('queueCursor'),
+      removeStoredValue('apiHealthRuntime'),
     ]);
     set({
       session: null,
@@ -2475,6 +2617,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       animeSkipButtonSegment: null,
       selectedSourceOptionId: null,
       selectedSubtitleId: null,
+      apiHealthRuntime: createDefaultApiHealthRuntimeState(),
+      isRefreshingApiHealthStatus: false,
     });
   },
 
@@ -3856,6 +4000,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ animeScheduleApiToken: next });
   },
 
+  refreshApiHealthStatus: async () => {
+    if (get().isRefreshingApiHealthStatus) return;
+
+    set({ isRefreshingApiHealthStatus: true });
+    try {
+      await Promise.allSettled([
+        probeAnimeScheduleApiHealth(),
+        probeJikanApiHealth(),
+        probeAniSkipApiHealth(),
+      ]);
+    } finally {
+      set({ isRefreshingApiHealthStatus: false });
+    }
+  },
+
   setPlaybackSupportMode: (mode) => {
     set({ playbackSupportMode: mode });
   },
@@ -4270,6 +4429,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('upcomingSeasonFilter', importedUpcomingSeasonFilter),
       setStoredValue('baseCatalogSource', importedBaseCatalogSource),
       setStoredValue('animeScheduleApiToken', importedAnimeScheduleApiToken),
+      setStoredValue('apiHealthRuntime', createDefaultApiHealthRuntimeState()),
       setStoredValue('subtitleFontColor', importedSubtitleFontColor),
       setStoredValue('subtitleFontSizeDocked', importedSubtitleFontSizeDocked),
       setStoredValue('subtitleFontSizeExpanded', importedSubtitleFontSizeExpanded),
@@ -4317,6 +4477,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       upcomingSeasonFilter: importedUpcomingSeasonFilter,
       baseCatalogSource: importedBaseCatalogSource,
       animeScheduleApiToken: importedAnimeScheduleApiToken,
+      apiHealthRuntime: createDefaultApiHealthRuntimeState(),
+      isRefreshingApiHealthStatus: false,
       subtitleFontColor: importedSubtitleFontColor,
       subtitleFontSizeDocked: importedSubtitleFontSizeDocked,
       subtitleFontSizeExpanded: importedSubtitleFontSizeExpanded,
@@ -4396,6 +4558,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE),
       setStoredValue('animeScheduleApiToken', DEFAULT_ANIMESCHEDULE_TOKEN),
       setStoredValue('animeScheduleRateLimitGuideDismissedDate', null),
+      setStoredValue('apiHealthRuntime', createDefaultApiHealthRuntimeState()),
       setStoredValue('subtitleFontColor', '#ffffff'),
       setStoredValue('subtitleFontSizeDocked', 19),
       setStoredValue('subtitleFontSizeExpanded', 38),
@@ -4475,6 +4638,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       isAnimeScheduleRateLimitGuideOpen: false,
       animeScheduleRateLimitGuideDismissedDate: null,
       animeScheduleRateLimitGuideLastTriggeredAt: null,
+      apiHealthRuntime: createDefaultApiHealthRuntimeState(),
+      isRefreshingApiHealthStatus: false,
       selectedAnime: null,
       currentlyPlayingItem: null,
       queue: [],

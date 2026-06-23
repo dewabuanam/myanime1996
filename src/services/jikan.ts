@@ -13,6 +13,16 @@ const HOME_BACKGROUND_REFRESH_INTERVAL_MS = 60 * 1000;
 const ANIME_ENTITY_CACHE_KEY = 'jikan:anime:entities';
 const ANIME_ENTITY_TTL = 30 * 24 * HOUR;
 
+export type JikanApiHealthEvent = {
+  service: 'jikan';
+  status: 'success' | 'failure' | 'rate-limited';
+  path: string;
+  occurredAt: number;
+  statusCode?: number;
+};
+
+type JikanApiHealthListener = (event: JikanApiHealthEvent) => void;
+
 type CacheFetchOptions<T> = {
   onUpdate?: (value: T) => void;
   forceRefresh?: boolean;
@@ -127,6 +137,30 @@ type HomeRefreshCallbacks = {
 };
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
+const jikanApiHealthListeners = new Set<JikanApiHealthListener>();
+
+function notifyJikanApiHealth(status: JikanApiHealthEvent['status'], path: string, statusCode?: number) {
+  if (!jikanApiHealthListeners.size) return;
+
+  const event: JikanApiHealthEvent = {
+    service: 'jikan',
+    status,
+    path,
+    occurredAt: Date.now(),
+    ...(typeof statusCode === 'number' ? { statusCode } : {}),
+  };
+
+  for (const listener of jikanApiHealthListeners) {
+    listener(event);
+  }
+}
+
+export function onJikanApiHealth(listener: JikanApiHealthListener) {
+  jikanApiHealthListeners.add(listener);
+  return () => {
+    jikanApiHealthListeners.delete(listener);
+  };
+}
 
 const UPCOMING_ALLOWED_FILTERS = new Set(['tv', 'movie', 'ova', 'special', 'ona', 'music']);
 
@@ -417,25 +451,51 @@ function buildBackoffMs(attempt: number) {
 
 async function fetchJikanJson(path: string) {
   let lastStatus = 0;
+  let hadRateLimit = false;
 
   for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_ATTEMPTS; attempt += 1) {
-    const response = await fetch(`${BASE_URL}${path}`);
+    let response: Response;
+    try {
+      response = await fetch(`${BASE_URL}${path}`);
+    } catch {
+      notifyJikanApiHealth('failure', path);
+      throw new Error('Jikan request failed: network');
+    }
+
     lastStatus = response.status;
 
     if (response.ok) {
+      notifyJikanApiHealth('success', path, response.status);
       return response.json();
     }
 
     if (response.status === 429 && attempt < RATE_LIMIT_RETRY_ATTEMPTS) {
+      hadRateLimit = true;
       const retryAfterMs = parseRetryAfterMs(response);
       await wait(retryAfterMs ?? buildBackoffMs(attempt));
       continue;
     }
 
+    if (response.status === 429 || hadRateLimit) {
+      notifyJikanApiHealth('rate-limited', path, response.status);
+    } else {
+      notifyJikanApiHealth('failure', path, response.status);
+    }
+
     throw new Error(`Jikan request failed: ${response.status}`);
   }
 
+  if (lastStatus === 429 || hadRateLimit) {
+    notifyJikanApiHealth('rate-limited', path, lastStatus || 429);
+  } else {
+    notifyJikanApiHealth('failure', path, lastStatus || undefined);
+  }
+
   throw new Error(`Jikan request failed: ${lastStatus || 'unknown'}`);
+}
+
+export async function probeJikanApiHealth() {
+  await fetchJikanJson('/top/anime?limit=1&page=1');
 }
 
 function mergeAnimeSummary(existing: AnimeSummary | undefined, incoming: AnimeSummary): AnimeSummary {

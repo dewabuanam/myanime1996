@@ -25,6 +25,16 @@ type AniSkipApiResponse = {
   results?: unknown;
 };
 
+export type AniSkipApiHealthEvent = {
+  service: 'aniSkip';
+  status: 'success' | 'failure' | 'rate-limited';
+  path: string;
+  occurredAt: number;
+  statusCode?: number;
+};
+
+type AniSkipApiHealthListener = (event: AniSkipApiHealthEvent) => void;
+
 const ANISKIP_BASE_URL = 'https://api.aniskip.com/v2';
 const ANISKIP_TYPES: AniSkipType[] = ['op', 'ed', 'recap'];
 const ANISKIP_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
@@ -33,12 +43,36 @@ type AniSkipCacheStore = Record<string, CachedPayload<AniSkipSegmentMap>>;
 
 const cache = new Map<string, { expiresAt: number; value: AniSkipSegmentMap }>();
 const inFlight = new Map<string, Promise<AniSkipSegmentMap>>();
+const aniSkipApiHealthListeners = new Set<AniSkipApiHealthListener>();
 
 export const ANISKIP_LABELS: Record<AniSkipType, string> = {
   op: 'Opening',
   ed: 'Ending',
   recap: 'Recap',
 };
+
+function notifyAniSkipApiHealth(status: AniSkipApiHealthEvent['status'], path: string, statusCode?: number) {
+  if (!aniSkipApiHealthListeners.size) return;
+
+  const event: AniSkipApiHealthEvent = {
+    service: 'aniSkip',
+    status,
+    path,
+    occurredAt: Date.now(),
+    ...(typeof statusCode === 'number' ? { statusCode } : {}),
+  };
+
+  for (const listener of aniSkipApiHealthListeners) {
+    listener(event);
+  }
+}
+
+export function onAniSkipApiHealth(listener: AniSkipApiHealthListener) {
+  aniSkipApiHealthListeners.add(listener);
+  return () => {
+    aniSkipApiHealthListeners.delete(listener);
+  };
+}
 
 function isFinitePositiveNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -140,13 +174,27 @@ async function fetchAniSkipSegmentsUncached(malId: number, episodeNumber: number
   }
   params.set('episodeLength', toEpisodeLengthParam(episodeLength));
 
-  const response = await fetch(`${ANISKIP_BASE_URL}/skip-times/${malId}/${episodeNumber}?${params.toString()}`, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!response.ok) {
+  const path = `/skip-times/${malId}/${episodeNumber}`;
+  let response: Response;
+  try {
+    response = await fetch(`${ANISKIP_BASE_URL}${path}?${params.toString()}`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch {
+    notifyAniSkipApiHealth('failure', path);
     return {};
   }
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      notifyAniSkipApiHealth('rate-limited', path, response.status);
+    } else {
+      notifyAniSkipApiHealth('failure', path, response.status);
+    }
+    return {};
+  }
+
+  notifyAniSkipApiHealth('success', path, response.status);
 
   const json = (await response.json()) as AniSkipApiResponse;
   if (json.found !== true || !Array.isArray(json.results) || json.results.length === 0) {
@@ -161,6 +209,36 @@ async function fetchAniSkipSegmentsUncached(malId: number, episodeNumber: number
   }
 
   return next;
+}
+
+export async function probeAniSkipApiHealth() {
+  const params = new URLSearchParams();
+  for (const type of ANISKIP_TYPES) {
+    params.append('types[]', type);
+  }
+  params.set('episodeLength', '0');
+
+  const path = '/skip-times/1/1';
+  let response: Response;
+  try {
+    response = await fetch(`${ANISKIP_BASE_URL}${path}?${params.toString()}`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch {
+    notifyAniSkipApiHealth('failure', path);
+    throw new Error('AniSkip request failed: network');
+  }
+
+  if (!response.ok) {
+    if (response.status === 429) {
+      notifyAniSkipApiHealth('rate-limited', path, response.status);
+    } else {
+      notifyAniSkipApiHealth('failure', path, response.status);
+    }
+    throw new Error(`AniSkip request failed: ${response.status}`);
+  }
+
+  notifyAniSkipApiHealth('success', path, response.status);
 }
 
 export async function fetchAniSkipSegments(
