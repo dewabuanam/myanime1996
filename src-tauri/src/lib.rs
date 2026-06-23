@@ -1,10 +1,11 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, WindowEvent,
+    Emitter, Manager, WindowEvent,
 };
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::path::PathBuf;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, ORIGIN, REFERER, USER_AGENT};
 use winreg::enums::HKEY_CURRENT_USER;
@@ -67,6 +68,30 @@ const WINDOWS_RUN_REG_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion
 const WINDOWS_RUN_REG_NAME: &str = "MyAnime1996";
 const TRAY_MENU_REOPEN_ID: &str = "tray_reopen";
 const TRAY_MENU_QUIT_ID: &str = "tray_quit";
+const BACKEND_HOME_TICK_EVENT: &str = "backend:home-refresh-tick";
+const BACKEND_LIBRARY_TICK_EVENT: &str = "backend:library-check-tick";
+const BACKEND_HOME_TICK_INTERVAL: Duration = Duration::from_secs(60);
+const BACKEND_LIBRARY_TICK_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BackendSchedulerTickEvent {
+    occurred_at: u64,
+}
+
+fn unix_now_ms() -> u64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis() as u64,
+        Err(_) => 0,
+    }
+}
+
+fn emit_backend_scheduler_tick(app: &tauri::AppHandle, event_name: &str) {
+    let payload = BackendSchedulerTickEvent {
+        occurred_at: unix_now_ms(),
+    };
+    let _ = app.emit(event_name, payload);
+}
 
 fn resolve_profile_scoped_bool(
     store_map: &serde_json::Map<String, serde_json::Value>,
@@ -430,6 +455,28 @@ pub fn run() {
                     }
 
                     std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            });
+
+            let scheduler_app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let mut last_home_tick = Instant::now() - BACKEND_HOME_TICK_INTERVAL;
+                let mut last_library_tick = Instant::now() - BACKEND_LIBRARY_TICK_INTERVAL;
+
+                loop {
+                    let now = Instant::now();
+
+                    if now.duration_since(last_home_tick) >= BACKEND_HOME_TICK_INTERVAL {
+                        emit_backend_scheduler_tick(&scheduler_app_handle, BACKEND_HOME_TICK_EVENT);
+                        last_home_tick = now;
+                    }
+
+                    if now.duration_since(last_library_tick) >= BACKEND_LIBRARY_TICK_INTERVAL {
+                        emit_backend_scheduler_tick(&scheduler_app_handle, BACKEND_LIBRARY_TICK_EVENT);
+                        last_library_tick = now;
+                    }
+
+                    std::thread::sleep(Duration::from_secs(1));
                 }
             });
 

@@ -36,6 +36,7 @@ import { clearSourceResolveCache } from '../services/sourceCache';
 import { clearAniSkipDataCache } from '../services/aniSkip';
 import { clearPluginResolverCaches } from '../services/pluginExecutor';
 import { clearSearchFilterCaches } from '../services/searchStorage';
+import { refreshHomeShelvesIfNeeded } from '../services/catalogSource';
 
 const WATCH_HISTORY_PROFILE_KEY = 'watchHistoryByProfile';
 const WATCH_PROGRESS_PROFILE_KEY = 'watchProgressByProfile';
@@ -66,19 +67,121 @@ const OS_NOTIFICATION_DEDUPE_WINDOW_MS = 90_000;
 const MAX_ACTION_TOASTS = 4;
 const ACTION_TOAST_DURATION_MS = 3600;
 export const DEFAULT_NOTIFICATION_POSTER = '/assets/logo.png';
+const HOME_BACKGROUND_REFRESH_INTERVAL_MS = 60 * 1000;
+const BACKEND_HOME_TICK_EVENT = 'backend:home-refresh-tick';
+const BACKEND_LIBRARY_TICK_EVENT = 'backend:library-check-tick';
 let libraryEpisodePollTimer: ReturnType<typeof setInterval> | null = null;
 let libraryEpisodeCheckInFlight = false;
 let libraryEpisodeCheckPromise: Promise<void> | null = null;
 let libraryNotificationActionListenerBound = false;
+let backendSchedulerEventListenerBound = false;
+let lastBackendHomeRefreshAt = 0;
+let backendHomeRefreshInFlight = false;
 const lastOsNotificationSentAtByKey = new Map<string, number>();
 const localNotificationAttachmentUrlBySource = new Map<string, string>();
 const actionToastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function ensureLibraryEpisodePolling(runCheck: () => void) {
+  if (isTauriRuntime()) {
+    // Tauri runtime uses backend scheduler events for polling.
+    return;
+  }
   if (libraryEpisodePollTimer) return;
   libraryEpisodePollTimer = setInterval(() => {
     runCheck();
   }, LIBRARY_EPISODE_POLL_INTERVAL_MS);
+}
+
+function bindBackendSchedulerEventListener(getState: () => AppState) {
+  if (backendSchedulerEventListenerBound || !isTauriRuntime()) return;
+  backendSchedulerEventListenerBound = true;
+  let lastLibraryTickAt = Date.now();
+  let backendTickWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+  const startFallbackLibraryPolling = () => {
+    if (libraryEpisodePollTimer) return;
+    libraryEpisodePollTimer = setInterval(() => {
+      void getState().runLibraryEpisodeDailyCheck();
+    }, LIBRARY_EPISODE_POLL_INTERVAL_MS);
+  };
+
+  const stopBackendTickWatchdog = () => {
+    if (!backendTickWatchdogTimer) return;
+    clearInterval(backendTickWatchdogTimer);
+    backendTickWatchdogTimer = null;
+  };
+
+  const startBackendTickWatchdog = () => {
+    if (backendTickWatchdogTimer) return;
+
+    const staleThresholdMs = LIBRARY_EPISODE_POLL_INTERVAL_MS + 90_000;
+    backendTickWatchdogTimer = setInterval(() => {
+      const now = Date.now();
+      if (now - lastLibraryTickAt <= staleThresholdMs) return;
+
+      console.warn('[BackendScheduler] Library tick watchdog detected stale backend ticks. Falling back to interval polling.');
+      backendSchedulerEventListenerBound = false;
+      stopBackendTickWatchdog();
+      startFallbackLibraryPolling();
+    }, 60_000);
+  };
+
+  void import('@tauri-apps/api/event')
+    .then(async (eventModule) => {
+      await eventModule.listen(BACKEND_HOME_TICK_EVENT, () => {
+        const now = Date.now();
+        if (now - lastBackendHomeRefreshAt < HOME_BACKGROUND_REFRESH_INTERVAL_MS - 1000) return;
+        if (backendHomeRefreshInFlight) return;
+        lastBackendHomeRefreshAt = now;
+
+        backendHomeRefreshInFlight = true;
+        void (async () => {
+          const [beforeJikanMeta, beforeAnimeScheduleMeta] = await Promise.all([
+            getStoredValue('jikanMeta', {} as Record<string, string | number | boolean>),
+            getStoredValue('animeScheduleMeta', {} as Record<string, string | number | boolean>),
+          ]);
+
+          await refreshHomeShelvesIfNeeded(20);
+
+          const [afterJikanMeta, afterAnimeScheduleMeta] = await Promise.all([
+            getStoredValue('jikanMeta', {} as Record<string, string | number | boolean>),
+            getStoredValue('animeScheduleMeta', {} as Record<string, string | number | boolean>),
+          ]);
+
+          const beforeJikanRefreshAt = Number(beforeJikanMeta.homeShelvesLastRefreshAt ?? 0);
+          const afterJikanRefreshAt = Number(afterJikanMeta.homeShelvesLastRefreshAt ?? 0);
+          const beforeAnimeScheduleRefreshAt = Number(beforeAnimeScheduleMeta.homeShelvesLastRefreshAt ?? 0);
+          const afterAnimeScheduleRefreshAt = Number(afterAnimeScheduleMeta.homeShelvesLastRefreshAt ?? 0);
+
+          const hasCatalogRefreshUpdate =
+            afterJikanRefreshAt > beforeJikanRefreshAt ||
+            afterAnimeScheduleRefreshAt > beforeAnimeScheduleRefreshAt;
+
+          if (hasCatalogRefreshUpdate) {
+            useAppStore.setState((state) => ({
+              homeRefreshVersion: state.homeRefreshVersion + 1,
+            }));
+          }
+        })()
+          .catch(() => {
+            // Ignore backend home refresh tick failures.
+          })
+          .finally(() => {
+            backendHomeRefreshInFlight = false;
+          });
+      });
+
+      await eventModule.listen(BACKEND_LIBRARY_TICK_EVENT, () => {
+        lastLibraryTickAt = Date.now();
+        void getState().runLibraryEpisodeDailyCheck();
+      });
+
+      startBackendTickWatchdog();
+    })
+    .catch(() => {
+      backendSchedulerEventListenerBound = false;
+      stopBackendTickWatchdog();
+      startFallbackLibraryPolling();
+    });
 }
 
 export type AnimeSkipButtonSegment = {
@@ -2051,6 +2154,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       bindLibraryNotificationActionListener(get);
+      bindBackendSchedulerEventListener(get);
 
       void get().runLibraryEpisodeDailyCheck();
       ensureLibraryEpisodePolling(() => {
@@ -2141,6 +2245,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
 
       bindLibraryNotificationActionListener(get);
+      bindBackendSchedulerEventListener(get);
 
       void get().runLibraryEpisodeDailyCheck();
       ensureLibraryEpisodePolling(() => {
@@ -3343,6 +3448,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const libraryLastNotifiedEpisodeByAnimeId = { ...current.libraryLastNotifiedEpisodeByAnimeId };
     const nextNotifications = [...current.libraryNotifications];
     const libraryItems = { ...current.libraryItems };
+    let addedEpisodesCount = 0;
 
     for (const item of candidates) {
       const detailJikanId = item.jikanId && item.jikanId > 0
@@ -3403,6 +3509,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           channel: 'in-app',
           read: false,
         });
+        addedEpisodesCount += 1;
         await sendLibraryEpisodeOsNotification({
           animeId: resolvedAnimeId,
           episode,
@@ -3432,6 +3539,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       libraryNotifications,
       libraryLastDailyEpisodeCheckDate: today,
     });
+
+    if (addedEpisodesCount > 0) {
+      const noun = addedEpisodesCount === 1 ? 'episode update' : 'episode updates';
+      get().pushActionToast({
+        kind: 'library',
+        message: `Library Updated: ${addedEpisodesCount} new ${noun} detected.`,
+      });
+    }
       } finally {
         libraryEpisodeCheckInFlight = false;
         libraryEpisodeCheckPromise = null;
