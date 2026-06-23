@@ -3,11 +3,11 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, ORIGIN, REFERER, USER_AGENT};
+use tauri_plugin_window_state::StateFlags;
 use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
 
@@ -154,11 +154,6 @@ fn resolve_startup_executable_path(app: &tauri::AppHandle) -> Result<PathBuf, St
             }
         })
         .or_else(|_| std::env::current_exe().map_err(|error| error.to_string()))
-}
-
-#[derive(Clone)]
-struct StartupHandoffState {
-    complete: Arc<AtomicBool>,
 }
 
 fn decode_ao_session_to_bearer(raw_cookie_value: &str) -> Option<String> {
@@ -347,10 +342,6 @@ fn navigate_external_playback_window(app: tauri::AppHandle, url: String) -> Resu
 
 #[tauri::command]
 fn complete_startup_handoff(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(state) = app.try_state::<StartupHandoffState>() {
-        state.complete.store(true, Ordering::SeqCst);
-    }
-
     let main_window = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
@@ -551,12 +542,7 @@ fn send_windows_toast_notification(_payload: WindowsToastNotificationRequest) ->
 }
 
 pub fn run() {
-    let startup_handoff_state = StartupHandoffState {
-        complete: Arc::new(AtomicBool::new(false)),
-    };
-
     tauri::Builder::default()
-        .manage(startup_handoff_state.clone())
         .setup(move |app| {
             let reopen_item = MenuItem::with_id(app, TRAY_MENU_REOPEN_ID, "Reopen", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, TRAY_MENU_QUIT_ID, "Quit", true, None::<&str>)?;
@@ -599,23 +585,6 @@ pub fn run() {
             if let Some(main_window) = app.get_webview_window("main") {
                 let _ = main_window.hide();
             }
-
-            let app_handle = app.handle().clone();
-            let state = startup_handoff_state.clone();
-            std::thread::spawn(move || {
-                // Guard against startup restores briefly showing the main window before handoff.
-                for _ in 0..120 {
-                    if state.complete.load(Ordering::SeqCst) {
-                        break;
-                    }
-
-                    if let Some(main_window) = app_handle.get_webview_window("main") {
-                        let _ = main_window.hide();
-                    }
-
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                }
-            });
 
             let scheduler_app_handle = app.handle().clone();
             std::thread::spawn(move || {
@@ -670,7 +639,13 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                .skip_initial_state("main")
+                .skip_initial_state("splashscreen")
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())
         .expect("error while running MyAnime1996");
