@@ -4,12 +4,19 @@ use tauri::{
     Emitter, Manager, WindowEvent,
 };
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, ORIGIN, REFERER, USER_AGENT};
 use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
+
+#[cfg(target_os = "windows")]
+const WINDOWS_TOAST_ICON_CANVAS_PX: u32 = 128;
+#[cfg(target_os = "windows")]
+const WINDOWS_TOAST_ICON_POSTER_WIDTH_PX: u32 = 72;
+#[cfg(target_os = "windows")]
+const WINDOWS_TOAST_ICON_POSTER_HEIGHT_PX: u32 = 104;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -391,6 +398,158 @@ fn set_run_on_startup(app: tauri::AppHandle, enabled: bool) -> Result<(), String
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowsToastNotificationRequest {
+    title: String,
+    body: Option<String>,
+    image_path: Option<String>,
+    image_url: Option<String>,
+}
+
+#[cfg(target_os = "windows")]
+fn download_windows_toast_image_to_temp(image_url: &str) -> Option<String> {
+    let source = image_url.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let response = reqwest::blocking::get(source).ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+
+    let bytes = response.bytes().ok()?;
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let mut extension = "png";
+    let lowered = source.to_lowercase();
+    if lowered.contains(".jpg") || lowered.contains(".jpeg") {
+        extension = "jpg";
+    } else if lowered.contains(".gif") {
+        extension = "gif";
+    } else if lowered.contains(".webp") {
+        extension = "webp";
+    }
+
+    let file_name = format!("myanime-toast-poster-{}.{}", unix_now_ms(), extension);
+    let path = std::env::temp_dir().join(file_name);
+    std::fs::write(&path, &bytes).ok()?;
+
+    Some(path.display().to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn prepare_windows_toast_icon_image(source_path: &str) -> Option<String> {
+    use image::imageops::FilterType;
+    use image::{ImageBuffer, Rgba};
+
+    let source = source_path.trim();
+    if source.is_empty() {
+        return None;
+    }
+
+    let decoded = image::open(source).ok()?;
+    let poster = decoded.resize_to_fill(
+        WINDOWS_TOAST_ICON_POSTER_WIDTH_PX,
+        WINDOWS_TOAST_ICON_POSTER_HEIGHT_PX,
+        FilterType::Lanczos3,
+    );
+
+    let mut canvas: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(
+        WINDOWS_TOAST_ICON_CANVAS_PX,
+        WINDOWS_TOAST_ICON_CANVAS_PX,
+        Rgba([0, 0, 0, 0]),
+    );
+
+    let x = ((WINDOWS_TOAST_ICON_CANVAS_PX - WINDOWS_TOAST_ICON_POSTER_WIDTH_PX) / 2) as i64;
+    let y = ((WINDOWS_TOAST_ICON_CANVAS_PX - WINDOWS_TOAST_ICON_POSTER_HEIGHT_PX) / 2) as i64;
+    image::imageops::overlay(&mut canvas, &poster.to_rgba8(), x, y);
+
+    let output_name = format!("myanime-toast-icon-{}.png", unix_now_ms());
+    let output_path = std::env::temp_dir().join(output_name);
+    canvas.save_with_format(&output_path, image::ImageFormat::Png).ok()?;
+
+    Some(output_path.display().to_string())
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+fn send_windows_toast_notification(app: tauri::AppHandle, payload: WindowsToastNotificationRequest) -> Result<(), String> {
+    use tauri_winrt_notification::{IconCrop, Toast};
+
+    let title = payload.title.trim();
+    if title.is_empty() {
+        return Err("Notification title is required.".to_string());
+    }
+
+    let mut app_id = app.config().identifier.clone();
+    if let Ok(exe) = tauri::utils::platform::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            let curr_dir = exe_dir.display().to_string();
+            let in_dev_target = curr_dir.ends_with("\\target\\debug") || curr_dir.ends_with("\\target\\release");
+            if in_dev_target {
+                app_id = Toast::POWERSHELL_APP_ID.to_string();
+            }
+        }
+    }
+
+    let mut toast = Toast::new(&app_id).title(title);
+    if let Some(body) = payload.body.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        toast = toast.text1(body);
+    }
+
+    let resolved_image_path = payload
+        .image_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string())
+        .or_else(|| {
+            payload
+                .image_url
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .and_then(download_windows_toast_image_to_temp)
+        });
+
+    if let Some(raw_image_path) = resolved_image_path {
+        // WinRT toast image xml works most reliably with normalized slash separators.
+        let icon_source = prepare_windows_toast_icon_image(&raw_image_path).unwrap_or(raw_image_path);
+        let normalized = icon_source.replace('\\', "/");
+        let image_path = Path::new(&normalized);
+        if image_path.exists() {
+            eprintln!("[WindowsToast] Using image path: {}", normalized);
+            toast = toast
+                .icon(image_path, IconCrop::Square, "poster");
+        } else {
+            eprintln!("[WindowsToast] Image path does not exist: {}", normalized);
+        }
+    } else {
+        eprintln!("[WindowsToast] No image path or downloadable image URL provided in notification payload.");
+    }
+
+    match toast.show() {
+        Ok(_) => {
+            eprintln!("[WindowsToast] Toast dispatched successfully.");
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("[WindowsToast] Toast dispatch failed: {}", error);
+            Err(error.to_string())
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+fn send_windows_toast_notification(_payload: WindowsToastNotificationRequest) -> Result<(), String> {
+    Err("Windows toast notifications are only available on Windows.".to_string())
+}
+
 pub fn run() {
     let startup_handoff_state = StartupHandoffState {
         complete: Arc::new(AtomicBool::new(false)),
@@ -503,7 +662,8 @@ pub fn run() {
             complete_startup_handoff,
             resolve_startup_theme,
             set_run_on_startup,
-            animeonsen_relay_video
+            animeonsen_relay_video,
+            send_windows_toast_notification
         ])
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_fs::init())

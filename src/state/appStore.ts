@@ -79,6 +79,7 @@ let lastBackendHomeRefreshAt = 0;
 let backendHomeRefreshInFlight = false;
 const lastOsNotificationSentAtByKey = new Map<string, number>();
 const localNotificationAttachmentUrlBySource = new Map<string, string>();
+const localNotificationAttachmentPathBySource = new Map<string, string>();
 const actionToastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function ensureLibraryEpisodePolling(runCheck: () => void) {
@@ -1202,6 +1203,58 @@ async function resolveTauriAttachmentUrl(posterUrl: string, animeId: number) {
   }
 }
 
+async function resolveTauriAttachmentPath(posterUrl: string, animeId: number) {
+  const source = posterUrl.trim();
+  if (!source) return null;
+
+  const cached = localNotificationAttachmentPathBySource.get(source);
+  if (cached) return cached;
+
+  try {
+    const response = await fetch(source);
+    if (!response.ok) return null;
+
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!bytes.byteLength) return null;
+
+    const [
+      { writeFile, BaseDirectory },
+      { appLocalDataDir, cacheDir, tempDir, join },
+    ] = await Promise.all([
+      import('@tauri-apps/plugin-fs'),
+      import('@tauri-apps/api/path'),
+    ]);
+
+    const fileName = `notification-poster-${animeId}-${hashString(source)}${getPosterExtensionFromUrl(source)}`;
+    const candidates: Array<{
+      baseDir: (typeof BaseDirectory)[keyof typeof BaseDirectory];
+      getRoot: () => Promise<string>;
+    }> = [
+      { baseDir: BaseDirectory.AppLocalData, getRoot: appLocalDataDir },
+      { baseDir: BaseDirectory.Cache, getRoot: cacheDir },
+      { baseDir: BaseDirectory.Temp, getRoot: tempDir },
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        await writeFile(fileName, bytes, {
+          baseDir: candidate.baseDir,
+        });
+        const absolutePath = await join(await candidate.getRoot(), fileName);
+        localNotificationAttachmentPathBySource.set(source, absolutePath);
+        return absolutePath;
+      } catch {
+        // Try the next writable location.
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('[Notification] Failed to prepare local attachment path:', error);
+    return null;
+  }
+}
+
 async function sendLibraryEpisodeOsNotification(options: {
   animeId: number;
   episode: number;
@@ -1227,14 +1280,33 @@ async function sendLibraryEpisodeOsNotification(options: {
 
   if (isTauriRuntime()) {
     try {
+      const imagePath = await resolveTauriAttachmentPath(posterUrl, animeId);
+      await invoke('send_windows_toast_notification', {
+        payload: {
+          title,
+          body: message,
+          imagePath,
+          imageUrl: posterUrl,
+        },
+      });
+      return;
+    } catch (error) {
+      console.warn('[Notification] Native Windows toast failed, falling back to plugin-notification:', error);
+      // Fallback to plugin notification channel.
+    }
+  }
+
+  if (isTauriRuntime()) {
+    try {
       const notificationModule = await import('@tauri-apps/plugin-notification');
       const permission = await notificationModule.requestPermission();
       if (permission === 'granted') {
         const mediaUrl = (await resolveTauriAttachmentUrl(posterUrl, animeId)) ?? posterUrl;
-        notificationModule.sendNotification({
+        const nativeNotificationPayload = {
           title,
           body: message,
           icon: mediaUrl,
+          image: mediaUrl,
           attachments: mediaUrl
             ? [
                 {
@@ -1247,7 +1319,8 @@ async function sendLibraryEpisodeOsNotification(options: {
             animeId,
             episode,
           },
-        });
+        } as Parameters<typeof notificationModule.sendNotification>[0] & { image?: string };
+        notificationModule.sendNotification(nativeNotificationPayload);
         return;
       }
     } catch {
@@ -1258,20 +1331,24 @@ async function sendLibraryEpisodeOsNotification(options: {
   try {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       if (Notification.permission === 'granted') {
-        const notification = new Notification(title, {
+        const browserNotificationOptions = {
           body: message,
           icon: posterUrl,
-        });
+          image: posterUrl,
+        } as NotificationOptions & { image?: string };
+        const notification = new Notification(title, browserNotificationOptions);
         notification.onclick = () => {
           window.focus();
         };
       } else if (Notification.permission !== 'denied') {
         const permission = await Notification.requestPermission();
         if (permission === 'granted') {
-          const notification = new Notification(title, {
+          const browserNotificationOptions = {
             body: message,
             icon: posterUrl,
-          });
+            image: posterUrl,
+          } as NotificationOptions & { image?: string };
+          const notification = new Notification(title, browserNotificationOptions);
           notification.onclick = () => {
             window.focus();
           };
