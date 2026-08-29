@@ -361,6 +361,14 @@ export function useHlsPlayer({
         enableWorker: false,
         lowLatencyMode: false,
         debug: false,
+        // hls.js defaults backBufferLength to Infinity, so the SourceBuffer keeps every
+        // second already watched. Over a full episode that alone grows to gigabytes in
+        // the WebView2 renderer. Keep a small rewind window and cap the forward buffer.
+        backBufferLength: 30,
+        frontBufferFlushThreshold: 120,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 120,
+        maxBufferSize: 30 * 1000 * 1000,
         loader: NativeAwareLoader as unknown as typeof Hls.DefaultConfig.loader,
         xhrSetup: (xhr) => {
           xhr.withCredentials = false;

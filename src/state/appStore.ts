@@ -38,6 +38,7 @@ import {
   setStoredValue,
 } from '../services/store';
 import { migrateJikanStoreDataToTenrai } from '../services/tenraiMigration';
+import { startCacheMaintenance } from '../services/cacheMaintenance';
 import { importSourcePluginFromPicker } from '../services/pluginImport';
 import { getAvailableSourcePlugins, getDefaultPluginPriority } from '../services/sourceResolver';
 import { clearSourceResolveCache } from '../services/sourceCache';
@@ -1866,6 +1867,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       setActiveStoreProfile(null);
       await migrateJikanStoreDataToTenrai();
+      startCacheMaintenance();
       const [
         session,
         isSidebarCompact,

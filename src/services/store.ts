@@ -309,6 +309,7 @@ export async function getRawStoredValue(rawKey: string): Promise<unknown> {
 }
 
 export async function setRawStoredValue(rawKey: string, value: unknown): Promise<void> {
+  memoryCache.set(rawKey, value);
   try {
     const store = await getTauriStore();
     if (store) {
@@ -326,6 +327,8 @@ export async function setRawStoredValue(rawKey: string, value: unknown): Promise
 }
 
 export async function removeRawStoredValue(rawKey: string): Promise<void> {
+  memoryCache.delete(rawKey);
+
   try {
     const store = await getTauriStore();
     if (store) {
@@ -342,55 +345,175 @@ export async function removeRawStoredValue(rawKey: string): Promise<void> {
   localStorage.removeItem(`${browserPrefix}${rawKey}`);
 }
 
-export async function getStoredValue<K extends keyof StoreShape>(key: K, fallback: StoreShape[K]): Promise<StoreShape[K]> {
-  const resolvedKey = getStoreKey(key);
+// ---------------------------------------------------------------------------
+// Read-through / write-behind layer.
+//
+// The cache keys (tenraiCache, animeScheduleCache, sourceResolveCache) hold tens of
+// thousands of entries and every call site used to do a full read-modify-write of the
+// whole blob. Each `get` serialized the entire value across the Tauri IPC boundary and
+// re-parsed it in JS, and the Home screen alone fires seven of those concurrently on
+// every load and again on each background refresh. That churn, not the data itself, is
+// what pushed the WebView2 renderer into gigabytes.
+//
+// Values are now held in memory and written back on a short debounce, so repeated reads
+// cost nothing and a burst of writes collapses into a single IPC round trip.
+// ---------------------------------------------------------------------------
+
+const WRITE_DEBOUNCE_MS = 400;
+
+const memoryCache = new Map<string, unknown>();
+const inflightReads = new Map<string, Promise<unknown>>();
+const pendingWrites = new Map<string, { value: unknown; deleted: boolean }>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let activeFlush: Promise<void> | null = null;
+
+async function readFromBackingStore(resolvedKey: string): Promise<unknown> {
   try {
     const store = await getTauriStore();
     if (store) {
-      const get = getMethod<(key: string) => Promise<StoreShape[K] | undefined>>(store, 'get');
-      const value = await get?.(resolvedKey);
-      return value ?? fallback;
+      const get = getMethod<(key: string) => Promise<unknown | undefined>>(store, 'get');
+      return await get?.(resolvedKey);
     }
   } catch (error) {
-    console.warn(`Store read failed for key "${String(key)}", using fallback.`, error);
+    console.warn(`Store read failed for key "${resolvedKey}", using fallback.`, error);
+    return undefined;
   }
 
   const raw = localStorage.getItem(`${browserPrefix}${resolvedKey}`);
-  return raw ? (JSON.parse(raw) as StoreShape[K]) : fallback;
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeToBackingStore(entries: Array<[string, { value: unknown; deleted: boolean }]>) {
+  try {
+    const store = await getTauriStore();
+    if (store) {
+      const set = getMethod<(key: string, value: unknown) => Promise<void>>(store, 'set');
+      const deleteMethod = getMethod<(key: string) => Promise<boolean>>(store, 'delete');
+      const save = getMethod<() => Promise<void>>(store, 'save');
+
+      for (const [resolvedKey, entry] of entries) {
+        if (entry.deleted) await deleteMethod?.(resolvedKey);
+        else await set?.(resolvedKey, entry.value);
+      }
+
+      // One save for the whole batch instead of one per mutation.
+      await save?.();
+      return;
+    }
+  } catch (error) {
+    console.warn('Store write failed, falling back to localStorage.', error);
+  }
+
+  for (const [resolvedKey, entry] of entries) {
+    if (entry.deleted) localStorage.removeItem(`${browserPrefix}${resolvedKey}`);
+    else localStorage.setItem(`${browserPrefix}${resolvedKey}`, JSON.stringify(entry.value));
+  }
+}
+
+async function drainPendingWrites() {
+  while (pendingWrites.size > 0) {
+    const batch = Array.from(pendingWrites.entries());
+    pendingWrites.clear();
+    await writeToBackingStore(batch);
+  }
+}
+
+// Persist everything still buffered. Called on a debounce, and eagerly when the window
+// is going away so a write-behind value is never lost on close.
+export function flushStoredValues(): Promise<void> {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (pendingWrites.size === 0) return activeFlush ?? Promise.resolve();
+
+  const run = (activeFlush ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(drainPendingWrites)
+    .finally(() => {
+      if (activeFlush === run) activeFlush = null;
+    });
+
+  activeFlush = run;
+  return run;
+}
+
+function scheduleFlush() {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void flushStoredValues();
+  }, WRITE_DEBOUNCE_MS);
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    void flushStoredValues();
+  });
+  window.addEventListener('pagehide', () => {
+    void flushStoredValues();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') void flushStoredValues();
+  });
+}
+
+export async function getStoredValue<K extends keyof StoreShape>(key: K, fallback: StoreShape[K]): Promise<StoreShape[K]> {
+  const resolvedKey = getStoreKey(key);
+
+  if (memoryCache.has(resolvedKey)) {
+    const cached = memoryCache.get(resolvedKey);
+    return (cached ?? fallback) as StoreShape[K];
+  }
+
+  // Collapse concurrent first reads of the same key into one backing-store round trip.
+  let read = inflightReads.get(resolvedKey);
+  if (!read) {
+    read = readFromBackingStore(resolvedKey).then((value) => {
+      memoryCache.set(resolvedKey, value);
+      return value;
+    }).finally(() => {
+      inflightReads.delete(resolvedKey);
+    });
+    inflightReads.set(resolvedKey, read);
+  }
+
+  const value = await read;
+  return (value ?? fallback) as StoreShape[K];
+}
+
+// Only the response caches are written back on a debounce. They are the hot, multi-MB
+// keys, and losing the last few hundred milliseconds of a cache write costs nothing but
+// a refetch. Everything else -- watch progress, playlists, library, settings -- is
+// written through immediately so `await setStoredValue(...)` keeps meaning "persisted",
+// which matters because a close with runInBackgroundOnClose disabled tears the webview
+// down without waiting for us.
+function isDeferrableKey(key: string) {
+  return key.endsWith('Cache') || key.endsWith('Meta');
 }
 
 export async function setStoredValue<K extends keyof StoreShape>(key: K, value: StoreShape[K]): Promise<void> {
   const resolvedKey = getStoreKey(key);
-  try {
-    const store = await getTauriStore();
-    if (store) {
-      const set = getMethod<(key: string, value: StoreShape[K]) => Promise<void>>(store, 'set');
-      const save = getMethod<() => Promise<void>>(store, 'save');
-      await set?.(resolvedKey, value);
-      await save?.();
-      return;
-    }
-  } catch (error) {
-    console.warn(`Store write failed for key "${String(key)}", using localStorage.`, error);
+  memoryCache.set(resolvedKey, value);
+
+  if (isDeferrableKey(String(key))) {
+    pendingWrites.set(resolvedKey, { value, deleted: false });
+    scheduleFlush();
+    return;
   }
 
-  localStorage.setItem(`${browserPrefix}${resolvedKey}`, JSON.stringify(value));
+  pendingWrites.delete(resolvedKey);
+  await writeToBackingStore([[resolvedKey, { value, deleted: false }]]);
 }
 
 export async function removeStoredValue<K extends keyof StoreShape>(key: K): Promise<void> {
   const resolvedKey = getStoreKey(key);
-  try {
-    const store = await getTauriStore();
-    if (store) {
-      const deleteMethod = getMethod<(key: string) => Promise<boolean>>(store, 'delete');
-      const save = getMethod<() => Promise<void>>(store, 'save');
-      await deleteMethod?.(resolvedKey);
-      await save?.();
-      return;
-    }
-  } catch (error) {
-    console.warn(`Store delete failed for key "${String(key)}", using localStorage.`, error);
-  }
-
-  localStorage.removeItem(`${browserPrefix}${resolvedKey}`);
+  memoryCache.set(resolvedKey, undefined);
+  pendingWrites.delete(resolvedKey);
+  await writeToBackingStore([[resolvedKey, { value: undefined, deleted: true }]]);
 }
