@@ -4,8 +4,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
 import PlaylistPickerModal from '../components/PlaylistPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
-import { FALLBACK_PAGE_SIZE, getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
-import { getAnimeEpisodeById } from '../services/jikan';
+import { FALLBACK_PAGE_SIZE, getTenraiDetailEpisodeBundle } from '../services/animeDetailEpisodes';
+import { getAnimeEpisodeById } from '../services/tenrai';
 import { useAppStore } from '../state/appStore';
 import type { AnimeDetail as AnimeDetailType, AnimeEpisode, AnimeEpisodePagination, LibraryStatus } from '../types/anime';
 import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
@@ -72,7 +72,7 @@ export default function AnimeDetail() {
   const seasonMeta = useMemo(() => (anime ? resolveAnimeSeason(anime) : null), [anime]);
   const episodeTotalLabel = useMemo(() => (anime ? formatEpisodeTotalLabel(anime.episodes, anime.status) : '?/?'), [anime]);
   const currentLibraryStatus = useMemo(
-    () => (anime ? getLibraryStatusForAnime(anime.id, anime.jikanId) : null),
+    () => (anime ? getLibraryStatusForAnime(anime.id, anime.tenraiId) : null),
     [anime, getLibraryStatusForAnime],
   );
 
@@ -146,11 +146,11 @@ export default function AnimeDetail() {
 
     if (!nextExpanded || !anime) return;
 
-    const jikanAnimeId = anime.jikanId;
-    if (typeof jikanAnimeId !== 'number' || !Number.isFinite(jikanAnimeId) || jikanAnimeId <= 0) return;
+    const tenraiAnimeId = anime.tenraiId;
+    if (typeof tenraiAnimeId !== 'number' || !Number.isFinite(tenraiAnimeId) || tenraiAnimeId <= 0) return;
 
     setLoadingEpisodeDetail(episodeNumber);
-    const detail = await getAnimeEpisodeById(Math.floor(jikanAnimeId), episodeNumber).catch(() => null);
+    const detail = await getAnimeEpisodeById(Math.floor(tenraiAnimeId), episodeNumber).catch(() => null);
     if (detail) {
       setEpisodes((current) =>
         current.map((entry) => {
@@ -169,14 +169,14 @@ export default function AnimeDetail() {
   useEffect(() => {
     let alive = true;
     if (!id) return;
-    const jikanId = Number(id);
-    if (!Number.isFinite(jikanId) || jikanId <= 0) {
+    const tenraiId = Number(id);
+    if (!Number.isFinite(tenraiId) || tenraiId <= 0) {
       setError('Could not load this tape from the active source.');
       return;
     }
     async function load() {
       try {
-        const payload = await getJikanDetailEpisodeBundle(Math.floor(jikanId), episodePage);
+        const payload = await getTenraiDetailEpisodeBundle(Math.floor(tenraiId), episodePage);
         if (!alive) return;
         setAnime(payload.detail);
         setEpisodes(payload.episodes);
@@ -296,7 +296,7 @@ export default function AnimeDetail() {
         <div className="flex items-center justify-between gap-3 border-b border-cream/10 pb-2">
           <h2 className="section-title text-2xl">Episode Queue</h2>
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-cream/55">
-            {hasEpisodeData ? 'Jikan episode metadata active' : 'Fallback episode metadata active'}
+            {hasEpisodeData ? 'Tenrai episode metadata active' : 'Fallback episode metadata active'}
           </p>
         </div>
 
@@ -423,7 +423,7 @@ export default function AnimeDetail() {
         onRemove={
           currentLibraryStatus
             ? () => {
-                void removeAnimeFromLibrary(anime.jikanId ?? anime.id);
+                void removeAnimeFromLibrary(anime.tenraiId ?? anime.id);
                 setIsLibraryPickerOpen(false);
               setLibraryPickerAnchorElement(null);
               }

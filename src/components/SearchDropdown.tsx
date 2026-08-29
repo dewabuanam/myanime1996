@@ -170,10 +170,10 @@ export default function SearchDropdown({
               ) : windowResults.length ? (
                 <div className="search-dropdown-anime-list">
                   {windowResults.map((anime) => {
-                    const routeId = anime.jikanId ?? anime.id;
+                    const routeId = anime.tenraiId ?? anime.id;
                     return (
                       <button
-                        key={`${anime.id}-${anime.jikanId ?? 'none'}`}
+                        key={`${anime.id}-${anime.tenraiId ?? 'none'}`}
                         type="button"
                         className="search-dropdown-anime"
                         onClick={() => {
@@ -181,7 +181,7 @@ export default function SearchDropdown({
                           void selectAnime({
                             ...anime,
                             id: routeId,
-                            jikanId: routeId,
+                            tenraiId: routeId,
                           }).then(() => openRightPanelWithView('detail'));
                         }}
                       >

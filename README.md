@@ -13,7 +13,7 @@ Download latest release [here](https://github.com/dewabuanam/myanime1996/release
 - `npm run tauri:dev` starts the desktop app.
 - `npm run tauri:build` creates a desktop bundle.
 
-Jikan provides anime metadata only. This app includes local player-style controls and watch progress, with optional import-based source plugins for non-trailer playback.
+Tenrai provides anime metadata only. This app includes local player-style controls and watch progress, with optional import-based source plugins for non-trailer playback.
 
 ## Plugin Host Policy
 

@@ -388,7 +388,7 @@ export default function BottomPlayer() {
     void (async () => {
       const canonicalDetailId = await resolveCanonicalDetailRouteId(currentlyPlayingItem.anime);
       const selectedAnime = canonicalDetailId
-        ? { ...currentlyPlayingItem.anime, id: canonicalDetailId, jikanId: canonicalDetailId }
+        ? { ...currentlyPlayingItem.anime, id: canonicalDetailId, tenraiId: canonicalDetailId }
         : currentlyPlayingItem.anime;
       await selectAnime(selectedAnime);
       await openRightPanelWithView('detail');

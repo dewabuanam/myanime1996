@@ -33,4 +33,4 @@ export type {
   ProducerSearchResult,
   ProducerSummary,
   SearchQuerySort,
-} from './jikan';
+} from './tenrai';

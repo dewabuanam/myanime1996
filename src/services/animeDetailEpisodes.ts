@@ -1,6 +1,6 @@
 import { getAnimeDetails } from './catalogSource';
 import { getLatestReleasedTimetableAnime, getUpcomingTimetableAnime } from './animeSchedule';
-import { getAnimeDetails as getJikanAnimeDetails, getAnimeEpisodes, getAnimeEpisodesAll } from './jikan';
+import { getAnimeDetails as getTenraiAnimeDetails, getAnimeEpisodes, getAnimeEpisodesAll } from './tenrai';
 import { getStoredValue, setStoredValue } from './store';
 import type { AnimeDetailEpisodeBundle, AnimeEpisode, AnimeEpisodePagination, CachedPayload } from '../types/anime';
 
@@ -16,8 +16,8 @@ type NextWeekEpisodeCacheValue = {
   nextEpisodeReleaseAt?: number;
 };
 
-function toJikanAnimeId(detail: { id: number; jikanId?: number }) {
-  const candidates = [detail.jikanId];
+function toTenraiAnimeId(detail: { id: number; tenraiId?: number }) {
+  const candidates = [detail.tenraiId];
   for (const candidate of candidates) {
     if (!Number.isFinite(candidate) || !candidate || candidate <= 0) continue;
     if (candidate > MAX_REASONABLE_MAL_ID) continue;
@@ -73,8 +73,8 @@ function toNextWeekEpisodeCacheKey(
   const route = detail.animeScheduleRoute?.trim().toLowerCase();
   if (route) return `episode-fallback:upcoming:${weekTag}:${route}`;
 
-  const jikanId = toEpisodeCount(detail.jikanId);
-  if (jikanId > 0) return `episode-fallback:upcoming:${weekTag}:mal:${jikanId}`;
+  const tenraiId = toEpisodeCount(detail.tenraiId);
+  if (tenraiId > 0) return `episode-fallback:upcoming:${weekTag}:mal:${tenraiId}`;
 
   const id = toEpisodeCount(detail.id);
   return `episode-fallback:upcoming:${weekTag}:id:${id}`;
@@ -306,15 +306,15 @@ function hasCompatibleTitleSignature(detail: TitleSignature, candidate: TitleSig
 
 function isSameAnimeCandidate(
   detail: Awaited<ReturnType<typeof getAnimeDetails>>,
-  candidate: { id: number; jikanId?: number; animeScheduleRoute?: string; title?: string; titleEnglish?: string; titleJapanese?: string },
+  candidate: { id: number; tenraiId?: number; animeScheduleRoute?: string; title?: string; titleEnglish?: string; titleJapanese?: string },
 ) {
   const detailId = toEpisodeCount(detail.id);
-  const detailJikanId = toEpisodeCount(detail.jikanId);
+  const detailTenraiId = toEpisodeCount(detail.tenraiId);
   const candidateId = toEpisodeCount(candidate.id);
-  const candidateJikanId = toEpisodeCount(candidate.jikanId);
+  const candidateTenraiId = toEpisodeCount(candidate.tenraiId);
 
-  if (detailJikanId > 0 && (candidateJikanId === detailJikanId || candidateId === detailJikanId)) return true;
-  if (detailId > 0 && (candidateId === detailId || candidateJikanId === detailId)) return true;
+  if (detailTenraiId > 0 && (candidateTenraiId === detailTenraiId || candidateId === detailTenraiId)) return true;
+  if (detailId > 0 && (candidateId === detailId || candidateTenraiId === detailId)) return true;
 
   const detailRoute = detail.animeScheduleRoute?.trim().toLowerCase();
   const candidateRoute = candidate.animeScheduleRoute?.trim().toLowerCase();
@@ -537,25 +537,25 @@ function getMaxEpisodeNumber(episodes: AnimeEpisode[]) {
 async function resolveCurrentEpisodeCount(
   detail: Awaited<ReturnType<typeof getAnimeDetails>>,
   fallbackEpisodeCount: number,
-  jikanId?: number,
-  jikanPayload?: Awaited<ReturnType<typeof getAnimeEpisodes>> | null,
+  tenraiId?: number,
+  tenraiPayload?: Awaited<ReturnType<typeof getAnimeEpisodes>> | null,
 ) {
   const existingCurrent = toEpisodeCount(detail.currentEpisode);
   if (existingCurrent > 0) return existingCurrent;
 
   let bestObservedEpisode = Math.max(0, fallbackEpisodeCount);
-  const safeJikanId = toEpisodeCount(jikanId);
-  if (safeJikanId > 0) {
-    const maxPagesFromPayload = Math.max(1, toEpisodeCount(jikanPayload?.pagination.lastVisiblePage));
+  const safeTenraiId = toEpisodeCount(tenraiId);
+  if (safeTenraiId > 0) {
+    const maxPagesFromPayload = Math.max(1, toEpisodeCount(tenraiPayload?.pagination.lastVisiblePage));
     const maxPages = maxPagesFromPayload > 0 ? maxPagesFromPayload : 8;
-    const allEpisodes = await getAnimeEpisodesAll(safeJikanId, maxPages).catch(() => [] as AnimeEpisode[]);
-    const jikanTotal = getMaxEpisodeNumber(allEpisodes);
-    if (jikanTotal > bestObservedEpisode) {
-      bestObservedEpisode = jikanTotal;
+    const allEpisodes = await getAnimeEpisodesAll(safeTenraiId, maxPages).catch(() => [] as AnimeEpisode[]);
+    const tenraiTotal = getMaxEpisodeNumber(allEpisodes);
+    if (tenraiTotal > bestObservedEpisode) {
+      bestObservedEpisode = tenraiTotal;
     }
   }
 
-  const payloadTotal = getMaxEpisodeNumber(jikanPayload?.data ?? []);
+  const payloadTotal = getMaxEpisodeNumber(tenraiPayload?.data ?? []);
   if (payloadTotal > bestObservedEpisode) {
     bestObservedEpisode = payloadTotal;
   }
@@ -567,14 +567,14 @@ async function resolveCurrentEpisodeCount(
 
 async function toBundleFromDetail(
   detail: Awaited<ReturnType<typeof getAnimeDetails>>,
-  jikanPayload: Awaited<ReturnType<typeof getAnimeEpisodes>> | null,
+  tenraiPayload: Awaited<ReturnType<typeof getAnimeEpisodes>> | null,
   safePage: number,
-  jikanId?: number,
+  tenraiId?: number,
 ): Promise<AnimeDetailEpisodeBundle> {
   const fallbackEpisodeCount = await resolveFallbackEpisodeCount(detail);
   const fallback = buildFallbackEpisodesPage(detail.episodes ?? fallbackEpisodeCount, safePage);
-  const jikanEpisodes = jikanPayload?.data ?? [];
-  const currentEpisode = await resolveCurrentEpisodeCount(detail, fallbackEpisodeCount, jikanId, jikanPayload);
+  const tenraiEpisodes = tenraiPayload?.data ?? [];
+  const currentEpisode = await resolveCurrentEpisodeCount(detail, fallbackEpisodeCount, tenraiId, tenraiPayload);
   const detailWithEpisodeTotal = detail.episodes && detail.episodes > 0
     ? {
         ...detail,
@@ -586,7 +586,7 @@ async function toBundleFromDetail(
         currentEpisode: currentEpisode,
       };
 
-  if (!jikanEpisodes.length) {
+  if (!tenraiEpisodes.length) {
     return {
       detail: detailWithEpisodeTotal,
       episodes: fallback.episodes,
@@ -595,15 +595,15 @@ async function toBundleFromDetail(
     };
   }
 
-  const episodes = mergeEpisodeLists(jikanEpisodes, fallback.episodes);
+  const episodes = mergeEpisodeLists(tenraiEpisodes, fallback.episodes);
   const lastVisiblePage = Math.max(
     fallback.pagination.lastVisiblePage,
-    jikanPayload?.pagination.lastVisiblePage ?? safePage,
+    tenraiPayload?.pagination.lastVisiblePage ?? safePage,
   );
   const pagination: AnimeEpisodePagination = {
     page: safePage,
     lastVisiblePage,
-    hasNextPage: safePage < lastVisiblePage || jikanPayload?.pagination.hasNextPage === true,
+    hasNextPage: safePage < lastVisiblePage || tenraiPayload?.pagination.hasNextPage === true,
     hasPrevPage: safePage > 1,
   };
   return {
@@ -614,10 +614,10 @@ async function toBundleFromDetail(
   };
 }
 
-export async function getJikanDetailEpisodeBundle(jikanId: number, page = 1): Promise<AnimeDetailEpisodeBundle> {
-  const safeJikanId = Math.floor(jikanId);
+export async function getTenraiDetailEpisodeBundle(tenraiId: number, page = 1): Promise<AnimeDetailEpisodeBundle> {
+  const safeTenraiId = Math.floor(tenraiId);
   const safePage = Math.max(1, Math.floor(page));
-  const detail = await getJikanAnimeDetails(safeJikanId);
-  const payload = await getAnimeEpisodes(safeJikanId, safePage).catch(() => null);
-  return await toBundleFromDetail(detail, payload, safePage, safeJikanId);
+  const detail = await getTenraiAnimeDetails(safeTenraiId);
+  const payload = await getAnimeEpisodes(safeTenraiId, safePage).catch(() => null);
+  return await toBundleFromDetail(detail, payload, safePage, safeTenraiId);
 }

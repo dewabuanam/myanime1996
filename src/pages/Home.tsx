@@ -18,7 +18,7 @@ import {
   refreshHomeShelvesIfNeeded,
   resolveCanonicalDetailRouteId,
 } from '../services/catalogSource';
-import { getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
+import { getTenraiDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import { useAppStore } from '../state/appStore';
 import type { AnimeSummary, LibraryStatus, WatchProgress } from '../types/anime';
 import {
@@ -41,7 +41,7 @@ const SEASON_FETCH_LIMIT = SEASON_PAGE_LIMIT * SEASON_PAGE_COUNT;
 type ContinueWatchingItem = {
   source?: AnimeSummary;
   id: number;
-  jikanId?: number;
+  tenraiId?: number;
   animeScheduleRoute?: string;
   title: string;
   titleEnglish?: string;
@@ -154,7 +154,7 @@ const toAnimeSummary = (item: ShelfItem): AnimeSummary => {
       : undefined;
   return {
     id: item.id,
-    jikanId: item.jikanId ?? item.source?.jikanId,
+    tenraiId: item.tenraiId ?? item.source?.tenraiId,
     animeScheduleRoute: item.animeScheduleRoute ?? item.source?.animeScheduleRoute,
     title: item.title,
     titleEnglish: item.titleEnglish ?? item.source?.titleEnglish,
@@ -458,7 +458,7 @@ export default function Home() {
   }, [libraryLastNotifiedEpisodeByAnimeId, libraryNotifications]);
 
   const getLatestKnownEpisodeForHistoryEntry = (entry: WatchProgress, source?: AnimeSummary) => {
-    const candidateAnimeIds = [entry.animeId, entry.jikanId, source?.id, source?.jikanId]
+    const candidateAnimeIds = [entry.animeId, entry.tenraiId, source?.id, source?.tenraiId]
       .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index);
 
     let latestKnownEpisode = Math.max(
@@ -481,7 +481,7 @@ export default function Home() {
 
   const resolveLatestPlayableEpisodeFromSignals = (anime: AnimeSummary) => {
     const candidateAnimeIds = new Set<number>(
-      [anime.id, anime.jikanId]
+      [anime.id, anime.tenraiId]
         .filter((value): value is number => typeof value === 'number' && value > 0),
     );
 
@@ -493,7 +493,7 @@ export default function Home() {
     let latestEpisode = Math.max(1, Math.floor(Number(anime.currentEpisode) || 0));
 
     for (const libraryItem of Object.values(libraryItems)) {
-      const idsMatch = candidateAnimeIds.has(libraryItem.animeId) || (typeof libraryItem.jikanId === 'number' && candidateAnimeIds.has(libraryItem.jikanId));
+      const idsMatch = candidateAnimeIds.has(libraryItem.animeId) || (typeof libraryItem.tenraiId === 'number' && candidateAnimeIds.has(libraryItem.tenraiId));
       const routeMatch =
         animeRoute.length > 0 &&
         (libraryItem.animeScheduleRoute?.trim().toLowerCase() ?? '') === animeRoute;
@@ -505,8 +505,8 @@ export default function Home() {
       if (!idsMatch && !routeMatch && !titleMatch) continue;
 
       candidateAnimeIds.add(libraryItem.animeId);
-      if (typeof libraryItem.jikanId === 'number' && libraryItem.jikanId > 0) {
-        candidateAnimeIds.add(libraryItem.jikanId);
+      if (typeof libraryItem.tenraiId === 'number' && libraryItem.tenraiId > 0) {
+        candidateAnimeIds.add(libraryItem.tenraiId);
       }
       latestEpisode = Math.max(latestEpisode, Math.floor(Number(libraryItem.currentEpisode) || 0));
     }
@@ -520,10 +520,10 @@ export default function Home() {
 
   const resolveLatestPlayableEpisode = async (anime: AnimeSummary) => {
     let latestEpisode = resolveLatestPlayableEpisodeFromSignals(anime);
-    const resolvedJikanId = anime.jikanId ?? await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
+    const resolvedTenraiId = anime.tenraiId ?? await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
 
-    if (resolvedJikanId && resolvedJikanId > 0) {
-      const bundle = await getJikanDetailEpisodeBundle(resolvedJikanId, 1).catch(() => null);
+    if (resolvedTenraiId && resolvedTenraiId > 0) {
+      const bundle = await getTenraiDetailEpisodeBundle(resolvedTenraiId, 1).catch(() => null);
       latestEpisode = Math.max(latestEpisode, Math.floor(Number(bundle?.detail.currentEpisode) || 0));
     }
 
@@ -531,7 +531,7 @@ export default function Home() {
   };
 
   const getResumePlan = (anime: AnimeSummary) => {
-    const canonicalAnimeId = anime.jikanId ?? anime.id;
+    const canonicalAnimeId = anime.tenraiId ?? anime.id;
     const entry = watchProgress[canonicalAnimeId] ?? watchProgress[anime.id];
     if (!entry) return null;
     if (entry.progress <= 0) return null;
@@ -570,7 +570,7 @@ export default function Home() {
   const openFeaturedDetails = async () => {
     if (!featured) return;
     const canonicalDetailId = await resolveCanonicalDetailRouteId(featured);
-    const selected = canonicalDetailId ? { ...featured, id: canonicalDetailId, jikanId: canonicalDetailId } : featured;
+    const selected = canonicalDetailId ? { ...featured, id: canonicalDetailId, tenraiId: canonicalDetailId } : featured;
     await selectAnime(selected);
     await openRightPanelWithView('detail');
   };
@@ -602,14 +602,14 @@ export default function Home() {
           continue;
         }
 
-        const latestNotifiedEpisode = [item.animeId, item.jikanId, matchedSource?.id, matchedSource?.jikanId]
+        const latestNotifiedEpisode = [item.animeId, item.tenraiId, matchedSource?.id, matchedSource?.tenraiId]
           .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index)
           .reduce((best, animeId) => Math.max(best, latestNotifiedEpisodeByAnimeId.get(animeId) ?? 0), 0);
 
         items.push({
           ...(matchedSource ? { source: matchedSource } : {}),
           id: item.animeId,
-          jikanId: item.jikanId ?? matchedSource?.jikanId,
+          tenraiId: item.tenraiId ?? matchedSource?.tenraiId,
           animeScheduleRoute: item.animeScheduleRoute ?? matchedSource?.animeScheduleRoute,
           title: item.title,
           titleEnglish: item.titleEnglish,
@@ -699,7 +699,7 @@ export default function Home() {
   const selectFromCard = async (item: ContinueWatchingItem | AnimeSummary) => {
     const anime = toAnimeSummary(item);
     const canonicalDetailId = await resolveCanonicalDetailRouteId(anime);
-    const selected = canonicalDetailId ? { ...anime, id: canonicalDetailId, jikanId: canonicalDetailId } : anime;
+    const selected = canonicalDetailId ? { ...anime, id: canonicalDetailId, tenraiId: canonicalDetailId } : anime;
     await selectAnime(selected);
   };
 
@@ -852,7 +852,7 @@ export default function Home() {
 
   const handleLibraryRemove = async () => {
     if (!libraryPickerAnime) return;
-    await removeAnimeFromLibrary(libraryPickerAnime.jikanId ?? libraryPickerAnime.id);
+    await removeAnimeFromLibrary(libraryPickerAnime.tenraiId ?? libraryPickerAnime.id);
     setLibraryPickerAnime(null);
   };
 
@@ -962,7 +962,7 @@ export default function Home() {
               const previewEpisodeLabel = getMetaLabel(item, shelf.key, previewAnime);
               const seasonMeta = resolveAnimeSeason(previewAnime);
               const resumePlan = getResumePlan(previewAnime);
-              const canonicalAnimeId = previewAnime.jikanId ?? previewAnime.id;
+              const canonicalAnimeId = previewAnime.tenraiId ?? previewAnime.id;
               const watchEntry = watchProgress[canonicalAnimeId] ?? watchProgress[previewAnime.id];
               const isWatchedCompleted = Boolean(watchEntry?.completed || (watchEntry?.progress ?? 0) >= 100);
               const isResumeAction = Boolean(resumePlan);
@@ -1041,7 +1041,7 @@ export default function Home() {
         anchorElement={libraryPickerAnchorElement}
         initialStatus={
           libraryPickerAnime
-            ? getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.jikanId)
+            ? getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.tenraiId)
             : null
         }
         onClose={() => {
@@ -1056,7 +1056,7 @@ export default function Home() {
           setLibraryPickerAllowRemove(true);
         }}
         onRemove={
-          libraryPickerAllowRemove && libraryPickerAnime && getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.jikanId)
+          libraryPickerAllowRemove && libraryPickerAnime && getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.tenraiId)
             ? () => {
                 void handleLibraryRemove();
               }

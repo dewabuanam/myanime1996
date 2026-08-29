@@ -9,7 +9,7 @@ export type PlaylistConvertStrategy = 'to-anime' | 'to-video' | 'clear-all';
 
 export interface PlaylistAnimeEntry {
   animeId: number;
-  jikanId?: number;
+  tenraiId?: number;
   animeScheduleRoute?: string;
   title: string;
   titleEnglish?: string;
@@ -32,10 +32,10 @@ export interface UserSession {
 }
 
 export interface AnimeSummary {
-  // Source-local id. Use jikanId as canonical cross-source identity when present.
+  // Source-local id. Use tenraiId as canonical cross-source identity when present.
   id: number;
   // Canonical MAL id used for detail, episodes, and cross-source resolution.
-  jikanId?: number;
+  tenraiId?: number;
   title: string;
   titleEnglish?: string;
   titleJapanese?: string;
@@ -135,7 +135,7 @@ export interface Playlist {
 
 export interface WatchProgress {
   animeId: number;
-  jikanId?: number;
+  tenraiId?: number;
   animeScheduleRoute?: string;
   title: string;
   titleEnglish?: string;
@@ -152,7 +152,7 @@ export interface WatchProgress {
 
 export interface LibraryAnimeItem {
   animeId: number;
-  jikanId?: number;
+  tenraiId?: number;
   animeScheduleRoute?: string;
   title: string;
   titleEnglish?: string;

@@ -69,10 +69,11 @@ type StoreShape = {
   watchHistoryByProfile: Record<string, WatchProgress[]>;
   watchProgressByProfile: Record<string, Record<number, WatchProgress>>;
   legacyPlaybackMigrated: boolean;
-  jikanCache: Record<string, CachedPayload<unknown>>;
+  tenraiStoreMigrated: boolean;
+  tenraiCache: Record<string, CachedPayload<unknown>>;
   sourceResolveCache: Record<string, CachedPayload<ResolvedSource>>;
-  jikanMeta: Record<string, string | number | boolean>;
-  baseCatalogSource: 'animeschedule' | 'jikan';
+  tenraiMeta: Record<string, string | number | boolean>;
+  baseCatalogSource: 'animeschedule' | 'tenrai';
   animeScheduleApiToken: string;
   animeScheduleRateLimitGuideDismissedDate: string | null;
   apiHealthRuntime: ApiHealthRuntimeState;
@@ -264,6 +265,81 @@ export async function migrateProfileScopedKeysToGlobal<K extends keyof StoreShap
     if (profileRaw === null) continue;
     localStorage.setItem(globalKey, profileRaw);
   }
+}
+
+// Raw, unscoped store access. Used by one-off data migrations that have to walk every
+// stored key, including the `profile:<id>:` scoped copies of a key.
+export async function listRawStoredKeys(): Promise<string[]> {
+  try {
+    const store = await getTauriStore();
+    if (store) {
+      const keys = getMethod<() => Promise<string[]>>(store, 'keys');
+      return (await keys?.()) ?? [];
+    }
+  } catch (error) {
+    console.warn('Store key listing failed, using localStorage.', error);
+  }
+
+  const collected: string[] = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const rawKey = localStorage.key(index);
+    if (rawKey?.startsWith(browserPrefix)) collected.push(rawKey.slice(browserPrefix.length));
+  }
+  return collected;
+}
+
+export async function getRawStoredValue(rawKey: string): Promise<unknown> {
+  try {
+    const store = await getTauriStore();
+    if (store) {
+      const get = getMethod<(key: string) => Promise<unknown | undefined>>(store, 'get');
+      return await get?.(rawKey);
+    }
+  } catch (error) {
+    console.warn(`Raw store read failed for key "${rawKey}".`, error);
+  }
+
+  const raw = localStorage.getItem(`${browserPrefix}${rawKey}`);
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function setRawStoredValue(rawKey: string, value: unknown): Promise<void> {
+  try {
+    const store = await getTauriStore();
+    if (store) {
+      const set = getMethod<(key: string, value: unknown) => Promise<void>>(store, 'set');
+      const save = getMethod<() => Promise<void>>(store, 'save');
+      await set?.(rawKey, value);
+      await save?.();
+      return;
+    }
+  } catch (error) {
+    console.warn(`Raw store write failed for key "${rawKey}".`, error);
+  }
+
+  localStorage.setItem(`${browserPrefix}${rawKey}`, JSON.stringify(value));
+}
+
+export async function removeRawStoredValue(rawKey: string): Promise<void> {
+  try {
+    const store = await getTauriStore();
+    if (store) {
+      const deleteMethod = getMethod<(key: string) => Promise<boolean>>(store, 'delete');
+      const save = getMethod<() => Promise<void>>(store, 'save');
+      await deleteMethod?.(rawKey);
+      await save?.();
+      return;
+    }
+  } catch (error) {
+    console.warn(`Raw store delete failed for key "${rawKey}".`, error);
+  }
+
+  localStorage.removeItem(`${browserPrefix}${rawKey}`);
 }
 
 export async function getStoredValue<K extends keyof StoreShape>(key: K, fallback: StoreShape[K]): Promise<StoreShape[K]> {

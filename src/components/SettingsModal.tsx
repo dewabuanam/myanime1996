@@ -30,7 +30,7 @@ type SettingAction = {
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-const CACHE_VIEW_KEYS = ['jikanCache', 'animeScheduleCache', 'sourceResolveCache', 'aniSkipCache', 'jikanMeta', 'animeScheduleMeta'] as const;
+const CACHE_VIEW_KEYS = ['tenraiCache', 'animeScheduleCache', 'sourceResolveCache', 'aniSkipCache', 'tenraiMeta', 'animeScheduleMeta'] as const;
 type CacheViewKey = (typeof CACHE_VIEW_KEYS)[number];
 
 type CacheCard = {
@@ -157,10 +157,10 @@ function isPluginRuntimeCacheKey(key: string) {
 function buildCacheCards(snapshot: Record<string, unknown>): CacheCard[] {
   const storedCards: CacheCard[] = [
     {
-      id: 'stored:jikanCache',
-      key: 'jikanCache',
-      title: 'Jikan Cache',
-      description: 'Cached Jikan API payloads.',
+      id: 'stored:tenraiCache',
+      key: 'tenraiCache',
+      title: 'Tenrai Cache',
+      description: 'Cached Tenrai API payloads.',
       kind: 'stored',
     },
     {
@@ -185,10 +185,10 @@ function buildCacheCards(snapshot: Record<string, unknown>): CacheCard[] {
       kind: 'stored',
     },
     {
-      id: 'stored:jikanMeta',
-      key: 'jikanMeta',
-      title: 'Jikan Meta',
-      description: 'Jikan metadata and refresh timestamps.',
+      id: 'stored:tenraiMeta',
+      key: 'tenraiMeta',
+      title: 'Tenrai Meta',
+      description: 'Tenrai metadata and refresh timestamps.',
       kind: 'stored',
     },
     {
@@ -242,7 +242,7 @@ export default function SettingsModal() {
   const isSettingsOpen = useAppStore((state) => state.isSettingsOpen);
   const setSettingsOpen = useAppStore((state) => state.setSettingsOpen);
   const setProfilePopupOpen = useAppStore((state) => state.setProfilePopupOpen);
-  const clearJikanCache = useAppStore((state) => state.clearJikanCache);
+  const clearTenraiCache = useAppStore((state) => state.clearTenraiCache);
   const runLibraryEpisodeDailyCheck = useAppStore((state) => state.runLibraryEpisodeDailyCheck);
   const resetLibraryAvailableEpisodeState = useAppStore((state) => state.resetLibraryAvailableEpisodeState);
   const exportUserData = useAppStore((state) => state.exportUserData);
@@ -304,7 +304,7 @@ export default function SettingsModal() {
   const apiStatusRows = useMemo(() => {
     return [
       { id: 'animeSchedule', label: 'AnimeSchedule', status: deriveApiStatus(apiHealthRuntime.animeSchedule) },
-      { id: 'jikan', label: 'Jikan', status: deriveApiStatus(apiHealthRuntime.jikan) },
+      { id: 'tenrai', label: 'Tenrai', status: deriveApiStatus(apiHealthRuntime.tenrai) },
       { id: 'aniSkip', label: 'AniSkip', status: deriveApiStatus(apiHealthRuntime.aniSkip) },
     ];
   }, [apiHealthRuntime]);
@@ -345,21 +345,21 @@ export default function SettingsModal() {
   }, [animeScheduleApiToken, isSettingsOpen]);
 
   const loadCacheSnapshot = async () => {
-    const [jikanCache, animeScheduleCache, sourceResolveCache, aniSkipCache, jikanMeta, animeScheduleMeta] = await Promise.all([
-      getStoredValue('jikanCache', {}),
+    const [tenraiCache, animeScheduleCache, sourceResolveCache, aniSkipCache, tenraiMeta, animeScheduleMeta] = await Promise.all([
+      getStoredValue('tenraiCache', {}),
       getStoredValue('animeScheduleCache', {}),
       getStoredValue('sourceResolveCache', {}),
       getStoredValue('aniSkipCache', {}),
-      getStoredValue('jikanMeta', {}),
+      getStoredValue('tenraiMeta', {}),
       getStoredValue('animeScheduleMeta', {}),
     ]);
 
     return {
-      jikanCache,
+      tenraiCache,
       animeScheduleCache,
       sourceResolveCache,
       aniSkipCache,
-      jikanMeta,
+      tenraiMeta,
       animeScheduleMeta,
       ...getPluginResolverCacheSnapshot(),
     } as Record<string, unknown>;
@@ -388,16 +388,16 @@ export default function SettingsModal() {
         clearPluginResolverCacheByKey(card.key);
       } else {
         const key = card.key as CacheViewKey;
-        if (key === 'jikanCache') {
-          await setStoredValue('jikanCache', {});
+        if (key === 'tenraiCache') {
+          await setStoredValue('tenraiCache', {});
         } else if (key === 'animeScheduleCache') {
           await setStoredValue('animeScheduleCache', {});
         } else if (key === 'sourceResolveCache') {
           await clearSourceResolveCache();
         } else if (key === 'aniSkipCache') {
           await clearAniSkipDataCache();
-        } else if (key === 'jikanMeta') {
-          await setStoredValue('jikanMeta', {});
+        } else if (key === 'tenraiMeta') {
+          await setStoredValue('tenraiMeta', {});
         } else if (key === 'animeScheduleMeta') {
           await setStoredValue('animeScheduleMeta', {});
         }
@@ -444,16 +444,16 @@ export default function SettingsModal() {
         }
       } else {
         const key = card.key as CacheViewKey;
-        if (key === 'jikanCache') {
-          await setStoredValue('jikanCache', parsed as Record<string, never>);
+        if (key === 'tenraiCache') {
+          await setStoredValue('tenraiCache', parsed as Record<string, never>);
         } else if (key === 'animeScheduleCache') {
           await setStoredValue('animeScheduleCache', parsed as Record<string, never>);
         } else if (key === 'sourceResolveCache') {
           await setStoredValue('sourceResolveCache', parsed as Record<string, never>);
         } else if (key === 'aniSkipCache') {
           await setStoredValue('aniSkipCache', parsed as Record<string, never>);
-        } else if (key === 'jikanMeta') {
-          await setStoredValue('jikanMeta', parsed as Record<string, string | number | boolean>);
+        } else if (key === 'tenraiMeta') {
+          await setStoredValue('tenraiMeta', parsed as Record<string, string | number | boolean>);
         } else if (key === 'animeScheduleMeta') {
           await setStoredValue('animeScheduleMeta', parsed as Record<string, string | number | boolean>);
         }
@@ -501,15 +501,15 @@ export default function SettingsModal() {
         {
           id: 'clear-cache',
           title: 'Cache Data',
-          description: 'Remove cached Jikan/AnimeSchedule responses, plugin runtime cache, and source resolve cache to force fresh content on next load.',
+          description: 'Remove cached Tenrai/AnimeSchedule responses, plugin runtime cache, and source resolve cache to force fresh content on next load.',
           actionLabel: 'Clear cache',
           confirm: {
             title: 'Clear cache data?',
-            message: 'This removes cached Jikan and AnimeSchedule data, plugin runtime cache, and source resolve cache. Your history, playlists, and settings stay unchanged.',
+            message: 'This removes cached Tenrai and AnimeSchedule data, plugin runtime cache, and source resolve cache. Your history, playlists, and settings stay unchanged.',
             confirmLabel: 'Clear cache',
           },
           onAction: async () => {
-            await clearJikanCache();
+            await clearTenraiCache();
             setCacheSnapshot({});
             setCacheViewerOpen(false);
             setStatusMessage('Cache cleared.');
@@ -621,7 +621,7 @@ export default function SettingsModal() {
       return next;
     },
     [
-      clearJikanCache,
+      clearTenraiCache,
       exportUserData,
       factoryReset,
       importUserData,
@@ -986,7 +986,7 @@ export default function SettingsModal() {
                       <p>Base Source controls anime catalog metadata feeds, including the Home Latest Update shelf.</p>
                       <p>AnimeSchedule mode uses timetable endpoints: /timetables and /timetables/{'{'}airType{'}'}.</p>
                       <p>Token is stored locally in app settings. Default token is preloaded and can be replaced with your own.</p>
-                      <p>If AnimeSchedule latest updates fail, the app falls back to Jikan for reliability.</p>
+                      <p>If AnimeSchedule latest updates fail, the app falls back to Tenrai for reliability.</p>
                       <p>API status uses persisted request history and stays saved between app restarts.</p>
                       <p>NSFW and upcoming media type preferences apply globally (Home + See All + search/upcoming catalog fetches).</p>
                       <p>Assume Episodes From Release Date is disabled by default and only used when timetable + episode list data cannot determine latest episode count.</p>

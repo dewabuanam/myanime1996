@@ -4,8 +4,8 @@ import { parseReleaseTimestamp } from '../utils/releaseTime';
 import { getStoredValue } from './store';
 import { animeScheduleCatalogProvider } from './providers/animeScheduleCatalogProvider';
 import type { CacheFetchOptions, HomeRefreshCallbacks } from './providers/catalogProviderTypes';
-import { jikanCatalogProvider } from './providers/jikanCatalogProvider';
-import { resolveAnimeScheduleBridgeJikanId } from './animeSchedule';
+import { tenraiCatalogProvider } from './providers/tenraiCatalogProvider';
+import { resolveAnimeScheduleBridgeTenraiId } from './animeSchedule';
 import {
   getAnimeGenres,
   searchAnimeWithQuery,
@@ -16,9 +16,9 @@ import {
   type AnimeSearchResult,
   type ProducerSearchQuery,
   type ProducerSearchResult,
-} from './jikan';
+} from './tenrai';
 
-export type BaseCatalogSource = 'animeschedule' | 'jikan';
+export type BaseCatalogSource = 'animeschedule' | 'tenrai';
 
 export const DEFAULT_BASE_CATALOG_SOURCE: BaseCatalogSource = 'animeschedule';
 const LATEST_FETCH_MINIMUM = 60;
@@ -30,19 +30,19 @@ function isValidMalId(value?: number): value is number {
 
 async function getAnimeScheduleDetailWithBridge(id: string | number): Promise<AnimeDetail> {
   const detail = await animeScheduleCatalogProvider.getAnimeDetails(id);
-  if (isValidMalId(detail.jikanId) && detail.jikanId !== detail.id) {
+  if (isValidMalId(detail.tenraiId) && detail.tenraiId !== detail.id) {
     return detail;
   }
 
-  const bridgeJikanId = await resolveAnimeScheduleBridgeJikanId(id);
-  if (!isValidMalId(bridgeJikanId)) {
+  const bridgeTenraiId = await resolveAnimeScheduleBridgeTenraiId(id);
+  if (!isValidMalId(bridgeTenraiId)) {
     return detail;
   }
 
   return {
     ...detail,
-    id: Math.floor(bridgeJikanId),
-    jikanId: Math.floor(bridgeJikanId),
+    id: Math.floor(bridgeTenraiId),
+    tenraiId: Math.floor(bridgeTenraiId),
   };
 }
 
@@ -80,9 +80,13 @@ function shapeLatestPromoList(items: AnimeSummary[]) {
   return deduped.sort((a, b) => getAiringTimestamp(b) - getAiringTimestamp(a));
 }
 
+// A store written before the Tenrai cutover still holds 'jikan' here; both spellings
+// resolve to the Tenrai provider.
+const isTenraiSourceValue = (value: unknown) => value === 'tenrai' || value === 'jikan';
+
 async function getPreferredProvider() {
   const value = await getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE);
-  return value === 'jikan' ? jikanCatalogProvider : animeScheduleCatalogProvider;
+  return isTenraiSourceValue(value) ? tenraiCatalogProvider : animeScheduleCatalogProvider;
 }
 
 async function runWithFallback<T>(
@@ -98,7 +102,7 @@ async function runWithFallback<T>(
 
 export async function getBaseCatalogSourceSetting(): Promise<BaseCatalogSource> {
   const value = await getStoredValue('baseCatalogSource', DEFAULT_BASE_CATALOG_SOURCE);
-  return value === 'jikan' ? 'jikan' : 'animeschedule';
+  return isTenraiSourceValue(value) ? 'tenrai' : 'animeschedule';
 }
 
 export async function getTopAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
@@ -106,7 +110,7 @@ export async function getTopAnime(limit = 10, options?: CacheFetchOptions<AnimeS
   const preferred = await getPreferredProvider();
   const hasPopularFilters = Boolean(options?.topAnimeType || options?.topAnimeRating);
 
-  const primary = dedupeAnimeList(await jikanCatalogProvider.getTopAnime(limit, options).catch(() => []));
+  const primary = dedupeAnimeList(await tenraiCatalogProvider.getTopAnime(limit, options).catch(() => []));
   if (primary.length >= Math.max(3, Math.floor(safeLimit / 2))) {
     return primary.slice(0, safeLimit);
   }
@@ -115,7 +119,7 @@ export async function getTopAnime(limit = 10, options?: CacheFetchOptions<AnimeS
     return primary.slice(0, safeLimit);
   }
 
-  if (preferred === jikanCatalogProvider) {
+  if (preferred === tenraiCatalogProvider) {
     return primary.slice(0, safeLimit);
   }
 
@@ -133,23 +137,23 @@ export async function getSeasonalAnime(limit = 10, options?: CacheFetchOptions<A
 
   if (isSeasonTargetedRequest) {
     const targeted = dedupeAnimeList(await runWithFallback(
-      () => jikanCatalogProvider.getSeasonalAnime(limit, options),
+      () => tenraiCatalogProvider.getSeasonalAnime(limit, options),
       () => animeScheduleCatalogProvider.getSeasonalAnime(limit, options),
     ));
     return targeted.slice(0, Math.max(1, Math.floor(limit)));
   }
 
   const preferred = await getPreferredProvider();
-  const [animeScheduleSeasonal, providerSeasonal, jikanSeasonal] = await Promise.all([
+  const [animeScheduleSeasonal, providerSeasonal, tenraiSeasonal] = await Promise.all([
     animeScheduleCatalogProvider.getSeasonalAnime(limit, options).catch(() => []),
     preferred.getSeasonalAnime(limit, options).catch(() => []),
-    jikanCatalogProvider.getSeasonalAnime(limit, options).catch(() => []),
+    tenraiCatalogProvider.getSeasonalAnime(limit, options).catch(() => []),
   ]);
 
   const merged = dedupeAnimeList([
     ...animeScheduleSeasonal,
     ...providerSeasonal,
-    ...jikanSeasonal,
+    ...tenraiSeasonal,
   ]);
 
   if (merged.length > 0) {
@@ -158,7 +162,7 @@ export async function getSeasonalAnime(limit = 10, options?: CacheFetchOptions<A
 
   return dedupeAnimeList(await runWithFallback(
     () => preferred.getSeasonalAnime(limit, options),
-    () => jikanCatalogProvider.getSeasonalAnime(limit, options),
+    () => tenraiCatalogProvider.getSeasonalAnime(limit, options),
   ));
 }
 
@@ -176,11 +180,11 @@ export async function getLatestUpdatedAnime(limit = 10, options?: CacheFetchOpti
 
   const data = dedupeAnimeList(await runWithFallback(
     () => animeScheduleCatalogProvider.getLatestUpdatedAnime(fetchLimit, latestOptions),
-    () => jikanCatalogProvider.getLatestUpdatedAnime(fetchLimit, latestOptions),
+    () => tenraiCatalogProvider.getLatestUpdatedAnime(fetchLimit, latestOptions),
   ));
 
   if (data.length > 0) return shapeLatestUpdatedList(data);
-  return shapeLatestUpdatedList(await jikanCatalogProvider.getLatestUpdatedAnime(fetchLimit, latestOptions));
+  return shapeLatestUpdatedList(await tenraiCatalogProvider.getLatestUpdatedAnime(fetchLimit, latestOptions));
 }
 
 export async function getUpcomingUpdatedAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
@@ -197,11 +201,11 @@ export async function getUpcomingUpdatedAnime(limit = 10, options?: CacheFetchOp
 
   const data = dedupeAnimeList(await runWithFallback(
     () => animeScheduleCatalogProvider.getUpcomingUpdatedAnime(fetchLimit, upcomingOptions),
-    () => jikanCatalogProvider.getUpcomingUpdatedAnime(fetchLimit, upcomingOptions),
+    () => tenraiCatalogProvider.getUpcomingUpdatedAnime(fetchLimit, upcomingOptions),
   ));
 
   if (data.length > 0) return shapeUpcomingUpdatedList(data);
-  return shapeUpcomingUpdatedList(await jikanCatalogProvider.getUpcomingUpdatedAnime(fetchLimit, upcomingOptions));
+  return shapeUpcomingUpdatedList(await tenraiCatalogProvider.getUpcomingUpdatedAnime(fetchLimit, upcomingOptions));
 }
 
 export async function getLatestPromoAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
@@ -215,22 +219,22 @@ export async function getLatestPromoAnime(limit = 10, options?: CacheFetchOption
       }
     : undefined;
 
-  if (preferred === jikanCatalogProvider) {
-    return shapeLatestPromoList(dedupeAnimeList(await jikanCatalogProvider.getLatestPromoAnime(limit, promoOptions)));
+  if (preferred === tenraiCatalogProvider) {
+    return shapeLatestPromoList(dedupeAnimeList(await tenraiCatalogProvider.getLatestPromoAnime(limit, promoOptions)));
   }
   const primary = dedupeAnimeList(await runWithFallback(
     () => preferred.getLatestPromoAnime(limit, promoOptions),
-    () => jikanCatalogProvider.getLatestPromoAnime(limit, promoOptions),
+    () => tenraiCatalogProvider.getLatestPromoAnime(limit, promoOptions),
   ));
   if (primary.length >= Math.max(3, Math.floor(limit / 2))) return shapeLatestPromoList(primary);
-  const fallback = dedupeAnimeList(await jikanCatalogProvider.getLatestPromoAnime(limit, promoOptions).catch(() => []));
+  const fallback = dedupeAnimeList(await tenraiCatalogProvider.getLatestPromoAnime(limit, promoOptions).catch(() => []));
   return shapeLatestPromoList(dedupeAnimeList([...primary, ...fallback])).slice(0, Math.max(1, Math.floor(limit)));
 }
 
 export async function getTopAiringAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   const preferred = await getPreferredProvider();
-  if (preferred === jikanCatalogProvider) {
-    const primary = dedupeAnimeList(await jikanCatalogProvider.getTopAiringAnime(limit, options));
+  if (preferred === tenraiCatalogProvider) {
+    const primary = dedupeAnimeList(await tenraiCatalogProvider.getTopAiringAnime(limit, options));
     if (primary.length >= Math.max(3, Math.floor(limit / 2))) {
       return sortByScoreThenPopularity(primary).slice(0, Math.max(1, Math.floor(limit)));
     }
@@ -239,19 +243,19 @@ export async function getTopAiringAnime(limit = 10, options?: CacheFetchOptions<
   }
   const primary = dedupeAnimeList(await runWithFallback(
     () => preferred.getTopAiringAnime(limit, options),
-    () => jikanCatalogProvider.getTopAiringAnime(limit, options),
+    () => tenraiCatalogProvider.getTopAiringAnime(limit, options),
   ));
   if (primary.length >= Math.max(3, Math.floor(limit / 2))) {
     return sortByScoreThenPopularity(primary).slice(0, Math.max(1, Math.floor(limit)));
   }
-  const fallback = dedupeAnimeList(await jikanCatalogProvider.getTopAiringAnime(limit, options).catch(() => []));
+  const fallback = dedupeAnimeList(await tenraiCatalogProvider.getTopAiringAnime(limit, options).catch(() => []));
   return sortByScoreThenPopularity(dedupeAnimeList([...primary, ...fallback])).slice(0, Math.max(1, Math.floor(limit)));
 }
 
 export async function getTopUpcomingAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   const preferred = await getPreferredProvider();
-  if (preferred === jikanCatalogProvider) {
-    const primary = dedupeAnimeList(await jikanCatalogProvider.getTopUpcomingAnime(limit, options));
+  if (preferred === tenraiCatalogProvider) {
+    const primary = dedupeAnimeList(await tenraiCatalogProvider.getTopUpcomingAnime(limit, options));
     if (primary.length >= Math.max(3, Math.floor(limit / 2))) {
       return sortByScoreThenPopularity(primary).slice(0, Math.max(1, Math.floor(limit)));
     }
@@ -260,28 +264,28 @@ export async function getTopUpcomingAnime(limit = 10, options?: CacheFetchOption
   }
   const primary = dedupeAnimeList(await runWithFallback(
     () => preferred.getTopUpcomingAnime(limit, options),
-    () => jikanCatalogProvider.getTopUpcomingAnime(limit, options),
+    () => tenraiCatalogProvider.getTopUpcomingAnime(limit, options),
   ));
   if (primary.length >= Math.max(3, Math.floor(limit / 2))) {
     return sortByScoreThenPopularity(primary).slice(0, Math.max(1, Math.floor(limit)));
   }
-  const fallback = dedupeAnimeList(await jikanCatalogProvider.getTopUpcomingAnime(limit, options).catch(() => []));
+  const fallback = dedupeAnimeList(await tenraiCatalogProvider.getTopUpcomingAnime(limit, options).catch(() => []));
   return sortByScoreThenPopularity(dedupeAnimeList([...primary, ...fallback])).slice(0, Math.max(1, Math.floor(limit)));
 }
 
 export async function searchAnime(query: string): Promise<AnimeSummary[]> {
   const preferred = await getPreferredProvider();
-  if (preferred === jikanCatalogProvider) {
-    return dedupeAnimeList(await jikanCatalogProvider.searchAnime(query));
+  if (preferred === tenraiCatalogProvider) {
+    return dedupeAnimeList(await tenraiCatalogProvider.searchAnime(query));
   }
 
   const data = dedupeAnimeList(await runWithFallback(
     () => preferred.searchAnime(query),
-    () => jikanCatalogProvider.searchAnime(query),
+    () => tenraiCatalogProvider.searchAnime(query),
   ));
 
   if (data.length > 0) return data;
-  return dedupeAnimeList(await jikanCatalogProvider.searchAnime(query));
+  return dedupeAnimeList(await tenraiCatalogProvider.searchAnime(query));
 }
 
 export function searchAnimeAdvanced(query: AnimeSearchQuery): Promise<AnimeSearchResult> {
@@ -298,15 +302,15 @@ export function searchAnimeProducers(query: ProducerSearchQuery = {}): Promise<P
 
 export async function getAnimeDetails(id: string | number): Promise<AnimeDetail> {
   const preferred = await getPreferredProvider();
-  if (preferred === jikanCatalogProvider) {
-    const jikanFirst = await jikanCatalogProvider.getAnimeDetails(id).catch(() => null);
-    if (jikanFirst) return jikanFirst;
+  if (preferred === tenraiCatalogProvider) {
+    const tenraiFirst = await tenraiCatalogProvider.getAnimeDetails(id).catch(() => null);
+    if (tenraiFirst) return tenraiFirst;
 
     const animeScheduleDetail = await getAnimeScheduleDetailWithBridge(id);
-    if (isValidMalId(animeScheduleDetail.jikanId)) {
-      const canonicalJikanId = Math.floor(animeScheduleDetail.jikanId);
+    if (isValidMalId(animeScheduleDetail.tenraiId)) {
+      const canonicalTenraiId = Math.floor(animeScheduleDetail.tenraiId);
       return runWithFallback(
-        () => jikanCatalogProvider.getAnimeDetails(canonicalJikanId),
+        () => tenraiCatalogProvider.getAnimeDetails(canonicalTenraiId),
         () => Promise.resolve(animeScheduleDetail),
       );
     }
@@ -316,17 +320,17 @@ export async function getAnimeDetails(id: string | number): Promise<AnimeDetail>
 
   const animeScheduleDetail = await getAnimeScheduleDetailWithBridge(id).catch(() => null);
   if (!animeScheduleDetail) {
-    return jikanCatalogProvider.getAnimeDetails(id);
+    return tenraiCatalogProvider.getAnimeDetails(id);
   }
 
-  if (!isValidMalId(animeScheduleDetail.jikanId)) {
+  if (!isValidMalId(animeScheduleDetail.tenraiId)) {
     return animeScheduleDetail;
   }
 
-  const canonicalJikanId = Math.floor(animeScheduleDetail.jikanId);
+  const canonicalTenraiId = Math.floor(animeScheduleDetail.tenraiId);
 
   return runWithFallback(
-    () => jikanCatalogProvider.getAnimeDetails(canonicalJikanId),
+    () => tenraiCatalogProvider.getAnimeDetails(canonicalTenraiId),
     () => Promise.resolve(animeScheduleDetail),
   );
 }
@@ -342,27 +346,27 @@ export async function getAnimeTrailerUrl(id: string | number): Promise<string | 
 }
 
 export async function resolveCanonicalDetailRouteId(
-  anime: Pick<AnimeSummary, 'id' | 'jikanId' | 'animeScheduleRoute'>,
+  anime: Pick<AnimeSummary, 'id' | 'tenraiId' | 'animeScheduleRoute'>,
 ): Promise<number | undefined> {
-  const directJikanId = isValidMalId(anime.jikanId) ? Math.floor(anime.jikanId) : undefined;
+  const directTenraiId = isValidMalId(anime.tenraiId) ? Math.floor(anime.tenraiId) : undefined;
   const hasAnimeScheduleRoute = Boolean(anime.animeScheduleRoute?.trim());
 
-  // If this already looks like a MAL/Jikan id and no route is available, trust it.
+  // If this already looks like a MAL/Tenrai id and no route is available, trust it.
   // This avoids unnecessary bridge requests for rows already keyed by canonical ids.
-  if (!directJikanId && !hasAnimeScheduleRoute && isValidMalId(anime.id)) {
+  if (!directTenraiId && !hasAnimeScheduleRoute && isValidMalId(anime.id)) {
     return Math.floor(anime.id);
   }
 
   // For AnimeSchedule items we can receive source-local ids. Bridge only when
   // direct canonical id is absent and a route is available.
-  if (!directJikanId && hasAnimeScheduleRoute) {
-    const bridged = await resolveAnimeScheduleBridgeJikanId(anime.id, anime.animeScheduleRoute);
+  if (!directTenraiId && hasAnimeScheduleRoute) {
+    const bridged = await resolveAnimeScheduleBridgeTenraiId(anime.id, anime.animeScheduleRoute);
     if (isValidMalId(bridged)) {
       return Math.floor(bridged);
     }
   }
 
-  if (directJikanId) return directJikanId;
+  if (directTenraiId) return directTenraiId;
   return undefined;
 }
 
@@ -384,6 +388,6 @@ export async function refreshHomeShelvesIfNeeded(limit = 20, callbacks: HomeRefr
   try {
     await animeScheduleCatalogProvider.refreshHomeShelvesIfNeeded(limit, shapedCallbacks);
   } catch {
-    await jikanCatalogProvider.refreshHomeShelvesIfNeeded(limit, shapedCallbacks);
+    await tenraiCatalogProvider.refreshHomeShelvesIfNeeded(limit, shapedCallbacks);
   }
 }

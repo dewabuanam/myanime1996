@@ -74,7 +74,7 @@ async function hydratePlayableItemDuration(item: PlayableItem): Promise<Playable
   if (hasDuration) return item;
 
   try {
-    const detailId = Number(item.anime.jikanId) > 0 ? Math.floor(Number(item.anime.jikanId)) : item.anime.id;
+    const detailId = Number(item.anime.tenraiId) > 0 ? Math.floor(Number(item.anime.tenraiId)) : item.anime.id;
     const detail = await getAnimeDetails(detailId);
     const durationMinutes = detail.durationMinutes;
     const duration = detail.duration;
@@ -98,7 +98,7 @@ async function hydratePlayableItemDuration(item: PlayableItem): Promise<Playable
 }
 
 function toCanonicalAnimeId(item: PlayableItem): number {
-  const preferred = Number(item.anime.jikanId);
+  const preferred = Number(item.anime.tenraiId);
   if (Number.isFinite(preferred) && preferred > 0) {
     return Math.floor(preferred);
   }

@@ -11,7 +11,7 @@ const BACKGROUND_LATEST_RESOLVE_LIMIT = 5;
 const HOME_REFRESH_LIMIT = 20;
 
 function toCanonicalAnimeId(playable: PlayableItem) {
-  const preferred = Number(playable.anime.jikanId);
+  const preferred = Number(playable.anime.tenraiId);
   if (Number.isFinite(preferred) && preferred > 0) {
     return Math.floor(preferred);
   }

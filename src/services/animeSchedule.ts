@@ -2,12 +2,12 @@ import type { AnimeDetail, AnimeSummary } from '../types/anime';
 import type { CachedPayload } from '../types/anime';
 import { getStoredValue, setStoredValue } from './store';
 import {
-  getAnimeDetails as getJikanAnimeDetails,
-  getLatestPromoAnime as getJikanLatestPromoAnime,
-  getTopAnime as getJikanTopAnime,
-  getTopAiringAnime as getJikanTopAiringAnime,
-  getTopUpcomingAnime as getJikanTopUpcomingAnime,
-} from './jikan';
+  getAnimeDetails as getTenraiAnimeDetails,
+  getLatestPromoAnime as getTenraiLatestPromoAnime,
+  getTopAnime as getTenraiTopAnime,
+  getTopAiringAnime as getTenraiTopAiringAnime,
+  getTopUpcomingAnime as getTenraiTopUpcomingAnime,
+} from './tenrai';
 import { inferSeasonFromDate, normalizeSeasonKey } from '../utils/season';
 
 const BASE_URL = 'https://animeschedule.net/api/v3';
@@ -436,15 +436,16 @@ function normalizeTimestampToUtc(value: string): string {
 }
 
 function normalizeAnimeScheduleId(record: Record<string, unknown>, media: Record<string, unknown>, title: string): number {
-  const jikanId = resolveAnimeScheduleJikanId(record, media);
-  if (jikanId) return jikanId;
+  const tenraiId = resolveAnimeScheduleTenraiId(record, media);
+  if (tenraiId) return tenraiId;
 
   const route = getString(record, ['route']);
   return Math.max(1, Math.floor(hashFromTitle(route || title)));
 }
 
-function resolveAnimeScheduleJikanId(record: Record<string, unknown>, media: Record<string, unknown>): number | undefined {
+function resolveAnimeScheduleTenraiId(record: Record<string, unknown>, media: Record<string, unknown>): number | undefined {
   const malId =
+    // AnimeSchedule's payload still names this field `jikanId` (it is the MAL id).
     getNumber(record, ['jikanId', 'jikan_id']) ||
     getNumber(media, ['jikanId', 'jikan_id']) ||
     resolveMalIdFromWebsites(record.websites) ||
@@ -496,7 +497,7 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
     getString(recordNames, ['native']);
   const titleSynonyms = normalizeTitleSynonyms(mediaNames?.synonyms, recordNames?.synonyms);
 
-  const jikanId = resolveAnimeScheduleJikanId(record, media);
+  const tenraiId = resolveAnimeScheduleTenraiId(record, media);
   const id = normalizeAnimeScheduleId(record, media, title);
   const route =
     getString(record, ['route']) ||
@@ -504,8 +505,8 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
     getString(toRecord(record.anime), ['route']);
   if (route) {
     routeByNumericId.set(id, route);
-    if (isValidMalId(jikanId)) {
-      routeByNumericId.set(Math.floor(jikanId), route);
+    if (isValidMalId(tenraiId)) {
+      routeByNumericId.set(Math.floor(tenraiId), route);
     }
   }
 
@@ -563,7 +564,7 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
 
   return {
     id,
-    jikanId,
+    tenraiId,
     title,
     titleEnglish,
     titleJapanese,
@@ -610,21 +611,21 @@ function toAnimeDetail(raw: unknown): AnimeDetail | null {
     aired: seasonTitle || getString(record, ['premier', 'subPremier', 'dubPremier']) || getString(websites, ['official']),
   };
 
-  if (summary.jikanId && summary.jikanId > 0) {
-    detail.jikanId = Math.floor(summary.jikanId);
+  if (summary.tenraiId && summary.tenraiId > 0) {
+    detail.tenraiId = Math.floor(summary.tenraiId);
   }
 
   return detail;
 }
 
-async function resolveAnimeScheduleJikanIdByRoute(route: string): Promise<number | undefined> {
+async function resolveAnimeScheduleTenraiIdByRoute(route: string): Promise<number | undefined> {
   const path = `/anime/${encodeURIComponent(route)}`;
   try {
     const json = await cachedFetch(path, DAY, (raw) => raw);
     const record = toRecord(json);
     if (!record) return undefined;
     const media = toRecord(record.media) ?? toRecord(record.anime) ?? record;
-    return resolveAnimeScheduleJikanId(record, media);
+    return resolveAnimeScheduleTenraiId(record, media);
   } catch {
     return undefined;
   }
@@ -848,9 +849,9 @@ function getIsoWeekAndYear(date = new Date()) {
 
 export async function getAnimeScheduleTopAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   try {
-    return await getJikanTopAnime(limit, options);
+    return await getTenraiTopAnime(limit, options);
   } catch {
-    // Fallback to AnimeSchedule-derived popular list when Jikan is unavailable.
+    // Fallback to AnimeSchedule-derived popular list when Tenrai is unavailable.
   }
 
   const page = await getAnimeScheduleAnimePage(1, Math.max(limit * 3, DEFAULT_LIST_PAGE_SIZE));
@@ -886,9 +887,9 @@ export async function getAnimeScheduleSeasonalAnime(limit = 10, options?: CacheF
 
 export async function getAnimeScheduleTopAiringAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   try {
-    return await getJikanTopAiringAnime(limit, options);
+    return await getTenraiTopAiringAnime(limit, options);
   } catch {
-    // Fallback to AnimeSchedule-derived airing list when Jikan is unavailable.
+    // Fallback to AnimeSchedule-derived airing list when Tenrai is unavailable.
   }
 
   const candidates = await collectAnimeScheduleAnimeCandidates(Math.max(limit * 8, DEFAULT_LIST_PAGE_SIZE));
@@ -917,9 +918,9 @@ export async function getAnimeScheduleTopAiringAnime(limit = 10, options?: Cache
 
 export async function getAnimeScheduleTopUpcomingAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   try {
-    return await getJikanTopUpcomingAnime(limit, options);
+    return await getTenraiTopUpcomingAnime(limit, options);
   } catch {
-    // Fallback to AnimeSchedule-derived upcoming list when Jikan is unavailable.
+    // Fallback to AnimeSchedule-derived upcoming list when Tenrai is unavailable.
   }
 
   const rawUpcomingFilter = options?.upcomingSeasonFilter ?? await getStoredValue('upcomingSeasonFilter', 'all');
@@ -951,8 +952,8 @@ export async function getAnimeScheduleTopUpcomingAnime(limit = 10, options?: Cac
 export async function getAnimeScheduleLatestPromoAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
   const safeLimit = Math.max(1, Math.floor(limit));
 
-  const [jikanPromo, animeSchedulePromo] = await Promise.all([
-    getJikanLatestPromoAnime(safeLimit, options).catch(() => []),
+  const [tenraiPromo, animeSchedulePromo] = await Promise.all([
+    getTenraiLatestPromoAnime(safeLimit, options).catch(() => []),
     (async () => {
       const page = await getAnimeScheduleAnimePage(1, Math.max(safeLimit * 5, DEFAULT_LIST_PAGE_SIZE), { includeDonghua: true });
       const now = Date.now();
@@ -969,7 +970,7 @@ export async function getAnimeScheduleLatestPromoAnime(limit = 10, options?: Cac
   ]);
 
   const merged = new Map<number, AnimeSummary>();
-  for (const anime of [...animeSchedulePromo, ...jikanPromo]) {
+  for (const anime of [...animeSchedulePromo, ...tenraiPromo]) {
     if (!merged.has(anime.id)) {
       merged.set(anime.id, anime);
     }
@@ -1037,21 +1038,21 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
     throw new Error('AnimeSchedule detail unavailable');
   }
 
-  if (!isValidMalId(detail.jikanId)) {
-    const recoveredJikanId = await resolveAnimeScheduleJikanIdByRoute(route);
-    if (isValidMalId(recoveredJikanId)) {
-      const safeRecoveredId = Math.floor(recoveredJikanId);
-      detail.jikanId = safeRecoveredId;
+  if (!isValidMalId(detail.tenraiId)) {
+    const recoveredTenraiId = await resolveAnimeScheduleTenraiIdByRoute(route);
+    if (isValidMalId(recoveredTenraiId)) {
+      const safeRecoveredId = Math.floor(recoveredTenraiId);
+      detail.tenraiId = safeRecoveredId;
       detail.id = safeRecoveredId;
       void patchAnimeScheduleDetailCache(route, detail);
     }
-  } else if (detail.id !== detail.jikanId) {
-    detail.id = Math.floor(detail.jikanId);
+  } else if (detail.id !== detail.tenraiId) {
+    detail.id = Math.floor(detail.tenraiId);
     void patchAnimeScheduleDetailCache(route, detail);
   }
 
   if (
-    isValidMalId(detail.jikanId) &&
+    isValidMalId(detail.tenraiId) &&
     (
       !detail.trailerUrl ||
       !detail.banner ||
@@ -1066,21 +1067,21 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
     )
   ) {
     try {
-      const jikanDetail = await getJikanAnimeDetails(detail.jikanId!);
-      detail.title = detail.title || jikanDetail.title;
-      detail.titleEnglish = detail.titleEnglish || jikanDetail.titleEnglish;
-      detail.titleJapanese = detail.titleJapanese || jikanDetail.titleJapanese;
-      detail.titleSynonyms = (detail.titleSynonyms?.length ? detail.titleSynonyms : jikanDetail.titleSynonyms) || detail.titleSynonyms;
-      detail.trailerUrl = jikanDetail.trailerUrl || detail.trailerUrl;
-      detail.banner = jikanDetail.banner || detail.banner;
-      detail.rating = detail.rating || jikanDetail.rating;
-      detail.rank = detail.rank ?? jikanDetail.rank;
-      detail.popularity = detail.popularity ?? jikanDetail.popularity;
-      detail.members = detail.members ?? jikanDetail.members;
-      detail.aired = detail.aired || jikanDetail.aired;
-      detail.source = detail.source || jikanDetail.source;
+      const tenraiDetail = await getTenraiAnimeDetails(detail.tenraiId!);
+      detail.title = detail.title || tenraiDetail.title;
+      detail.titleEnglish = detail.titleEnglish || tenraiDetail.titleEnglish;
+      detail.titleJapanese = detail.titleJapanese || tenraiDetail.titleJapanese;
+      detail.titleSynonyms = (detail.titleSynonyms?.length ? detail.titleSynonyms : tenraiDetail.titleSynonyms) || detail.titleSynonyms;
+      detail.trailerUrl = tenraiDetail.trailerUrl || detail.trailerUrl;
+      detail.banner = tenraiDetail.banner || detail.banner;
+      detail.rating = detail.rating || tenraiDetail.rating;
+      detail.rank = detail.rank ?? tenraiDetail.rank;
+      detail.popularity = detail.popularity ?? tenraiDetail.popularity;
+      detail.members = detail.members ?? tenraiDetail.members;
+      detail.aired = detail.aired || tenraiDetail.aired;
+      detail.source = detail.source || tenraiDetail.source;
     } catch {
-      // Keep AnimeSchedule detail response even if Jikan enrichment fails.
+      // Keep AnimeSchedule detail response even if Tenrai enrichment fails.
     }
   }
 
@@ -1088,7 +1089,7 @@ export async function getAnimeScheduleAnimeDetails(idOrRoute: string | number): 
   return detail;
 }
 
-export async function resolveAnimeScheduleBridgeJikanId(
+export async function resolveAnimeScheduleBridgeTenraiId(
   idOrRoute: string | number,
   animeScheduleRoute?: string,
 ): Promise<number | undefined> {
@@ -1098,8 +1099,8 @@ export async function resolveAnimeScheduleBridgeJikanId(
     : parseRouteFromInput(idOrRoute);
   if (!route) return undefined;
 
-  const jikanId = await resolveAnimeScheduleJikanIdByRoute(route);
-  return isValidMalId(jikanId) ? Math.floor(jikanId) : undefined;
+  const tenraiId = await resolveAnimeScheduleTenraiIdByRoute(route);
+  return isValidMalId(tenraiId) ? Math.floor(tenraiId) : undefined;
 }
 
 /**

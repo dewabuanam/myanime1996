@@ -2,7 +2,7 @@ import type { AnimeDetail, AnimeEpisode, AnimeSummary, CachedPayload } from '../
 import { getStoredValue, setStoredValue } from './store';
 import { getCurrentSeasonYear, inferSeasonFromDate, normalizeSeasonKey, type SeasonKey } from '../utils/season';
 
-const BASE_URL = 'https://api.jikan.moe/v4';
+const BASE_URL = 'https://api.tenrai.org/v1';
 const HOUR = 60 * 60 * 1000;
 const RATE_LIMIT_RETRY_ATTEMPTS = 3;
 const RATE_LIMIT_BASE_DELAY_MS = 1200;
@@ -10,18 +10,18 @@ const RATE_LIMIT_MAX_DELAY_MS = 10_000;
 const EPISODE_ENDPOINT_TIMEOUT_MS = 3500;
 const HOME_BACKGROUND_REFRESH_KEY = 'homeShelvesLastRefreshAt';
 const HOME_BACKGROUND_REFRESH_INTERVAL_MS = 60 * 1000;
-const ANIME_ENTITY_CACHE_KEY = 'jikan:anime:entities';
+const ANIME_ENTITY_CACHE_KEY = 'tenrai:anime:entities';
 const ANIME_ENTITY_TTL = 30 * 24 * HOUR;
 
-export type JikanApiHealthEvent = {
-  service: 'jikan';
+export type TenraiApiHealthEvent = {
+  service: 'tenrai';
   status: 'success' | 'failure' | 'rate-limited';
   path: string;
   occurredAt: number;
   statusCode?: number;
 };
 
-type JikanApiHealthListener = (event: JikanApiHealthEvent) => void;
+type TenraiApiHealthListener = (event: TenraiApiHealthEvent) => void;
 
 type CacheFetchOptions<T> = {
   onUpdate?: (value: T) => void;
@@ -137,28 +137,28 @@ type HomeRefreshCallbacks = {
 };
 
 const inFlightRequests = new Map<string, Promise<unknown>>();
-const jikanApiHealthListeners = new Set<JikanApiHealthListener>();
+const tenraiApiHealthListeners = new Set<TenraiApiHealthListener>();
 
-function notifyJikanApiHealth(status: JikanApiHealthEvent['status'], path: string, statusCode?: number) {
-  if (!jikanApiHealthListeners.size) return;
+function notifyTenraiApiHealth(status: TenraiApiHealthEvent['status'], path: string, statusCode?: number) {
+  if (!tenraiApiHealthListeners.size) return;
 
-  const event: JikanApiHealthEvent = {
-    service: 'jikan',
+  const event: TenraiApiHealthEvent = {
+    service: 'tenrai',
     status,
     path,
     occurredAt: Date.now(),
     ...(typeof statusCode === 'number' ? { statusCode } : {}),
   };
 
-  for (const listener of jikanApiHealthListeners) {
+  for (const listener of tenraiApiHealthListeners) {
     listener(event);
   }
 }
 
-export function onJikanApiHealth(listener: JikanApiHealthListener) {
-  jikanApiHealthListeners.add(listener);
+export function onTenraiApiHealth(listener: TenraiApiHealthListener) {
+  tenraiApiHealthListeners.add(listener);
   return () => {
-    jikanApiHealthListeners.delete(listener);
+    tenraiApiHealthListeners.delete(listener);
   };
 }
 
@@ -206,7 +206,7 @@ async function readGlobalCatalogContentPrefs() {
   };
 }
 
-function withJikanContentFlags(
+function withTenraiContentFlags(
   path: string,
   options: {
     allowNsfw: boolean;
@@ -238,31 +238,31 @@ function withJikanContentFlags(
   return query ? `${pathname}?${query}` : pathname;
 }
 
-export async function clearJikanDataCache() {
+export async function clearTenraiDataCache() {
   inFlightRequests.clear();
   await Promise.all([
-    setStoredValue('jikanCache', {} as Record<string, CachedPayload<unknown>>),
-    setStoredValue('jikanMeta', {} as Record<string, string | number | boolean>),
+    setStoredValue('tenraiCache', {} as Record<string, CachedPayload<unknown>>),
+    setStoredValue('tenraiMeta', {} as Record<string, string | number | boolean>),
   ]);
 }
 
-interface JikanNamedResource {
+interface TenraiNamedResource {
   mal_id?: number;
   name: string;
   count?: number;
 }
 
-interface JikanTitleVariant {
+interface TenraiTitleVariant {
   type?: string;
   title?: string;
 }
 
-interface JikanAnime {
+interface TenraiAnime {
   mal_id: number;
   title: string;
   title_english?: string;
   title_japanese?: string;
-  titles?: JikanTitleVariant[];
+  titles?: TenraiTitleVariant[];
   title_synonyms?: string[];
   images?: { jpg?: { large_image_url?: string; image_url?: string }; webp?: { large_image_url?: string; image_url?: string } };
   trailer?: { url?: string; embed_url?: string; images?: { maximum_image_url?: string; large_image_url?: string } };
@@ -272,12 +272,12 @@ interface JikanAnime {
   episodes?: number;
   type?: string;
   status?: string;
-  studios?: JikanNamedResource[];
-  genres?: JikanNamedResource[];
-  explicit_genres?: JikanNamedResource[];
-  themes?: JikanNamedResource[];
-  demographics?: JikanNamedResource[];
-  producers?: JikanNamedResource[];
+  studios?: TenraiNamedResource[];
+  genres?: TenraiNamedResource[];
+  explicit_genres?: TenraiNamedResource[];
+  themes?: TenraiNamedResource[];
+  demographics?: TenraiNamedResource[];
+  producers?: TenraiNamedResource[];
   rating?: string;
   duration?: string;
   source?: string;
@@ -288,11 +288,11 @@ interface JikanAnime {
   season?: string;
 }
 
-interface JikanListResponse {
-  data: JikanAnime[];
+interface TenraiListResponse {
+  data: TenraiAnime[];
 }
 
-interface JikanPagedListResponse extends JikanListResponse {
+interface TenraiPagedListResponse extends TenraiListResponse {
   pagination?: {
     last_visible_page?: number;
     has_next_page?: boolean;
@@ -300,19 +300,19 @@ interface JikanPagedListResponse extends JikanListResponse {
   };
 }
 
-interface JikanGenresResponse {
-  data: JikanNamedResource[];
+interface TenraiGenresResponse {
+  data: TenraiNamedResource[];
 }
 
-interface JikanProducer {
+interface TenraiProducer {
   mal_id: number;
   titles?: Array<{ title?: string; type?: string }>;
   favorites?: number;
   count?: number;
 }
 
-interface JikanProducerListResponse {
-  data: JikanProducer[];
+interface TenraiProducerListResponse {
+  data: TenraiProducer[];
   pagination?: {
     current_page?: number;
     last_visible_page?: number;
@@ -320,11 +320,11 @@ interface JikanProducerListResponse {
   };
 }
 
-interface JikanDetailResponse {
-  data: JikanAnime;
+interface TenraiDetailResponse {
+  data: TenraiAnime;
 }
 
-interface JikanEpisodeListItem {
+interface TenraiEpisodeListItem {
   mal_id?: number;
   url?: string;
   title?: string;
@@ -337,15 +337,15 @@ interface JikanEpisodeListItem {
   forum_url?: string;
 }
 
-interface JikanEpisodeListResponse {
-  data: JikanEpisodeListItem[];
+interface TenraiEpisodeListResponse {
+  data: TenraiEpisodeListItem[];
   pagination?: {
     last_visible_page?: number;
     has_next_page?: boolean;
   };
 }
 
-interface JikanEpisodeDetailItem {
+interface TenraiEpisodeDetailItem {
   mal_id?: number;
   url?: string;
   title?: string;
@@ -358,47 +358,8 @@ interface JikanEpisodeDetailItem {
   synopsis?: string;
 }
 
-interface JikanEpisodeDetailResponse {
-  data: JikanEpisodeDetailItem;
-}
-
-interface JikanWatchEpisode {
-  mal_id?: number;
-  title?: string;
-}
-
-interface JikanWatchEpisodeItem {
-  entry: JikanAnime;
-  episodes?: JikanWatchEpisode[];
-  date?: string;
-}
-
-interface JikanWatchEpisodeListResponse {
-  data: JikanWatchEpisodeItem[];
-}
-
-interface JikanTrailerImages {
-  image_url?: string;
-  small_image_url?: string;
-  medium_image_url?: string;
-  large_image_url?: string;
-  maximum_image_url?: string;
-}
-
-interface JikanWatchTrailer {
-  url?: string;
-  embed_url?: string;
-  images?: JikanTrailerImages;
-}
-
-interface JikanWatchPromoItem {
-  title?: string;
-  entry: JikanAnime;
-  trailer?: JikanWatchTrailer;
-}
-
-interface JikanWatchPromoListResponse {
-  data: JikanWatchPromoItem[];
+interface TenraiEpisodeDetailResponse {
+  data: TenraiEpisodeDetailItem;
 }
 
 function getLocalDateBucket() {
@@ -410,7 +371,7 @@ function getLocalDateBucket() {
 }
 
 const cacheKey = (path: string, options: { cacheContext?: string; useDailyCacheKey?: boolean } = {}) => {
-  const base = `jikan:${path}`;
+  const base = `tenrai:${path}`;
   const withContext = options.cacheContext ? `${base}|ctx:${options.cacheContext}` : base;
   if (!options.useDailyCacheKey) return withContext;
   return `${withContext}|day:${getLocalDateBucket()}`;
@@ -449,7 +410,7 @@ function buildBackoffMs(attempt: number) {
   return Math.min(RATE_LIMIT_MAX_DELAY_MS, exponential + jitter);
 }
 
-async function fetchJikanJson(path: string) {
+async function fetchTenraiJson(path: string) {
   let lastStatus = 0;
   let hadRateLimit = false;
 
@@ -458,14 +419,14 @@ async function fetchJikanJson(path: string) {
     try {
       response = await fetch(`${BASE_URL}${path}`);
     } catch {
-      notifyJikanApiHealth('failure', path);
-      throw new Error('Jikan request failed: network');
+      notifyTenraiApiHealth('failure', path);
+      throw new Error('Tenrai request failed: network');
     }
 
     lastStatus = response.status;
 
     if (response.ok) {
-      notifyJikanApiHealth('success', path, response.status);
+      notifyTenraiApiHealth('success', path, response.status);
       return response.json();
     }
 
@@ -477,25 +438,25 @@ async function fetchJikanJson(path: string) {
     }
 
     if (response.status === 429 || hadRateLimit) {
-      notifyJikanApiHealth('rate-limited', path, response.status);
+      notifyTenraiApiHealth('rate-limited', path, response.status);
     } else {
-      notifyJikanApiHealth('failure', path, response.status);
+      notifyTenraiApiHealth('failure', path, response.status);
     }
 
-    throw new Error(`Jikan request failed: ${response.status}`);
+    throw new Error(`Tenrai request failed: ${response.status}`);
   }
 
   if (lastStatus === 429 || hadRateLimit) {
-    notifyJikanApiHealth('rate-limited', path, lastStatus || 429);
+    notifyTenraiApiHealth('rate-limited', path, lastStatus || 429);
   } else {
-    notifyJikanApiHealth('failure', path, lastStatus || undefined);
+    notifyTenraiApiHealth('failure', path, lastStatus || undefined);
   }
 
-  throw new Error(`Jikan request failed: ${lastStatus || 'unknown'}`);
+  throw new Error(`Tenrai request failed: ${lastStatus || 'unknown'}`);
 }
 
-export async function probeJikanApiHealth() {
-  await fetchJikanJson('/top/anime?limit=1&page=1');
+export async function probeTenraiApiHealth() {
+  await fetchTenraiJson('/top/anime?limit=1&page=1');
 }
 
 function mergeAnimeSummary(existing: AnimeSummary | undefined, incoming: AnimeSummary): AnimeSummary {
@@ -584,14 +545,14 @@ function parseDurationMinutes(rawDuration?: string): number | undefined {
   return Number.isFinite(total) && total > 0 ? total : undefined;
 }
 
-function selectJikanTitle(anime: JikanAnime, type: string): string | undefined {
+function selectTenraiTitle(anime: TenraiAnime, type: string): string | undefined {
   const variants = anime.titles ?? [];
   const match = variants.find((entry) => entry.type?.toLowerCase() === type.toLowerCase());
   const value = match?.title?.trim();
   return value ? value : undefined;
 }
 
-function normalizeJikanSynonyms(anime: JikanAnime): string[] | undefined {
+function normalizeTenraiSynonyms(anime: TenraiAnime): string[] | undefined {
   const fromVariants = (anime.titles ?? [])
     .map((entry) => entry.title?.trim() ?? '')
     .filter((entry) => entry.length > 0);
@@ -603,7 +564,7 @@ function normalizeJikanSynonyms(anime: JikanAnime): string[] | undefined {
   return merged.length ? merged : undefined;
 }
 
-function normalizeAnime(anime: JikanAnime): AnimeSummary {
+function normalizeAnime(anime: TenraiAnime): AnimeSummary {
   const normalizedSeason = normalizeSeasonKey(anime.season);
   const inferredSeason = inferSeasonFromDate(anime.aired?.from || anime.aired?.to || anime.aired?.string);
 
@@ -616,11 +577,11 @@ function normalizeAnime(anime: JikanAnime): AnimeSummary {
 
   return {
     id: anime.mal_id,
-    jikanId: anime.mal_id,
-    title: anime.title || selectJikanTitle(anime, 'Default') || selectJikanTitle(anime, 'Romaji') || selectJikanTitle(anime, 'English') || 'Unknown title',
-    titleEnglish: anime.title_english || selectJikanTitle(anime, 'English'),
-    titleJapanese: anime.title_japanese || selectJikanTitle(anime, 'Japanese'),
-    titleSynonyms: normalizeJikanSynonyms(anime),
+    tenraiId: anime.mal_id,
+    title: anime.title || selectTenraiTitle(anime, 'Default') || selectTenraiTitle(anime, 'Romaji') || selectTenraiTitle(anime, 'English') || 'Unknown title',
+    titleEnglish: anime.title_english || selectTenraiTitle(anime, 'English'),
+    titleJapanese: anime.title_japanese || selectTenraiTitle(anime, 'Japanese'),
+    titleSynonyms: normalizeTenraiSynonyms(anime),
     duration: anime.duration,
     durationMinutes: parseDurationMinutes(anime.duration),
     image,
@@ -643,8 +604,8 @@ function normalizeAnime(anime: JikanAnime): AnimeSummary {
   };
 }
 
-function normalizeDetail(anime: JikanAnime): AnimeDetail {
-  const toTaxonomyItems = (items?: JikanNamedResource[]) =>
+function normalizeDetail(anime: TenraiAnime): AnimeDetail {
+  const toTaxonomyItems = (items?: TenraiNamedResource[]) =>
     (items ?? [])
       .filter((item) => typeof item.mal_id === 'number' && item.mal_id > 0 && typeof item.name === 'string' && item.name.trim().length > 0)
       .map((item) => ({ id: Math.floor(item.mal_id as number), name: item.name.trim() }));
@@ -672,7 +633,7 @@ function toEpisodeDurationMinutes(duration?: number) {
   return Math.max(1, Math.round(duration / 60));
 }
 
-function normalizeEpisodeListItem(item: JikanEpisodeListItem, fallbackIndex: number): AnimeEpisode {
+function normalizeEpisodeListItem(item: TenraiEpisodeListItem, fallbackIndex: number): AnimeEpisode {
   const malId = typeof item.mal_id === 'number' && item.mal_id > 0 ? item.mal_id : undefined;
   return {
     episodeNumber: malId ?? fallbackIndex,
@@ -689,7 +650,7 @@ function normalizeEpisodeListItem(item: JikanEpisodeListItem, fallbackIndex: num
   };
 }
 
-function normalizeEpisodeDetailItem(item: JikanEpisodeDetailItem, fallbackEpisodeNumber: number): AnimeEpisode {
+function normalizeEpisodeDetailItem(item: TenraiEpisodeDetailItem, fallbackEpisodeNumber: number): AnimeEpisode {
   const malId = typeof item.mal_id === 'number' && item.mal_id > 0 ? item.mal_id : undefined;
   return {
     episodeNumber: malId ?? fallbackEpisodeNumber,
@@ -718,8 +679,8 @@ function mergeEpisodeDetail(existing: AnimeEpisode, incoming: AnimeEpisode): Ani
 }
 
 async function patchCachedEpisodeListEntries(id: string | number, episode: AnimeEpisode) {
-  const cache = await getStoredValue('jikanCache', {} as Record<string, CachedPayload<unknown>>);
-  const animePrefix = `jikan:/anime/${id}/episodes?page=`;
+  const cache = await getStoredValue('tenraiCache', {} as Record<string, CachedPayload<unknown>>);
+  const animePrefix = `tenrai:/anime/${id}/episodes?page=`;
   let changed = false;
   let sawEpisodeListCache = false;
   let matchedEpisodeInCache = false;
@@ -765,52 +726,7 @@ async function patchCachedEpisodeListEntries(id: string | number, episode: Anime
   }
 
   if (!changed) return;
-  await setStoredValue('jikanCache', nextCache);
-}
-
-function parseLatestEpisodeNumber(episodes?: JikanWatchEpisode[]) {
-  const latest = episodes?.[0];
-  if (!latest) return undefined;
-
-  if (latest.title) {
-    const match = latest.title.match(/(\d+)\s*$/);
-    if (match) {
-      const parsed = Number(match[1]);
-      if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    }
-  }
-
-  if (typeof latest.mal_id === 'number' && latest.mal_id > 0) {
-    return latest.mal_id;
-  }
-
-  return undefined;
-}
-
-function normalizeWatchEpisodeItem(item: JikanWatchEpisodeItem): AnimeSummary {
-  const anime = normalizeAnime(item.entry);
-  return {
-    ...anime,
-    airingDate: item.date || anime.airingDate,
-    episodes: parseLatestEpisodeNumber(item.episodes) ?? anime.episodes,
-    status: anime.status ?? 'Latest update',
-  };
-}
-
-function normalizeWatchPromoItem(item: JikanWatchPromoItem, fallbackStatus: string): AnimeSummary {
-  const anime = normalizeAnime(item.entry);
-  const promoImage =
-    item.trailer?.images?.maximum_image_url ||
-    item.trailer?.images?.large_image_url ||
-    item.trailer?.images?.medium_image_url ||
-    item.trailer?.images?.image_url;
-
-  return {
-    ...anime,
-    trailerUrl: item.trailer?.embed_url || item.trailer?.url || anime.trailerUrl,
-    banner: promoImage || anime.banner,
-    status: anime.status ?? fallbackStatus,
-  };
+  await setStoredValue('tenraiCache', nextCache);
 }
 
 async function fetchAndStore<T>(
@@ -823,10 +739,10 @@ async function fetchAndStore<T>(
   if (existing) return existing;
 
   const request = (async () => {
-    const value = mapper(await fetchJikanJson(path));
+    const value = mapper(await fetchTenraiJson(path));
     const now = Date.now();
-    const currentCache = await getStoredValue('jikanCache', {});
-    await setStoredValue('jikanCache', {
+    const currentCache = await getStoredValue('tenraiCache', {});
+    await setStoredValue('tenraiCache', {
       ...currentCache,
       [key]: { value, savedAt: now, expiresAt: now + ttl },
     });
@@ -848,7 +764,7 @@ async function cachedFetch<T>(
   options: CacheFetchOptions<T> = {},
 ): Promise<T> {
   const key = cacheKey(path, options);
-  const cache = await getStoredValue('jikanCache', {});
+  const cache = await getStoredValue('tenraiCache', {});
   const cached = cache[key] as CachedPayload<T> | undefined;
   const now = Date.now();
 
@@ -881,14 +797,14 @@ async function fetchAndStoreAnimeList(
   if (existing) return existing;
 
   const request = (async () => {
-    const rawList = mapper(await fetchJikanJson(path));
+    const rawList = mapper(await fetchTenraiJson(path));
 
     const now = Date.now();
-    const cache = await getStoredValue('jikanCache', {});
+    const cache = await getStoredValue('tenraiCache', {});
     const mergedMap = mergeEntityMap(readAnimeEntityMap(cache), rawList);
     const ids = rawList.map((anime) => anime.id);
 
-    await setStoredValue('jikanCache', {
+    await setStoredValue('tenraiCache', {
       ...cache,
       [ANIME_ENTITY_CACHE_KEY]: { value: mergedMap, savedAt: now, expiresAt: now + ANIME_ENTITY_TTL },
       [key]: { value: ids, savedAt: now, expiresAt: now + ttl },
@@ -912,7 +828,7 @@ async function cachedAnimeListFetch(
   options: CacheFetchOptions<AnimeSummary[]> = {},
 ) {
   const key = cacheKey(path, options);
-  const cache = await getStoredValue('jikanCache', {});
+  const cache = await getStoredValue('tenraiCache', {});
   const cached = cache[key] as CachedPayload<unknown> | undefined;
   const now = Date.now();
 
@@ -921,7 +837,7 @@ async function cachedAnimeListFetch(
     if (isAnimeSummaryArray(cached.value)) {
       const mergedMap = mergeEntityMap(readAnimeEntityMap(cache), cached.value);
       const ids = cached.value.map((anime) => anime.id);
-      await setStoredValue('jikanCache', {
+      await setStoredValue('tenraiCache', {
         ...cache,
         [ANIME_ENTITY_CACHE_KEY]: { value: mergedMap, savedAt: now, expiresAt: now + ANIME_ENTITY_TTL },
         [key]: { value: ids, savedAt: cached.savedAt, expiresAt: cached.expiresAt },
@@ -1000,7 +916,7 @@ async function getTopAnimeByFilterPaged(params: {
       baseParams.set('rating', params.topAnimeRating);
     }
 
-    const path = withJikanContentFlags(`/top/anime?${baseParams.toString()}`, {
+    const path = withTenraiContentFlags(`/top/anime?${baseParams.toString()}`, {
       allowNsfw: params.allowNsfw,
       page,
       limit: pageLimit,
@@ -1010,7 +926,7 @@ async function getTopAnimeByFilterPaged(params: {
       path,
       6 * HOUR,
       (json) => {
-        const payload = json as JikanPagedListResponse;
+        const payload = json as TenraiPagedListResponse;
         return {
           items: (payload.data ?? []).map(normalizeAnime),
           hasNextPage: payload.pagination?.has_next_page === true,
@@ -1059,7 +975,7 @@ export async function getSeasonalAnime(limit = 10, options?: CacheFetchOptions<A
     }
 
     const seasonPath = `/seasons/${selectedYear}/${selectedSeason}${seasonParams.toString() ? `?${seasonParams.toString()}` : ''}`;
-    const path = withJikanContentFlags(seasonPath, {
+    const path = withTenraiContentFlags(seasonPath, {
       allowNsfw: prefs.allowNsfw,
       page,
       limit: pageLimit,
@@ -1069,7 +985,7 @@ export async function getSeasonalAnime(limit = 10, options?: CacheFetchOptions<A
       path,
       6 * HOUR,
       (json) => {
-        const payload = json as JikanPagedListResponse;
+        const payload = json as TenraiPagedListResponse;
         return {
           items: (payload.data ?? []).map(normalizeAnime),
           hasNextPage: payload.pagination?.has_next_page === true,
@@ -1100,16 +1016,39 @@ export async function getSeasonalAnime(limit = 10, options?: CacheFetchOptions<A
   return result;
 }
 
-export function getLatestUpdatedAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
-  return cachedAnimeListFetch(`/watch/episodes?limit=${limit}`, 2 * HOUR, (json) =>
-    (json as JikanWatchEpisodeListResponse).data.map(normalizeWatchEpisodeItem),
+// Tenrai does not serve Jikan's /watch/episodes and /watch/promos endpoints, so both
+// shelves are rebuilt from the season endpoints: newest premieres of the running season
+// for "latest updated", and upcoming titles that already have a promo for "latest promo".
+export async function getLatestUpdatedAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
+  const prefs = await readGlobalCatalogContentPrefs();
+  const path = withTenraiContentFlags('/seasons/now?order_by=start_date&sort=desc', {
+    allowNsfw: prefs.allowNsfw,
+    limit,
+  });
+
+  return cachedAnimeListFetch(path, 2 * HOUR, (json) =>
+    (json as TenraiPagedListResponse).data.map((anime) => {
+      const normalized = normalizeAnime(anime);
+      return { ...normalized, status: normalized.status ?? 'Latest update' };
+    }),
     { ...options, cacheContext: 'latest-updated', useDailyCacheKey: true },
   ).catch(() => []);
 }
 
-export function getLatestPromoAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
-  return cachedAnimeListFetch(`/watch/promos?limit=${limit}`, 2 * HOUR, (json) =>
-    (json as JikanWatchPromoListResponse).data.map((item) => normalizeWatchPromoItem(item, 'Latest promo')),
+export async function getLatestPromoAnime(limit = 10, options?: CacheFetchOptions<AnimeSummary[]>) {
+  const prefs = await readGlobalCatalogContentPrefs();
+  // Over-fetch, because only a fraction of upcoming entries carry a trailer.
+  const path = withTenraiContentFlags('/seasons/upcoming?order_by=start_date&sort=asc', {
+    allowNsfw: prefs.allowNsfw,
+    limit: Math.min(25, Math.max(limit * 2, limit)),
+  });
+
+  return cachedAnimeListFetch(path, 2 * HOUR, (json) =>
+    (json as TenraiPagedListResponse).data
+      .map((anime) => normalizeAnime(anime))
+      .filter((anime) => isFilled(anime.trailerUrl))
+      .slice(0, limit)
+      .map((anime) => ({ ...anime, status: anime.status ?? 'Latest promo' })),
     { ...options, cacheContext: 'latest-promo', useDailyCacheKey: true },
   ).catch(() => []);
 }
@@ -1208,12 +1147,12 @@ export async function searchAnimeWithQuery(query: AnimeSearchQuery): Promise<Ani
   if (query.producers && query.producers.length > 0) params.set('producers', query.producers.join(','));
 
   const effectiveAllowNsfw = query.sfw === true ? false : prefs.allowNsfw;
-  const path = withJikanContentFlags(`/anime?${params.toString()}`, {
+  const path = withTenraiContentFlags(`/anime?${params.toString()}`, {
     allowNsfw: effectiveAllowNsfw,
   });
 
   return cachedFetch(path, HOUR, (json) => {
-    const payload = json as JikanPagedListResponse;
+    const payload = json as TenraiPagedListResponse;
     return {
       data: (payload.data ?? []).map(normalizeAnime),
       pagination: {
@@ -1240,14 +1179,14 @@ export function getAnimeDetails(id: string | number) {
   return cachedFetch(
     `/anime/${id}/full`,
     HOUR,
-    (json) => normalizeDetail((json as JikanDetailResponse).data),
+    (json) => normalizeDetail((json as TenraiDetailResponse).data),
     { cacheContext: `anime-detail:${normalizedId}`, useDailyCacheKey: true },
   )
     .then(async (detail) => {
-      const cache = await getStoredValue('jikanCache', {});
+      const cache = await getStoredValue('tenraiCache', {});
       const now = Date.now();
       const mergedMap = mergeEntityMap(readAnimeEntityMap(cache), [detail]);
-      await setStoredValue('jikanCache', {
+      await setStoredValue('tenraiCache', {
         ...cache,
         [ANIME_ENTITY_CACHE_KEY]: { value: mergedMap, savedAt: now, expiresAt: now + ANIME_ENTITY_TTL },
       });
@@ -1262,7 +1201,7 @@ export function getAnimeEpisodes(id: string | number, page = 1) {
   const safePage = Math.max(1, Math.floor(page));
   return withTimeout(
     cachedFetch(`/anime/${id}/episodes?page=${safePage}`, 2 * HOUR, (json) => {
-      const payload = json as JikanEpisodeListResponse;
+      const payload = json as TenraiEpisodeListResponse;
       const episodes = (payload.data ?? []).map((item, index) => normalizeEpisodeListItem(item, index + 1));
       return {
         data: episodes,
@@ -1273,7 +1212,7 @@ export function getAnimeEpisodes(id: string | number, page = 1) {
       };
     }),
     EPISODE_ENDPOINT_TIMEOUT_MS,
-    'Jikan episode list request timed out',
+    'Tenrai episode list request timed out',
   ).catch(() => ({
     data: [] as AnimeEpisode[],
     pagination: {
@@ -1309,10 +1248,10 @@ export function getAnimeEpisodeById(id: string | number, episode: number) {
   const safeEpisode = Math.max(1, Math.floor(episode));
   return withTimeout(
     cachedFetch(`/anime/${id}/episodes/${safeEpisode}`, 2 * HOUR, (json) =>
-      normalizeEpisodeDetailItem((json as JikanEpisodeDetailResponse).data, safeEpisode),
+      normalizeEpisodeDetailItem((json as TenraiEpisodeDetailResponse).data, safeEpisode),
     ),
     EPISODE_ENDPOINT_TIMEOUT_MS,
-    'Jikan episode detail request timed out',
+    'Tenrai episode detail request timed out',
   )
     .then(async (detail) => {
       await patchCachedEpisodeListEntries(id, detail).catch(() => {
@@ -1327,7 +1266,7 @@ export function getAnimeEpisodeById(id: string | number, episode: number) {
 
 export function getAnimeGenres(filter: AnimeGenreFilterType = 'genres') {
   return cachedFetch(`/genres/anime?filter=${encodeURIComponent(filter)}`, 24 * HOUR, (json) =>
-    (json as JikanGenresResponse).data.map((genre) => ({
+    (json as TenraiGenresResponse).data.map((genre) => ({
       mal_id: genre.mal_id ?? 0,
       name: genre.name,
       count: genre.count ?? 0,
@@ -1339,7 +1278,7 @@ export function getAnimeGenres(filter: AnimeGenreFilterType = 'genres') {
   ).catch(() => []);
 }
 
-function normalizeProducer(entry: JikanProducer): ProducerSummary {
+function normalizeProducer(entry: TenraiProducer): ProducerSummary {
   const fromTitles = (entry.titles ?? [])
     .map((titleEntry) => titleEntry.title?.trim() ?? '')
     .find((title) => title.length > 0);
@@ -1362,7 +1301,7 @@ export function searchProducers(query: ProducerSearchQuery = {}): Promise<Produc
 
   const path = `/producers${params.toString() ? `?${params.toString()}` : ''}`;
   return cachedFetch(path, 12 * HOUR, (json) => {
-    const payload = json as JikanProducerListResponse;
+    const payload = json as TenraiProducerListResponse;
     return {
       data: (payload.data ?? []).map(normalizeProducer),
       pagination: {
@@ -1386,7 +1325,7 @@ export function searchProducers(query: ProducerSearchQuery = {}): Promise<Produc
 
 export async function refreshHomeShelvesIfNeeded(limit = 20, callbacks: HomeRefreshCallbacks = {}) {
   const now = Date.now();
-  const meta = await getStoredValue('jikanMeta', {});
+  const meta = await getStoredValue('tenraiMeta', {});
   const lastRefresh = Number(meta[HOME_BACKGROUND_REFRESH_KEY] ?? 0);
   if (Number.isFinite(lastRefresh) && now - lastRefresh < HOME_BACKGROUND_REFRESH_INTERVAL_MS) return;
 
@@ -1399,8 +1338,8 @@ export async function refreshHomeShelvesIfNeeded(limit = 20, callbacks: HomeRefr
     const hasSuccess = results.some((result) => result.status === 'fulfilled');
     if (!hasSuccess) return;
 
-    const latestMeta = await getStoredValue('jikanMeta', {});
-    await setStoredValue('jikanMeta', {
+    const latestMeta = await getStoredValue('tenraiMeta', {});
+    await setStoredValue('tenraiMeta', {
       ...latestMeta,
       [HOME_BACKGROUND_REFRESH_KEY]: now,
     });

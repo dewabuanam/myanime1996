@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
+import { getTenraiDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import type {
   AnimeSummary,
   LibraryAnimeItem,
@@ -28,7 +28,7 @@ import {
   probeAnimeScheduleApiHealth,
   type AnimeScheduleApiHealthEvent,
 } from '../services/animeSchedule';
-import { clearJikanDataCache, onJikanApiHealth, probeJikanApiHealth, type JikanApiHealthEvent } from '../services/jikan';
+import { clearTenraiDataCache, onTenraiApiHealth, probeTenraiApiHealth, type TenraiApiHealthEvent } from '../services/tenrai';
 import {
   getStoredValue,
   migrateLegacyStoreDataToProfile,
@@ -37,6 +37,7 @@ import {
   setActiveStoreProfile,
   setStoredValue,
 } from '../services/store';
+import { migrateJikanStoreDataToTenrai } from '../services/tenraiMigration';
 import { importSourcePluginFromPicker } from '../services/pluginImport';
 import { getAvailableSourcePlugins, getDefaultPluginPriority } from '../services/sourceResolver';
 import { clearSourceResolveCache } from '../services/sourceCache';
@@ -53,7 +54,7 @@ const WATCH_COMPLETE_THRESHOLD_PERCENT = 90;
 let animeScheduleRateLimitListenerBound = false;
 let apiHealthListenerBound = false;
 
-export type ApiHealthService = 'animeSchedule' | 'jikan' | 'aniSkip';
+export type ApiHealthService = 'animeSchedule' | 'tenrai' | 'aniSkip';
 
 export type ApiHealthRuntimeEntry = {
   lastSuccessAt: number | null;
@@ -76,7 +77,7 @@ function createDefaultApiHealthRuntimeEntry(): ApiHealthRuntimeEntry {
 function createDefaultApiHealthRuntimeState(): ApiHealthRuntimeState {
   return {
     animeSchedule: createDefaultApiHealthRuntimeEntry(),
-    jikan: createDefaultApiHealthRuntimeEntry(),
+    tenrai: createDefaultApiHealthRuntimeEntry(),
     aniSkip: createDefaultApiHealthRuntimeEntry(),
   };
 }
@@ -99,7 +100,9 @@ function normalizeApiHealthRuntimeState(value: unknown): ApiHealthRuntimeState {
   const source = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   return {
     animeSchedule: normalizeApiHealthRuntimeEntry(source.animeSchedule),
-    jikan: normalizeApiHealthRuntimeEntry(source.jikan),
+    // `source.jikan` is the pre-Tenrai key; kept as a read fallback for stores that
+    // have not been through migrateJikanStoreDataToTenrai() yet.
+    tenrai: normalizeApiHealthRuntimeEntry(source.tenrai ?? source.jikan),
     aniSkip: normalizeApiHealthRuntimeEntry(source.aniSkip),
   };
 }
@@ -107,7 +110,7 @@ function normalizeApiHealthRuntimeState(value: unknown): ApiHealthRuntimeState {
 function applyApiHealthEvent(
   current: ApiHealthRuntimeState,
   service: ApiHealthService,
-  event: AnimeScheduleApiHealthEvent | JikanApiHealthEvent | AniSkipApiHealthEvent,
+  event: AnimeScheduleApiHealthEvent | TenraiApiHealthEvent | AniSkipApiHealthEvent,
 ): ApiHealthRuntimeState {
   const entry = current[service] ?? createDefaultApiHealthRuntimeEntry();
   const occurredAt = Number.isFinite(event.occurredAt) ? event.occurredAt : Date.now();
@@ -141,9 +144,9 @@ function bindApiHealthListenersOnce(setState: (fn: (state: AppState) => Partial<
     });
   });
 
-  onJikanApiHealth((event) => {
+  onTenraiApiHealth((event) => {
     setState((state) => {
-      const apiHealthRuntime = applyApiHealthEvent(state.apiHealthRuntime, 'jikan', event);
+      const apiHealthRuntime = applyApiHealthEvent(state.apiHealthRuntime, 'tenrai', event);
       void setStoredValue('apiHealthRuntime', apiHealthRuntime);
       return { apiHealthRuntime };
     });
@@ -251,25 +254,25 @@ function bindBackendSchedulerEventListener(getState: () => AppState) {
 
         backendHomeRefreshInFlight = true;
         void (async () => {
-          const [beforeJikanMeta, beforeAnimeScheduleMeta] = await Promise.all([
-            getStoredValue('jikanMeta', {} as Record<string, string | number | boolean>),
+          const [beforeTenraiMeta, beforeAnimeScheduleMeta] = await Promise.all([
+            getStoredValue('tenraiMeta', {} as Record<string, string | number | boolean>),
             getStoredValue('animeScheduleMeta', {} as Record<string, string | number | boolean>),
           ]);
 
           await refreshHomeShelvesIfNeeded(20);
 
-          const [afterJikanMeta, afterAnimeScheduleMeta] = await Promise.all([
-            getStoredValue('jikanMeta', {} as Record<string, string | number | boolean>),
+          const [afterTenraiMeta, afterAnimeScheduleMeta] = await Promise.all([
+            getStoredValue('tenraiMeta', {} as Record<string, string | number | boolean>),
             getStoredValue('animeScheduleMeta', {} as Record<string, string | number | boolean>),
           ]);
 
-          const beforeJikanRefreshAt = Number(beforeJikanMeta.homeShelvesLastRefreshAt ?? 0);
-          const afterJikanRefreshAt = Number(afterJikanMeta.homeShelvesLastRefreshAt ?? 0);
+          const beforeTenraiRefreshAt = Number(beforeTenraiMeta.homeShelvesLastRefreshAt ?? 0);
+          const afterTenraiRefreshAt = Number(afterTenraiMeta.homeShelvesLastRefreshAt ?? 0);
           const beforeAnimeScheduleRefreshAt = Number(beforeAnimeScheduleMeta.homeShelvesLastRefreshAt ?? 0);
           const afterAnimeScheduleRefreshAt = Number(afterAnimeScheduleMeta.homeShelvesLastRefreshAt ?? 0);
 
           const hasCatalogRefreshUpdate =
-            afterJikanRefreshAt > beforeJikanRefreshAt ||
+            afterTenraiRefreshAt > beforeTenraiRefreshAt ||
             afterAnimeScheduleRefreshAt > beforeAnimeScheduleRefreshAt;
 
           if (hasCatalogRefreshUpdate) {
@@ -450,7 +453,7 @@ interface AppState {
   toggleFavorite: (animeId: number) => Promise<void>;
   setAnimeLibraryStatus: (anime: AnimeSummary, status: LibraryStatus) => Promise<void>;
   removeAnimeFromLibrary: (animeId: number) => Promise<void>;
-  getLibraryStatusForAnime: (animeId: number, jikanId?: number) => LibraryStatus | null;
+  getLibraryStatusForAnime: (animeId: number, tenraiId?: number) => LibraryStatus | null;
   setLibraryStatusNotificationEnabled: (status: LibraryStatus, enabled: boolean) => Promise<void>;
   markLibraryNotificationRead: (notificationId: string) => void;
   playLibraryNotification: (notificationId: string) => Promise<void>;
@@ -519,7 +522,7 @@ interface AppState {
   dismissAnimeScheduleRateLimitGuideForToday: () => Promise<void>;
   removeHistoryItem: (animeId: number) => Promise<void>;
   clearHistory: () => Promise<void>;
-  clearJikanCache: () => Promise<void>;
+  clearTenraiCache: () => Promise<void>;
   exportUserData: () => Promise<Record<string, unknown>>;
   importUserData: (payload: unknown) => Promise<void>;
   factoryReset: () => Promise<void>;
@@ -553,7 +556,7 @@ function normalizeAppTheme(value: unknown): AppTheme {
 }
 
 function normalizeBaseCatalogSource(value: unknown): BaseCatalogSource {
-  return value === 'jikan' ? 'jikan' : DEFAULT_BASE_CATALOG_SOURCE;
+  return value === 'tenrai' ? 'tenrai' : DEFAULT_BASE_CATALOG_SOURCE;
 }
 
 function normalizeAnimeScheduleApiToken(value: unknown): string {
@@ -746,8 +749,8 @@ function createPlayableItemId(animeId: number, kind: PlayableKind, marker: strin
   return `${animeId}:${kind}:${marker}:${nonce}`;
 }
 
-function getCanonicalAnimeId(anime: Pick<AnimeSummary, 'id' | 'jikanId'>) {
-  const preferred = Number(anime.jikanId);
+function getCanonicalAnimeId(anime: Pick<AnimeSummary, 'id' | 'tenraiId'>) {
+  const preferred = Number(anime.tenraiId);
   if (Number.isFinite(preferred) && preferred > 0) {
     return Math.floor(preferred);
   }
@@ -768,9 +771,9 @@ function findWatchProgressEntryForAnime(
     Math.max(1, Math.floor(Number(anime.id) || 1)),
   ]);
 
-  const jikanId = Number(anime.jikanId);
-  if (Number.isFinite(jikanId) && jikanId > 0) {
-    candidateIds.add(Math.floor(jikanId));
+  const tenraiId = Number(anime.tenraiId);
+  if (Number.isFinite(tenraiId) && tenraiId > 0) {
+    candidateIds.add(Math.floor(tenraiId));
   }
 
   for (const id of candidateIds) {
@@ -880,21 +883,21 @@ function buildQueuePlayableItems(anime: AnimeSummary): PlayableItem[] {
   return Array.from({ length: latestEpisode }, (_, index) => makeEpisodeItem(anime, index + 1, 'anime-card'));
 }
 
-function animeMatchesCanonicalId(anime: Pick<AnimeSummary, 'id' | 'jikanId'> | null | undefined, targetAnimeId: number) {
+function animeMatchesCanonicalId(anime: Pick<AnimeSummary, 'id' | 'tenraiId'> | null | undefined, targetAnimeId: number) {
   if (!anime) return false;
   const canonicalId = getCanonicalAnimeId(anime);
   if (canonicalId === targetAnimeId) return true;
   const rawId = Math.floor(Number(anime.id) || 0);
   if (rawId > 0 && rawId === targetAnimeId) return true;
-  const rawJikanId = Math.floor(Number(anime.jikanId) || 0);
-  return rawJikanId > 0 && rawJikanId === targetAnimeId;
+  const rawTenraiId = Math.floor(Number(anime.tenraiId) || 0);
+  return rawTenraiId > 0 && rawTenraiId === targetAnimeId;
 }
 
 function animeSummaryFromLibraryItem(item: LibraryAnimeItem): AnimeSummary {
-  const canonicalAnimeId = resolveLibraryAnimeId(item.animeId, item.jikanId);
+  const canonicalAnimeId = resolveLibraryAnimeId(item.animeId, item.tenraiId);
   return {
     id: canonicalAnimeId,
-    jikanId: item.jikanId,
+    tenraiId: item.tenraiId,
     animeScheduleRoute: item.animeScheduleRoute,
     title: item.title,
     titleEnglish: item.titleEnglish,
@@ -911,10 +914,10 @@ function animeSummaryFromLibraryItem(item: LibraryAnimeItem): AnimeSummary {
 }
 
 function animeSummaryFromWatchProgress(entry: WatchProgress): AnimeSummary {
-  const canonicalAnimeId = resolveLibraryAnimeId(entry.animeId, entry.jikanId);
+  const canonicalAnimeId = resolveLibraryAnimeId(entry.animeId, entry.tenraiId);
   return {
     id: canonicalAnimeId,
-    jikanId: entry.jikanId,
+    tenraiId: entry.tenraiId,
     animeScheduleRoute: entry.animeScheduleRoute,
     title: entry.title,
     titleEnglish: entry.titleEnglish,
@@ -936,11 +939,11 @@ function resolvePlaylistAnimeSummary(current: AppState, animeId: number): AnimeS
     : null;
   const directLibrary = current.libraryItems[animeId];
   const matchedLibrary = directLibrary
-    ?? Object.values(current.libraryItems).find((item) => resolveLibraryAnimeId(item.animeId, item.jikanId) === animeId)
+    ?? Object.values(current.libraryItems).find((item) => resolveLibraryAnimeId(item.animeId, item.tenraiId) === animeId)
     ?? null;
   const directProgress = current.watchProgress[animeId];
   const matchedProgress = directProgress
-    ?? Object.values(current.watchProgress).find((entry) => resolveLibraryAnimeId(entry.animeId, entry.jikanId) === animeId)
+    ?? Object.values(current.watchProgress).find((entry) => resolveLibraryAnimeId(entry.animeId, entry.tenraiId) === animeId)
     ?? null;
 
   if (currentPlayingMatch) return currentPlayingMatch;
@@ -951,7 +954,7 @@ function resolvePlaylistAnimeSummary(current: AppState, animeId: number): AnimeS
 
   return {
     id: animeId,
-    jikanId: animeId,
+    tenraiId: animeId,
     title: `Anime #${animeId}`,
     image: DEFAULT_NOTIFICATION_POSTER,
     synopsis: '',
@@ -980,12 +983,12 @@ async function buildPlayableItemsForAnimePlaylist(current: AppState, animeIds: n
 
       const episodeResolution = await resolveQueueEpisodeResolution(resolvedAnime).catch(() => ({
         latestEpisode: Math.max(1, Math.floor(Number(resolvedAnime.currentEpisode) || 0) || 1),
-        resolvedJikanId: resolvedAnime.jikanId,
+        resolvedTenraiId: resolvedAnime.tenraiId,
       }));
 
       return {
         ...resolvedAnime,
-        jikanId: resolvedAnime.jikanId ?? episodeResolution.resolvedJikanId,
+        tenraiId: resolvedAnime.tenraiId ?? episodeResolution.resolvedTenraiId,
         currentEpisode: Math.max(1, episodeResolution.latestEpisode),
       } as AnimeSummary;
     }),
@@ -994,24 +997,24 @@ async function buildPlayableItemsForAnimePlaylist(current: AppState, animeIds: n
   return resolvedAnimeItems.flatMap((anime) => buildQueuePlayableItems(anime));
 }
 
-async function resolveQueueEpisodeResolution(anime: AnimeSummary): Promise<{ latestEpisode: number; resolvedJikanId?: number }> {
+async function resolveQueueEpisodeResolution(anime: AnimeSummary): Promise<{ latestEpisode: number; resolvedTenraiId?: number }> {
   let latestEpisode = Math.max(1, Math.floor(Number(anime.currentEpisode) || 0));
-  let resolvedJikanId = Number.isFinite(anime.jikanId) && Number(anime.jikanId) > 0
-    ? Math.floor(Number(anime.jikanId))
+  let resolvedTenraiId = Number.isFinite(anime.tenraiId) && Number(anime.tenraiId) > 0
+    ? Math.floor(Number(anime.tenraiId))
     : undefined;
 
-  if (!resolvedJikanId) {
-    resolvedJikanId = await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
+  if (!resolvedTenraiId) {
+    resolvedTenraiId = await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
   }
 
-  if (resolvedJikanId && resolvedJikanId > 0) {
-    const bundle = await getJikanDetailEpisodeBundle(resolvedJikanId, 1).catch(() => null);
+  if (resolvedTenraiId && resolvedTenraiId > 0) {
+    const bundle = await getTenraiDetailEpisodeBundle(resolvedTenraiId, 1).catch(() => null);
     latestEpisode = Math.max(latestEpisode, Math.floor(Number(bundle?.detail.currentEpisode) || 0));
   }
 
   return {
     latestEpisode: Math.max(1, latestEpisode),
-    resolvedJikanId,
+    resolvedTenraiId,
   };
 }
 
@@ -1026,8 +1029,8 @@ function toSafeNumber(value: unknown) {
 
 function normalizeWatchProgressEntry(entry: WatchProgress) {
   const animeId = Math.max(1, Math.round(toSafeNumber(entry.animeId)));
-  const jikanIdRaw = Math.round(toSafeNumber(entry.jikanId));
-  const jikanId = jikanIdRaw > 0 ? jikanIdRaw : undefined;
+  const tenraiIdRaw = Math.round(toSafeNumber(entry.tenraiId));
+  const tenraiId = tenraiIdRaw > 0 ? tenraiIdRaw : undefined;
   const animeScheduleRoute = typeof entry.animeScheduleRoute === 'string' && entry.animeScheduleRoute.trim().length > 0
     ? entry.animeScheduleRoute.trim()
     : undefined;
@@ -1050,7 +1053,7 @@ function normalizeWatchProgressEntry(entry: WatchProgress) {
 
   return {
     animeId,
-    jikanId,
+    tenraiId,
     animeScheduleRoute,
     title: String(entry.title || '').trim(),
     titleEnglish: entry.titleEnglish,
@@ -1176,11 +1179,11 @@ function normalizeLibraryItems(value: unknown): Record<number, LibraryAnimeItem>
     if (!isLibraryStatus(item.status)) continue;
     const animeId = Math.max(1, Math.floor(Number(item.animeId) || 0));
     if (!animeId) continue;
-    const jikanIdRaw = Math.floor(Number(item.jikanId) || 0);
-    const canonicalAnimeId = jikanIdRaw > 0 ? jikanIdRaw : animeId;
+    const tenraiIdRaw = Math.floor(Number(item.tenraiId) || 0);
+    const canonicalAnimeId = tenraiIdRaw > 0 ? tenraiIdRaw : animeId;
     const nextItem: LibraryAnimeItem = {
       animeId: canonicalAnimeId,
-      jikanId: jikanIdRaw > 0 ? jikanIdRaw : undefined,
+      tenraiId: tenraiIdRaw > 0 ? tenraiIdRaw : undefined,
       animeScheduleRoute: typeof item.animeScheduleRoute === 'string' ? item.animeScheduleRoute : undefined,
       title: typeof item.title === 'string' && item.title.trim().length > 0 ? item.title : 'Unknown Title',
       titleEnglish: typeof item.titleEnglish === 'string' ? item.titleEnglish : undefined,
@@ -1218,7 +1221,7 @@ function buildLibraryItemFromAnime(anime: AnimeSummary, status: LibraryStatus, e
   const canonicalAnimeId = getCanonicalAnimeId(anime);
   return {
     animeId: canonicalAnimeId,
-    jikanId: anime.jikanId,
+    tenraiId: anime.tenraiId,
     animeScheduleRoute: anime.animeScheduleRoute,
     title: anime.title,
     titleEnglish: anime.titleEnglish,
@@ -1234,10 +1237,10 @@ function buildLibraryItemFromAnime(anime: AnimeSummary, status: LibraryStatus, e
   };
 }
 
-function resolveLibraryAnimeId(animeId: number, jikanId: number | undefined) {
+function resolveLibraryAnimeId(animeId: number, tenraiId: number | undefined) {
   const parsedAnimeId = Math.max(1, Math.floor(Number(animeId) || 0));
-  const parsedJikanId = Math.max(1, Math.floor(Number(jikanId) || 0));
-  return parsedJikanId > 0 ? parsedJikanId : parsedAnimeId;
+  const parsedTenraiId = Math.max(1, Math.floor(Number(tenraiId) || 0));
+  return parsedTenraiId > 0 ? parsedTenraiId : parsedAnimeId;
 }
 
 function isTauriRuntime() {
@@ -1484,14 +1487,14 @@ function findLibraryNotificationAnime(
 ): AnimeSummary | null {
   const direct = libraryItems[notification.animeId];
   const byCanonical = Object.values(libraryItems).find(
-    (item) => resolveLibraryAnimeId(item.animeId, item.jikanId) === notification.animeId,
+    (item) => resolveLibraryAnimeId(item.animeId, item.tenraiId) === notification.animeId,
   );
   const source = direct ?? byCanonical;
   if (!source) return null;
 
   return {
-    id: source.jikanId ?? source.animeId,
-    jikanId: source.jikanId,
+    id: source.tenraiId ?? source.animeId,
+    tenraiId: source.tenraiId,
     animeScheduleRoute: source.animeScheduleRoute,
     title: source.title,
     titleEnglish: source.titleEnglish,
@@ -1621,7 +1624,7 @@ function normalizePlaylists(value: unknown): Playlist[] {
               if (!entry || typeof entry !== 'object') return null;
               const maybeEntry = entry as {
                 animeId?: unknown;
-                jikanId?: unknown;
+                tenraiId?: unknown;
                 animeScheduleRoute?: unknown;
                 title?: unknown;
                 titleEnglish?: unknown;
@@ -1632,13 +1635,13 @@ function normalizePlaylists(value: unknown): Playlist[] {
               };
               const animeId = Math.max(1, Math.floor(Number(maybeEntry.animeId) || 0));
               if (animeId <= 0) return null;
-              const jikanIdRaw = Math.floor(Number(maybeEntry.jikanId) || 0);
-              const jikanId = jikanIdRaw > 0 ? jikanIdRaw : undefined;
+              const tenraiIdRaw = Math.floor(Number(maybeEntry.tenraiId) || 0);
+              const tenraiId = tenraiIdRaw > 0 ? tenraiIdRaw : undefined;
               const currentEpisodeRaw = Math.floor(Number(maybeEntry.currentEpisode) || 0);
               const currentEpisode = currentEpisodeRaw > 0 ? currentEpisodeRaw : undefined;
               return {
                 animeId,
-                jikanId,
+                tenraiId,
                 animeScheduleRoute: typeof maybeEntry.animeScheduleRoute === 'string' ? maybeEntry.animeScheduleRoute : undefined,
                 title: typeof maybeEntry.title === 'string' && maybeEntry.title.trim().length > 0 ? maybeEntry.title.trim() : `Anime #${animeId}`,
                 titleEnglish: typeof maybeEntry.titleEnglish === 'string' ? maybeEntry.titleEnglish : undefined,
@@ -1695,7 +1698,7 @@ function toPlaylistAnimeEntry(anime: AnimeSummary, canonicalAnimeId: number, cur
   const safeEpisode = Math.max(0, Math.floor(Number(currentEpisode ?? anime.currentEpisode) || 0)) || undefined;
   return {
     animeId: canonicalAnimeId,
-    jikanId: anime.jikanId,
+    tenraiId: anime.tenraiId,
     animeScheduleRoute: anime.animeScheduleRoute,
     title: anime.title,
     titleEnglish: anime.titleEnglish,
@@ -1862,6 +1865,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialize: async () => {
     try {
       setActiveStoreProfile(null);
+      await migrateJikanStoreDataToTenrai();
       const [
         session,
         isSidebarCompact,
@@ -2709,7 +2713,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const episodeResolution = await resolveQueueEpisodeResolution(anime);
     const queueAnime: AnimeSummary = {
       ...anime,
-      jikanId: anime.jikanId ?? episodeResolution.resolvedJikanId,
+      tenraiId: anime.tenraiId ?? episodeResolution.resolvedTenraiId,
       currentEpisode: episodeResolution.latestEpisode,
     };
     const items = buildQueuePlayableItems(queueAnime);
@@ -2740,7 +2744,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().replaceQueueAndPlay([makeTrailerItem(trailerAnime)], 0);
 
     if (!trailerAnime.trailerUrl?.trim()) {
-      const detailAnimeId = anime.jikanId ?? anime.id;
+      const detailAnimeId = anime.tenraiId ?? anime.id;
       const resolvedTrailerUrl = await getAnimeTrailerUrl(detailAnimeId);
       if (resolvedTrailerUrl?.trim()) {
         trailerAnime = {
@@ -2756,7 +2760,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const episodeResolution = await resolveQueueEpisodeResolution(anime);
     const queueAnime: AnimeSummary = {
       ...anime,
-      jikanId: anime.jikanId ?? episodeResolution.resolvedJikanId,
+      tenraiId: anime.tenraiId ?? episodeResolution.resolvedTenraiId,
       currentEpisode: episodeResolution.latestEpisode,
     };
     const additions = buildQueuePlayableItems(queueAnime);
@@ -2869,17 +2873,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addAnimeToPlaylist: async (playlistId, anime) => {
-    const resolvedJikanId = anime.jikanId ?? await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
-    const canonicalId = resolvedJikanId && resolvedJikanId > 0
-      ? Math.floor(resolvedJikanId)
+    const resolvedTenraiId = anime.tenraiId ?? await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
+    const canonicalId = resolvedTenraiId && resolvedTenraiId > 0
+      ? Math.floor(resolvedTenraiId)
       : getCanonicalAnimeId(anime);
     const episodeResolution = await resolveQueueEpisodeResolution({
       ...anime,
-      jikanId: resolvedJikanId ?? anime.jikanId,
+      tenraiId: resolvedTenraiId ?? anime.tenraiId,
     }).catch(() => null);
     const queueAnime: AnimeSummary = {
       ...anime,
-      jikanId: resolvedJikanId ?? anime.jikanId,
+      tenraiId: resolvedTenraiId ?? anime.tenraiId,
       currentEpisode: episodeResolution?.latestEpisode ?? anime.currentEpisode,
     };
     const videoAdditions = buildQueuePlayableItems(queueAnime);
@@ -3055,7 +3059,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const convertedVideoItems = playlist.animeIds.map((animeId) =>
           toPlaylistVideoFromAnime({
             id: animeId,
-            jikanId: animeId,
+            tenraiId: animeId,
             title: `Anime #${animeId}`,
             image: playlist.image || DEFAULT_NOTIFICATION_POSTER,
             synopsis: '',
@@ -3075,7 +3079,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const convertedAnimeIds = Array.from(new Set(playlist.videoItems.map((item) => extractPlaylistAnimeIdFromVideo(item))));
       const convertedAnimeItems = convertedAnimeIds.map((animeId) => ({
         animeId,
-        jikanId: animeId,
+        tenraiId: animeId,
         title: `Anime #${animeId}`,
         image: playlist.image || DEFAULT_NOTIFICATION_POSTER,
       }));
@@ -3326,7 +3330,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const entry: WatchProgress = {
       animeId: canonicalAnimeId,
-      jikanId: anime.jikanId,
+      tenraiId: anime.tenraiId,
       animeScheduleRoute: anime.animeScheduleRoute,
       title: anime.title,
       titleEnglish: anime.titleEnglish,
@@ -3362,25 +3366,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     const current = get();
     const initialAnimeId = getCanonicalAnimeId(anime);
 
-    let canonicalJikanId = Number.isFinite(anime.jikanId) && Number(anime.jikanId) > 0
-      ? Math.floor(Number(anime.jikanId))
+    let canonicalTenraiId = Number.isFinite(anime.tenraiId) && Number(anime.tenraiId) > 0
+      ? Math.floor(Number(anime.tenraiId))
       : undefined;
 
-    if (!canonicalJikanId) {
-      canonicalJikanId = await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
+    if (!canonicalTenraiId) {
+      canonicalTenraiId = await resolveCanonicalDetailRouteId(anime).catch(() => undefined);
     }
 
-    let resolvedAnime: AnimeSummary = canonicalJikanId ? { ...anime, jikanId: canonicalJikanId } : anime;
-    let jikanDetailBundle: Awaited<ReturnType<typeof getJikanDetailEpisodeBundle>> | null = null;
+    let resolvedAnime: AnimeSummary = canonicalTenraiId ? { ...anime, tenraiId: canonicalTenraiId } : anime;
+    let tenraiDetailBundle: Awaited<ReturnType<typeof getTenraiDetailEpisodeBundle>> | null = null;
 
-    if (canonicalJikanId) {
-      jikanDetailBundle = await getJikanDetailEpisodeBundle(canonicalJikanId, 1).catch(() => null);
-      const detail = jikanDetailBundle?.detail;
+    if (canonicalTenraiId) {
+      tenraiDetailBundle = await getTenraiDetailEpisodeBundle(canonicalTenraiId, 1).catch(() => null);
+      const detail = tenraiDetailBundle?.detail;
       if (detail) {
         resolvedAnime = {
           ...anime,
-          id: canonicalJikanId,
-          jikanId: canonicalJikanId,
+          id: canonicalTenraiId,
+          tenraiId: canonicalTenraiId,
           title: detail.title || anime.title,
           titleEnglish: detail.titleEnglish ?? anime.titleEnglish,
           titleJapanese: detail.titleJapanese ?? anime.titleJapanese,
@@ -3400,7 +3404,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const animeId = getCanonicalAnimeId(resolvedAnime);
     const existing = Object.values(current.libraryItems).find(
-      (item) => resolveLibraryAnimeId(item.animeId, item.jikanId) === animeId,
+      (item) => resolveLibraryAnimeId(item.animeId, item.tenraiId) === animeId,
     );
     const libraryLastNotifiedEpisodeByAnimeId = { ...current.libraryLastNotifiedEpisodeByAnimeId };
 
@@ -3410,8 +3414,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
 
     if (!existing && baselineEpisode <= 0) {
-      const bundle = canonicalJikanId
-        ? (jikanDetailBundle ?? await getJikanDetailEpisodeBundle(canonicalJikanId, 1).catch(() => null))
+      const bundle = canonicalTenraiId
+        ? (tenraiDetailBundle ?? await getTenraiDetailEpisodeBundle(canonicalTenraiId, 1).catch(() => null))
         : null;
       const resolvedLatestEpisode = Math.max(
         0,
@@ -3430,8 +3434,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     if (!existing && baselineEpisode > 0) {
       libraryLastNotifiedEpisodeByAnimeId[animeId] = baselineEpisode;
-      if (resolvedAnime.jikanId && resolvedAnime.jikanId > 0) {
-        libraryLastNotifiedEpisodeByAnimeId[Math.floor(resolvedAnime.jikanId)] = baselineEpisode;
+      if (resolvedAnime.tenraiId && resolvedAnime.tenraiId > 0) {
+        libraryLastNotifiedEpisodeByAnimeId[Math.floor(resolvedAnime.tenraiId)] = baselineEpisode;
       }
     }
 
@@ -3439,7 +3443,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const duplicateIds: number[] = [];
     for (const [rawId, item] of Object.entries(libraryItems)) {
       const itemId = Math.max(1, Math.floor(Number(rawId) || 0));
-      const itemCanonicalId = resolveLibraryAnimeId(item.animeId, item.jikanId);
+      const itemCanonicalId = resolveLibraryAnimeId(item.animeId, item.tenraiId);
       if (itemCanonicalId !== animeId) continue;
       duplicateIds.push(itemId);
       delete libraryItems[itemId];
@@ -3480,13 +3484,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const candidateIds = new Set<number>([normalizedAnimeId]);
 
     const byId = libraryItems[normalizedAnimeId];
-    if (byId?.jikanId) {
-      candidateIds.add(Math.max(1, Math.floor(byId.jikanId)));
+    if (byId?.tenraiId) {
+      candidateIds.add(Math.max(1, Math.floor(byId.tenraiId)));
     }
 
     for (const [itemIdRaw, item] of Object.entries(libraryItems)) {
       const itemId = Math.max(1, Math.floor(Number(itemIdRaw) || 0));
-      if (candidateIds.has(itemId) || candidateIds.has(Math.max(1, Math.floor(item.jikanId || 0)))) {
+      if (candidateIds.has(itemId) || candidateIds.has(Math.max(1, Math.floor(item.tenraiId || 0)))) {
         delete libraryItems[itemId];
       }
     }
@@ -3504,20 +3508,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ libraryItems, libraryLastNotifiedEpisodeByAnimeId });
   },
 
-  getLibraryStatusForAnime: (animeId, jikanId) => {
+  getLibraryStatusForAnime: (animeId, tenraiId) => {
     const current = get();
     const targetAnimeId = Math.max(1, Math.floor(Number(animeId) || 0));
-    const targetJikanId = Math.max(1, Math.floor(Number(jikanId) || 0));
+    const targetTenraiId = Math.max(1, Math.floor(Number(tenraiId) || 0));
 
     const direct = current.libraryItems[targetAnimeId];
     if (direct) return direct.status;
 
-    if (targetJikanId > 0 && current.libraryItems[targetJikanId]) {
-      return current.libraryItems[targetJikanId].status;
+    if (targetTenraiId > 0 && current.libraryItems[targetTenraiId]) {
+      return current.libraryItems[targetTenraiId].status;
     }
 
-    const byJikan = Object.values(current.libraryItems).find((item) => item.jikanId && Math.floor(item.jikanId) === targetJikanId);
-    return byJikan?.status ?? null;
+    const byTenrai = Object.values(current.libraryItems).find((item) => item.tenraiId && Math.floor(item.tenraiId) === targetTenraiId);
+    return byTenrai?.status ?? null;
   },
 
   setLibraryStatusNotificationEnabled: async (status, enabled) => {
@@ -3672,16 +3676,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     let addedEpisodesCount = 0;
 
     for (const item of candidates) {
-      const detailJikanId = item.jikanId && item.jikanId > 0
-        ? Math.floor(item.jikanId)
+      const detailTenraiId = item.tenraiId && item.tenraiId > 0
+        ? Math.floor(item.tenraiId)
         : await resolveCanonicalDetailRouteId({
           id: item.animeId,
-          jikanId: item.jikanId,
+          tenraiId: item.tenraiId,
           animeScheduleRoute: item.animeScheduleRoute,
         }).catch(() => undefined);
-      if (!detailJikanId || detailJikanId <= 0) continue;
+      if (!detailTenraiId || detailTenraiId <= 0) continue;
 
-      const episodeBundle = await getJikanDetailEpisodeBundle(detailJikanId, 1).catch(() => null);
+      const episodeBundle = await getTenraiDetailEpisodeBundle(detailTenraiId, 1).catch(() => null);
       if (!episodeBundle?.detail) continue;
 
       const latestEpisode = Math.max(
@@ -3696,7 +3700,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      const resolvedAnimeId = resolveLibraryAnimeId(item.animeId, item.jikanId);
+      const resolvedAnimeId = resolveLibraryAnimeId(item.animeId, item.tenraiId);
       const lastNotifiedEpisode = Math.max(
         0,
         Math.floor(
@@ -4007,7 +4011,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await Promise.allSettled([
         probeAnimeScheduleApiHealth(),
-        probeJikanApiHealth(),
+        probeTenraiApiHealth(),
         probeAniSkipApiHealth(),
       ]);
     } finally {
@@ -4229,10 +4233,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ watchHistory: [], watchProgress: {} });
   },
 
-  clearJikanCache: async () => {
+  clearTenraiCache: async () => {
     clearPluginResolverCaches();
     await Promise.all([
-      clearJikanDataCache(),
+      clearTenraiDataCache(),
       clearAnimeScheduleDataCache(),
       clearSourceResolveCache(),
       clearAniSkipDataCache(),
@@ -4584,7 +4588,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       setStoredValue('watchProgress', {}),
       setStoredValue('sourceResolveCache', {}),
       setStoredValue('aniSkipCache', {}),
-      clearJikanDataCache(),
+      clearTenraiDataCache(),
       clearAnimeScheduleDataCache(),
       clearAniSkipDataCache(),
       removeStoredValue('localCredentials'),

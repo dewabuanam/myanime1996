@@ -126,7 +126,7 @@ export default function History() {
       };
     }
 
-    const candidateAnimeIds = [entry.animeId, entry.jikanId]
+    const candidateAnimeIds = [entry.animeId, entry.tenraiId]
       .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index);
     let latestKnownEpisode = Math.max(
       1,
@@ -165,7 +165,7 @@ export default function History() {
         : undefined;
     const anime = {
       id: entry.animeId,
-      jikanId: entry.jikanId,
+      tenraiId: entry.tenraiId,
       title: entry.title,
       titleEnglish: entry.titleEnglish,
       titleJapanese: entry.titleJapanese,
@@ -198,7 +198,7 @@ export default function History() {
         : undefined;
     const anime = {
       id: entry.animeId,
-      jikanId: entry.jikanId,
+      tenraiId: entry.tenraiId,
       title: entry.title,
       titleEnglish: entry.titleEnglish,
       titleJapanese: entry.titleJapanese,

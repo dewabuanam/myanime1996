@@ -9,9 +9,9 @@ import {
   getTopUpcomingAnime,
   refreshHomeShelvesIfNeeded,
   searchAnime,
-} from '../jikan';
+} from '../tenrai';
 
-export const jikanCatalogProvider: CatalogProvider = {
+export const tenraiCatalogProvider: CatalogProvider = {
   getTopAnime,
   getSeasonalAnime,
   getLatestUpdatedAnime,

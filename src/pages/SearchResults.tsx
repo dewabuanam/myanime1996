@@ -82,7 +82,7 @@ export default function SearchResults() {
   const [playlistPickerAnchorElement, setPlaylistPickerAnchorElement] = useState<HTMLElement | null>(null);
 
   const getResumePlan = (anime: AnimeSummary) => {
-    const canonicalAnimeId = anime.jikanId ?? anime.id;
+    const canonicalAnimeId = anime.tenraiId ?? anime.id;
     const entry = watchProgress[canonicalAnimeId] ?? watchProgress[anime.id];
     if (!entry) return null;
     if (entry.progress <= 0) return null;
@@ -123,7 +123,7 @@ export default function SearchResults() {
 
   const handleLibraryRemove = async () => {
     if (!libraryPickerAnime) return;
-    await removeAnimeFromLibrary(libraryPickerAnime.jikanId ?? libraryPickerAnime.id);
+    await removeAnimeFromLibrary(libraryPickerAnime.tenraiId ?? libraryPickerAnime.id);
     setLibraryPickerAnime(null);
   };
 
@@ -263,7 +263,7 @@ export default function SearchResults() {
           const isResumeAction = Boolean(resumePlan);
 
           return (
-            <article key={`${anime.id}-${anime.jikanId ?? 'none'}`} className="seeall-row-card group">
+            <article key={`${anime.id}-${anime.tenraiId ?? 'none'}`} className="seeall-row-card group">
               <div className="seeall-row-poster-wrap">
                 <img src={anime.image} alt="" className="seeall-row-poster" loading="lazy" />
                 <div className="seeall-row-poster-overlay" />
@@ -376,7 +376,7 @@ export default function SearchResults() {
         anchorElement={libraryPickerAnchorElement}
         initialStatus={
           libraryPickerAnime
-            ? getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.jikanId)
+            ? getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.tenraiId)
             : null
         }
         onClose={() => {
@@ -389,7 +389,7 @@ export default function SearchResults() {
           setLibraryPickerAnchorElement(null);
         }}
         onRemove={
-          libraryPickerAnime && getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.jikanId)
+          libraryPickerAnime && getLibraryStatusForAnime(libraryPickerAnime.id, libraryPickerAnime.tenraiId)
             ? () => {
                 void handleLibraryRemove();
               }

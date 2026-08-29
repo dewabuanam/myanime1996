@@ -12,7 +12,7 @@ function emitSourceCacheUpdated() {
 
 export type SourceCacheIdentity = {
   pluginId: string;
-  provider: 'jikan' | 'animeschedule';
+  provider: 'tenrai' | 'animeschedule';
   animeId: number;
   title: string;
   episodeNumber: number;
@@ -21,7 +21,7 @@ export type SourceCacheIdentity = {
 };
 
 export type SourceCacheEpisodeIdentity = {
-  provider: 'jikan' | 'animeschedule';
+  provider: 'tenrai' | 'animeschedule';
   animeId: number;
   title: string;
   episodeNumber: number;

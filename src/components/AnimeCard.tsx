@@ -36,7 +36,7 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
   const libraryButtonRef = useRef<HTMLButtonElement | null>(null);
   const playlistButtonRef = useRef<HTMLButtonElement | null>(null);
   const displayTitle = getDisplayTitle(anime, titleLanguage);
-  const detailAnimeId = anime.jikanId;
+  const detailAnimeId = anime.tenraiId;
   const mediaType = anime.mediaType?.trim().toLowerCase() ?? '';
   const watchEntry = (detailAnimeId ? watchProgress[detailAnimeId] : undefined) ?? watchProgress[anime.id];
   const isWatchedCompleted = Boolean(watchEntry?.completed || (watchEntry?.progress ?? 0) >= 100);
@@ -59,7 +59,7 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
 
   const openDetailPanel = async () => {
     const canonicalDetailId = await resolveCanonicalDetailRouteId(anime);
-    const selected = canonicalDetailId ? { ...anime, id: canonicalDetailId, jikanId: canonicalDetailId } : anime;
+    const selected = canonicalDetailId ? { ...anime, id: canonicalDetailId, tenraiId: canonicalDetailId } : anime;
     await selectAnime(selected);
     await openRightPanelWithView('detail');
   };
@@ -77,11 +77,11 @@ export default function AnimeCard({ anime, compact = false }: AnimeCardProps) {
   };
 
   const handleRemoveFromLibrary = async () => {
-    await removeAnimeFromLibrary(anime.jikanId ?? anime.id);
+    await removeAnimeFromLibrary(anime.tenraiId ?? anime.id);
     setLibraryPickerOpen(false);
   };
 
-  const currentLibraryStatus = getLibraryStatusForAnime(anime.id, anime.jikanId);
+  const currentLibraryStatus = getLibraryStatusForAnime(anime.id, anime.tenraiId);
 
   return (
     <article className="group app-card overflow-hidden transition hover:-translate-y-0.5 hover:bg-carbon/78">

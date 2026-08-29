@@ -39,8 +39,8 @@ function getLibraryDisplayTitle(item: LibraryAnimeItem, preferEnglish: boolean) 
 
 function toAnimeSummaryFromLibraryItem(item: LibraryAnimeItem) {
   return {
-    id: item.jikanId ?? item.animeId,
-    jikanId: item.jikanId,
+    id: item.tenraiId ?? item.animeId,
+    tenraiId: item.tenraiId,
     animeScheduleRoute: item.animeScheduleRoute,
     title: item.title,
     titleEnglish: item.titleEnglish,
@@ -169,7 +169,7 @@ export default function Library() {
     if (!pendingRemoveItem) return;
     const removeTarget = pendingRemoveItem;
     setPendingRemoveItem(null);
-    await removeAnimeFromLibrary(removeTarget.jikanId ?? removeTarget.animeId);
+    await removeAnimeFromLibrary(removeTarget.tenraiId ?? removeTarget.animeId);
     scheduleUndoBanner(removeTarget);
   };
 
@@ -184,7 +184,7 @@ export default function Library() {
     const animeSummary = toAnimeSummaryFromLibraryItem(item);
     const canonicalDetailId = await resolveCanonicalDetailRouteId(animeSummary);
     const selected = canonicalDetailId
-      ? { ...animeSummary, id: canonicalDetailId, jikanId: canonicalDetailId }
+      ? { ...animeSummary, id: canonicalDetailId, tenraiId: canonicalDetailId }
       : animeSummary;
     await selectAnime(selected);
     await openRightPanelWithView('detail');
@@ -192,7 +192,7 @@ export default function Library() {
 
   const getEpisodeProgressLabel = (item: LibraryAnimeItem) => {
     const animeId = Math.max(1, Math.floor(item.animeId));
-    const canonicalAnimeId = Math.max(1, Math.floor(item.jikanId ?? animeId));
+    const canonicalAnimeId = Math.max(1, Math.floor(item.tenraiId ?? animeId));
     const progressEntry = watchProgress[canonicalAnimeId] ?? watchProgress[animeId];
 
     const watchedEpisode = progressEntry && progressEntry.progress > 0
@@ -211,7 +211,7 @@ export default function Library() {
 
   const getResumePlan = (item: LibraryAnimeItem) => {
     const animeId = Math.max(1, Math.floor(item.animeId));
-    const canonicalAnimeId = Math.max(1, Math.floor(item.jikanId ?? animeId));
+    const canonicalAnimeId = Math.max(1, Math.floor(item.tenraiId ?? animeId));
     const entry = watchProgress[canonicalAnimeId] ?? watchProgress[animeId];
     if (!entry) return null;
     if (entry.progress <= 0) return null;
@@ -348,7 +348,7 @@ export default function Library() {
         ) : (
           <div className="grid grid-cols-6 gap-3 max-2xl:grid-cols-5 max-xl:grid-cols-4 max-lg:grid-cols-3 max-sm:grid-cols-2">
             {visibleItems.map((item) => {
-              const unreadAnimeIds = [item.animeId, item.jikanId]
+              const unreadAnimeIds = [item.animeId, item.tenraiId]
                 .filter((value, index, list): value is number => typeof value === 'number' && value > 0 && list.indexOf(value) === index);
               const unreadCount = unreadAnimeIds.reduce((total, animeId) => total + (unreadNotificationCountByAnimeId.get(animeId) ?? 0), 0);
               const resumePlan = getResumePlan(item);

@@ -3,8 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAniSkipSegments } from '../services/aniSkip';
 import { getAnimeDetails } from '../services/catalogSource';
 import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
-import { getJikanDetailEpisodeBundle } from '../services/animeDetailEpisodes';
-import { getAnimeEpisodeById } from '../services/jikan';
+import { getTenraiDetailEpisodeBundle } from '../services/animeDetailEpisodes';
+import { getAnimeEpisodeById } from '../services/tenrai';
 import { clearPluginRateLimit } from '../services/pluginExecutor';
 import { getAvailableSourcePlugins } from '../services/sourceResolver';
 import { useAppStore } from '../state/appStore';
@@ -225,16 +225,16 @@ export default function RightNowPlaying() {
   })();
   const detailAnimeView = detailAnime;
   const detailTargetAnimeId = useMemo(() => {
-    const preferred = selectedAnime?.jikanId;
+    const preferred = selectedAnime?.tenraiId;
     if (typeof preferred === 'number' && Number.isFinite(preferred) && preferred > 0 && preferred <= MAX_REASONABLE_MAL_ID) {
       return Math.floor(preferred);
     }
 
     return null;
-  }, [selectedAnime?.jikanId]);
+  }, [selectedAnime?.tenraiId]);
   const detailDisplayTitle = detailAnimeView ? getDisplayTitle(detailAnimeView, titleLanguage) : '';
   const detailLibraryStatus = detailAnimeView
-    ? getLibraryStatusForAnime(detailAnimeView.id, detailAnimeView.jikanId)
+    ? getLibraryStatusForAnime(detailAnimeView.id, detailAnimeView.tenraiId)
     : null;
   const activePlaylistView = useMemo(() => {
     if (!playlists.length) return null;
@@ -254,7 +254,7 @@ export default function RightNowPlaying() {
   );
   const detailResumePlan = useMemo(() => {
     if (!detailAnimeView) return null;
-    const canonicalAnimeId = detailAnimeView.jikanId ?? detailAnimeView.id;
+    const canonicalAnimeId = detailAnimeView.tenraiId ?? detailAnimeView.id;
     const entry = watchProgress[canonicalAnimeId] ?? watchProgress[detailAnimeView.id];
     if (!entry) return null;
     if (entry.progress <= 0) return null;
@@ -370,9 +370,9 @@ export default function RightNowPlaying() {
       }
 
       if (!isCancelled()) {
-        const jikanMalId = await getAniSkipMalId();
-        if (jikanMalId) {
-          getAnimeEpisodeById(jikanMalId, episodeNumber)
+        const tenraiMalId = await getAniSkipMalId();
+        if (tenraiMalId) {
+          getAnimeEpisodeById(tenraiMalId, episodeNumber)
             .then((episodeDetail) => {
               if (isCancelled()) return;
               setEpisodeMetadata({
@@ -651,7 +651,7 @@ export default function RightNowPlaying() {
 
       const cache = await readResolvedSourceCache();
       const snapshot = collectResolvedPluginsForAnime(cache, {
-        animeIds: [detailAnimeView.id, detailAnimeView.jikanId ?? -1],
+        animeIds: [detailAnimeView.id, detailAnimeView.tenraiId ?? -1],
         titles: [detailAnimeView.title, detailAnimeView.titleEnglish ?? '', detailAnimeView.titleJapanese ?? ''],
       });
       const next: Record<number, Array<{ pluginId: string; iconDataUri?: string; pluginName: string }>> = {};
@@ -716,7 +716,7 @@ export default function RightNowPlaying() {
   }, [activeResolvedSource, isNonTrailerPlayback]);
 
   const getAniSkipMalId = async () => {
-    const raw = currentlyPlayingItem?.anime.jikanId;
+    const raw = currentlyPlayingItem?.anime.tenraiId;
     if (Number.isFinite(raw) && raw && raw > 0) {
       return Math.floor(raw);
     }
@@ -728,10 +728,10 @@ export default function RightNowPlaying() {
 
     const bridgedAnimeId = await resolveCanonicalDetailRouteId({
       id: Math.floor(fallbackAnimeId),
-      jikanId: currentlyPlayingItem?.anime.jikanId,
+      tenraiId: currentlyPlayingItem?.anime.tenraiId,
       animeScheduleRoute: currentlyPlayingItem?.anime.animeScheduleRoute,
     }).catch(() => undefined);
-    const detailAnimeId = Math.floor(bridgedAnimeId ?? currentlyPlayingItem?.anime.jikanId ?? fallbackAnimeId);
+    const detailAnimeId = Math.floor(bridgedAnimeId ?? currentlyPlayingItem?.anime.tenraiId ?? fallbackAnimeId);
     const cacheKey = Math.floor(fallbackAnimeId);
     if (aniSkipMalIdCacheRef.current.has(cacheKey)) {
       return aniSkipMalIdCacheRef.current.get(cacheKey) ?? null;
@@ -739,7 +739,7 @@ export default function RightNowPlaying() {
 
     try {
       const detail = await getAnimeDetails(detailAnimeId);
-      const fromDetail = detail?.jikanId;
+      const fromDetail = detail?.tenraiId;
       const resolved = Number.isFinite(fromDetail) && fromDetail && fromDetail > 0 ? Math.floor(fromDetail) : null;
       aniSkipMalIdCacheRef.current.set(cacheKey, resolved);
       return resolved;
@@ -977,11 +977,11 @@ export default function RightNowPlaying() {
 
     if (!next || !detailAnimeView) return;
 
-    const jikanAnimeId = detailAnimeView.jikanId;
-    if (typeof jikanAnimeId !== 'number' || !Number.isFinite(jikanAnimeId) || jikanAnimeId <= 0 || jikanAnimeId > MAX_REASONABLE_MAL_ID) return;
+    const tenraiAnimeId = detailAnimeView.tenraiId;
+    if (typeof tenraiAnimeId !== 'number' || !Number.isFinite(tenraiAnimeId) || tenraiAnimeId <= 0 || tenraiAnimeId > MAX_REASONABLE_MAL_ID) return;
 
     setDetailLoadingEpisode(episodeNumber);
-    const detail = await getAnimeEpisodeById(Math.floor(jikanAnimeId), episodeNumber).catch(() => null);
+    const detail = await getAnimeEpisodeById(Math.floor(tenraiAnimeId), episodeNumber).catch(() => null);
     if (detail) {
       setDetailEpisodes((current) =>
         current.map((entry) => {
@@ -1035,12 +1035,12 @@ export default function RightNowPlaying() {
 
       setDetailAnime(detail);
 
-      const jikanId =
-        typeof detail.jikanId === 'number' && Number.isFinite(detail.jikanId) && detail.jikanId > 0
-          ? Math.floor(detail.jikanId)
+      const tenraiId =
+        typeof detail.tenraiId === 'number' && Number.isFinite(detail.tenraiId) && detail.tenraiId > 0
+          ? Math.floor(detail.tenraiId)
           : undefined;
 
-      if (!jikanId || jikanId > MAX_REASONABLE_MAL_ID) {
+      if (!tenraiId || tenraiId > MAX_REASONABLE_MAL_ID) {
         setDetailEpisodes([]);
         setDetailEpisodePagination({ page: 1, lastVisiblePage: 1, hasNextPage: false, hasPrevPage: false });
         setDetailExpandedEpisode(null);
@@ -1048,7 +1048,7 @@ export default function RightNowPlaying() {
         return;
       }
 
-      const payload = await getJikanDetailEpisodeBundle(jikanId, detailEpisodePage).catch(() => null);
+      const payload = await getTenraiDetailEpisodeBundle(tenraiId, detailEpisodePage).catch(() => null);
       if (cancelled) return;
 
       if (!payload) {
@@ -1673,7 +1673,7 @@ export default function RightNowPlaying() {
                   <p className="right-now-no-signal-title">Finding Signal</p>
                   <p className="right-now-no-signal-subtitle">
                     {isResolvingTrailerSignal
-                      ? 'Scanning Jikan trailer signal for a playable stream.'
+                      ? 'Scanning Tenrai trailer signal for a playable stream.'
                       : 'Scanning plugins by priority for a playable source.'}
                   </p>
                   <p className="right-now-no-signal-meta">{fallbackTypeLabel}</p>
@@ -1889,7 +1889,7 @@ export default function RightNowPlaying() {
           onRemove={
             detailLibraryStatus
               ? () => {
-                  void removeAnimeFromLibrary(detailAnimeView.jikanId ?? detailAnimeView.id);
+                  void removeAnimeFromLibrary(detailAnimeView.tenraiId ?? detailAnimeView.id);
                   setIsLibraryPickerOpen(false);
                   setLibraryPickerAnchorElement(null);
                 }

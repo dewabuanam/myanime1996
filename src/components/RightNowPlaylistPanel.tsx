@@ -17,7 +17,7 @@ type RightNowPlaylistPanelProps = {
     animeIds: number[];
     animeItems: Array<{
       animeId: number;
-      jikanId?: number;
+      tenraiId?: number;
       animeScheduleRoute?: string;
       title: string;
       titleEnglish?: string;
@@ -67,7 +67,7 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
 
     const addMeta = (anime: {
       id?: number;
-      jikanId?: number;
+      tenraiId?: number;
       title?: string;
       titleEnglish?: string;
       titleJapanese?: string;
@@ -77,8 +77,8 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
     } | null | undefined, episodeOverride?: number) => {
       if (!anime) return;
       const rawAnimeId = Math.floor(Number(anime.id) || 0);
-      const rawJikanId = Math.floor(Number(anime.jikanId) || 0);
-      const canonicalAnimeId = rawJikanId > 0 ? rawJikanId : rawAnimeId;
+      const rawTenraiId = Math.floor(Number(anime.tenraiId) || 0);
+      const canonicalAnimeId = rawTenraiId > 0 ? rawTenraiId : rawAnimeId;
       if (canonicalAnimeId <= 0) return;
       const prev = map.get(canonicalAnimeId);
       const nextEpisode = Math.max(0, Math.floor(Number(episodeOverride ?? anime.currentEpisode) || 0)) || prev?.episode;
@@ -97,7 +97,7 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
     queue.forEach((item) => addMeta(item.anime, item.episodeNumber));
 
     Object.values(libraryItems).forEach((item) => {
-      const canonicalAnimeId = Math.floor(Number(item.jikanId) || 0) || Math.floor(Number(item.animeId) || 0);
+      const canonicalAnimeId = Math.floor(Number(item.tenraiId) || 0) || Math.floor(Number(item.animeId) || 0);
       if (canonicalAnimeId <= 0) return;
       const prev = map.get(canonicalAnimeId);
       map.set(canonicalAnimeId, {
@@ -111,7 +111,7 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
     });
 
     Object.values(watchProgress).forEach((entry) => {
-      const canonicalAnimeId = Math.floor(Number(entry.jikanId) || 0) || Math.floor(Number(entry.animeId) || 0);
+      const canonicalAnimeId = Math.floor(Number(entry.tenraiId) || 0) || Math.floor(Number(entry.animeId) || 0);
       if (canonicalAnimeId <= 0) return;
       const prev = map.get(canonicalAnimeId);
       map.set(canonicalAnimeId, {
@@ -156,7 +156,7 @@ const RightNowPlaylistPanel = forwardRef<RightNowPlaylistPanelHandle, RightNowPl
     const run = async () => {
       const resolvedEntries = await Promise.all(
         unresolvedIds.map(async (animeId) => {
-          const canonicalDetailId = await resolveCanonicalDetailRouteId({ id: animeId, jikanId: animeId }).catch(() => animeId);
+          const canonicalDetailId = await resolveCanonicalDetailRouteId({ id: animeId, tenraiId: animeId }).catch(() => animeId);
           const detail = await getAnimeDetails(canonicalDetailId ?? animeId).catch(() => null);
           if (!detail) return null;
           return {
