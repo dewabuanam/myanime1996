@@ -109,11 +109,21 @@
  * ======================================================================== */
 
 :root[data-theme='myanime2026'] .retro-tooltip::after {
+  border-radius: 10px;
   box-shadow: 0 6px 18px transparent;
 }
 
+:root[data-theme='myanime2026'] .retro-tooltip::before {
+  border-radius: 6px;
+}
+
 :root[data-theme='myanime2026'] .global-retro-tooltip {
+  border-radius: 10px;
   box-shadow: 0 6px 18px transparent;
+}
+
+:root[data-theme='myanime2026'] .global-retro-tooltip::before {
+  border-radius: 6px;
 }
 
 :root[data-theme='myanime2026'] ::-webkit-scrollbar-track {
@@ -173,6 +183,7 @@
 }
 
 :root[data-theme='myanime2026'] .jb-sidebar-item {
+  border-radius: 8px;
   border: 1px solid rgba(16, 24, 40, 0.14);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.76);
@@ -186,6 +197,7 @@
 }
 
 :root[data-theme='myanime2026'] .jb-mini-icon-btn {
+  border-radius: 8px;
   border: 1px solid rgba(16, 24, 40, 0.14);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.78);
@@ -198,6 +210,7 @@
 }
 
 :root[data-theme='myanime2026'] .jb-playlist-item {
+  border-radius: 8px;
   border: 1px solid rgba(16, 24, 40, 0.14);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.76);
@@ -211,6 +224,7 @@
 
 :root[data-theme='myanime2026'] .jb-playlist-delete-btn {
   border: 1px solid rgba(16, 24, 40, 0.16);
+  border-radius: 6px;
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.7);
 }
@@ -241,6 +255,7 @@
 }
 
 :root[data-theme='myanime2026'] .jb-rail-btn {
+  border-radius: 8px;
   border: 1px solid rgba(16, 24, 40, 0.14);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.8);
@@ -269,6 +284,7 @@
 }
 
 :root[data-theme='myanime2026'] .right-panel-mini-btn {
+  border-radius: 8px;
   border: 1px solid rgba(16, 24, 40, 0.14);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.8);
@@ -283,6 +299,7 @@
 
 :root[data-theme='myanime2026'] .right-panel-fullpage-btn {
   border: 1px solid rgba(16, 24, 40, 0.14);
+  border-radius: 8px;
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.82);
 }
@@ -295,6 +312,7 @@
 
 :root[data-theme='myanime2026'] .right-panel-mode-btn {
   border: 1px solid rgba(16, 24, 40, 0.18);
+  border-radius: 8px;
   background: rgba(16, 24, 40, 0.04);
   color: rgba(16, 24, 40, 0.88);
 }
@@ -323,11 +341,17 @@
   background: rgba(37, 99, 235, 0.92);
 }
 
+:root[data-theme='myanime2026'] .source-select-wrap {
+  border-radius: 8px;
+}
+
 :root[data-theme='myanime2026'] .logo-select-icon {
+  border-radius: 6px;
   background: rgba(16, 24, 40, 0.051);
 }
 
 :root[data-theme='myanime2026'] .logo-select-icon-fallback {
+  border-radius: 6px;
   background: linear-gradient(135deg, rgba(16, 24, 40, 0.34), rgba(16, 24, 40, 0.16));
   box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.18);
 }
@@ -347,6 +371,7 @@
 
 :root[data-theme='myanime2026'] .source-log-btn {
   border: 1px solid rgba(37, 99, 235, 0.36);
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.85);
   color: rgba(16, 24, 40, 0.9);
 }
@@ -362,6 +387,7 @@
 }
 
 :root[data-theme='myanime2026'] .skip-btn-control {
+  border-radius: 8px;
   border: 1px solid rgba(37, 99, 235, 0.45);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(233, 237, 244, 0.9));
   color: rgba(16, 24, 40, 0.94);
@@ -376,6 +402,7 @@
 
 :root[data-theme='myanime2026'] .source-trace-panel {
   border: 1px solid rgba(37, 99, 235, 0.3);
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.6);
 }
 
@@ -393,6 +420,7 @@
 
 :root[data-theme='myanime2026'] .source-trace-item {
   border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 6px;
   background: rgba(16, 24, 40, 0.02);
 }
 
@@ -444,6 +472,7 @@
   color: rgba(37, 99, 235, 0.92);
   background: rgba(220, 38, 38, 0.08);
   border: 1px solid rgba(220, 38, 38, 0.32);
+  border-radius: 6px;
 }
 
 :root[data-theme='myanime2026'] .source-trace-rate-limit-clear-btn:hover,
@@ -501,12 +530,14 @@
 
 :root[data-theme='myanime2026'] .plugin-icon-shell {
   border: 1px solid rgba(37, 99, 235, 0.3);
+  border-radius: 6px;
   background: linear-gradient(145deg, rgba(233, 237, 244, 0.95), rgba(255, 255, 255, 0.95)),
     repeating-linear-gradient(0deg, rgba(16, 24, 40, 0.03) 0 1px, rgba(16, 24, 40, 0.005) 1px 2px);
   box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.04);
 }
 
 :root[data-theme='myanime2026'] .plugin-icon-fallback {
+  border-radius: 8px;
   background: linear-gradient(135deg, rgba(16, 24, 40, 0.34), rgba(16, 24, 40, 0.16));
   box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.18);
 }
@@ -544,6 +575,7 @@
 
 :root[data-theme='myanime2026'] .aniskip-overlay-btn {
   border: 1px solid rgba(37, 99, 235, 0.58);
+  border-radius: 8px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(233, 237, 244, 0.94));
   color: rgba(16, 24, 40, 0.96);
   box-shadow: 0 12px 22px transparent;
@@ -555,6 +587,7 @@
 }
 
 :root[data-theme='myanime2026'] .skip-toast {
+  border-radius: 8px;
   color: rgba(16, 24, 40, 0.85);
 }
 
@@ -562,9 +595,14 @@
   background: rgba(255, 255, 255, 0.94);
 }
 
+:root[data-theme='myanime2026'] .right-now-retry-btn {
+  border-radius: 8px;
+}
+
 :root[data-theme='myanime2026'] .right-now-panel-split .right-now-pane-top,
 :root[data-theme='myanime2026'] .right-now-panel-split .right-now-pane-bottom {
   border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 12px;
   background: linear-gradient(180deg, rgba(244, 246, 250, 0.7), rgba(255, 255, 255, 0.62));
 }
 
@@ -616,6 +654,7 @@
 
 :root[data-theme='myanime2026'] .right-queue-clear-btn {
   border: 1px solid rgba(16, 24, 40, 0.14);
+  border-radius: 8px;
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.8);
 }
@@ -628,12 +667,17 @@
 
 :root[data-theme='myanime2026'] .right-queue-item {
   border: 1px solid rgba(16, 24, 40, 0.14);
+  border-radius: 10px;
   background: rgba(16, 24, 40, 0.03);
 }
 
 :root[data-theme='myanime2026'] .right-queue-item:hover {
   border-color: rgba(37, 99, 235, 0.42);
   background: rgba(37, 99, 235, 0.1);
+}
+
+:root[data-theme='myanime2026'] .right-queue-item-thumb {
+  border-radius: 10px;
 }
 
 :root[data-theme='myanime2026'] .right-queue-item-title {
@@ -650,6 +694,7 @@
 
 :root[data-theme='myanime2026'] .right-queue-item-action-btn {
   border: 1px solid rgba(16, 24, 40, 0.16);
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.68);
   color: rgba(16, 24, 40, 0.88);
 }
@@ -662,12 +707,14 @@
 
 :root[data-theme='myanime2026'] .right-queue-item-menu {
   border: 1px solid rgba(37, 99, 235, 0.32);
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 10px 26px transparent;
 }
 
 :root[data-theme='myanime2026'] .right-queue-item-menu-btn {
   border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 10px;
   background: rgba(16, 24, 40, 0.02);
   color: rgba(16, 24, 40, 0.86);
 }
@@ -711,6 +758,7 @@
 
 :root[data-theme='myanime2026'] .right-panel-toggle-icon {
   border: 1px solid rgba(16, 24, 40, 0.7);
+  border-radius: 8px;
   background: linear-gradient(
     90deg,
     transparent 0%,
@@ -732,6 +780,7 @@
 
 :root[data-theme='myanime2026'] .left-panel-toggle-icon {
   border: 1px solid rgba(16, 24, 40, 0.7);
+  border-radius: 8px;
   background: linear-gradient(
     90deg,
     rgba(16, 24, 40, 0.88) 0%,
@@ -753,6 +802,7 @@
 
 :root[data-theme='myanime2026'] .profile-popup {
   border: 1px solid rgba(37, 99, 235, 0.45);
+  border-radius: 14px;
   background: radial-gradient(circle at 84% 10%, rgba(37, 99, 235, 0.16), transparent 5.8rem),
     repeating-linear-gradient(180deg, rgba(16, 24, 40, 0.035) 0 1px, transparent 1px 3px),
     linear-gradient(180deg, rgba(244, 246, 250, 0.97), rgba(255, 255, 255, 0.97));
@@ -783,6 +833,7 @@
 }
 
 :root[data-theme='myanime2026'] .profile-popup-logout {
+  border-radius: 10px;
   border: 1px solid rgba(220, 38, 38, 0.5);
   background: linear-gradient(180deg, rgba(221, 227, 236, 0.8), rgba(221, 227, 236, 0.82));
   color: rgba(37, 99, 235, 0.94);
@@ -949,6 +1000,7 @@
 }
 
 :root[data-theme='myanime2026'] .settings-modal {
+  border-radius: 14px;
   box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.08) inset,
     0 22px 56px transparent,
     0 0 38px var(--theme-settings-glow);
@@ -960,10 +1012,12 @@
 
 :root[data-theme='myanime2026'] .settings-modal::after {
   border: 1px solid rgba(16, 24, 40, 0.1);
+  border-radius: 12px;
 }
 
 :root[data-theme='myanime2026'] .settings-sidebar {
   border: 1px solid rgba(16, 24, 40, 0.18);
+  border-radius: 14px;
   background: linear-gradient(180deg, rgba(16, 24, 40, 0.04), rgba(16, 24, 40, 0.016)),
     rgba(16, 24, 40, 0.026);
   box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.05) inset;
@@ -1000,6 +1054,7 @@
 
 :root[data-theme='myanime2026'] .settings-nav-item {
   border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 12px;
   background: rgba(16, 24, 40, 0.02);
 }
 
@@ -1014,6 +1069,7 @@
 
 :root[data-theme='myanime2026'] .settings-detail {
   border: 1px solid rgba(16, 24, 40, 0.18);
+  border-radius: 14px;
   background: linear-gradient(180deg, rgba(16, 24, 40, 0.035), rgba(16, 24, 40, 0.019)),
     rgba(16, 24, 40, 0.02);
   box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.05) inset;
@@ -1021,6 +1077,7 @@
 
 :root[data-theme='myanime2026'] .settings-action-card {
   border: 1px solid rgba(16, 24, 40, 0.15);
+  border-radius: 12px;
   background: repeating-linear-gradient(180deg, rgba(16, 24, 40, 0.02) 0 1px, transparent 1px 3px),
     rgba(16, 24, 40, 0.03);
 }
@@ -1058,11 +1115,13 @@
 
 :root[data-theme='myanime2026'] .settings-api-status-card {
   border: 1px solid rgba(16, 24, 40, 0.2);
+  border-radius: 12px;
   background: rgba(16, 24, 40, 0.038);
 }
 
 :root[data-theme='myanime2026'] .settings-api-status-row {
   border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.42);
 }
 
@@ -1076,6 +1135,7 @@
 
 :root[data-theme='myanime2026'] .settings-empty {
   border: 1px dashed rgba(16, 24, 40, 0.18);
+  border-radius: 12px;
   color: rgba(16, 24, 40, 0.56);
 }
 
@@ -1084,12 +1144,14 @@
 }
 
 :root[data-theme='myanime2026'] .settings-highlight {
+  border-radius: 8px;
   background: rgba(37, 99, 235, 0.32);
   color: rgba(37, 99, 235, 0.96);
 }
 
 :root[data-theme='myanime2026'] .history-page-shell {
   border: 1px solid rgba(16, 24, 40, 0.14);
+  border-radius: 14px;
   background: radial-gradient(circle at 92% 10%, rgba(37, 99, 235, 0.08), transparent 16rem),
     repeating-linear-gradient(180deg, rgba(16, 24, 40, 0.018) 0 1px, transparent 1px 3px),
     linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.48));
@@ -1098,6 +1160,7 @@
 
 :root[data-theme='myanime2026'] .history-stat-card {
   border: 1px solid rgba(16, 24, 40, 0.18);
+  border-radius: 14px;
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.06), rgba(16, 24, 40, 0.019)),
     rgba(16, 24, 40, 0.02);
   box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.04) inset;
@@ -1137,9 +1200,14 @@
 
 :root[data-theme='myanime2026'] .history-item {
   border: 1px solid rgba(16, 24, 40, 0.2);
+  border-radius: 14px;
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.05), rgba(16, 24, 40, 0.026)),
     rgba(16, 24, 40, 0.02);
   box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.05) inset;
+}
+
+:root[data-theme='myanime2026'] .history-item-image {
+  border-radius: 10px;
 }
 
 :root[data-theme='myanime2026'] .history-item-title {
@@ -1176,6 +1244,10 @@
 
 :root[data-theme='myanime2026'] .confirm-backdrop {
   background: rgba(255, 255, 255, 0.54);
+}
+
+:root[data-theme='myanime2026'] .confirm-dialog {
+  border-radius: 14px;
 }
 
 :root[data-theme='myanime2026'] .confirm-icon-wrap {
@@ -1251,6 +1323,7 @@
 
 :root[data-theme='myanime2026'] .anime-hover-preview {
   border: 1px solid rgba(37, 99, 235, 0.36);
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 20px 40px transparent;
 }
@@ -1277,6 +1350,7 @@
 
 :root[data-theme='myanime2026'] .anime-hover-preview-episode-overlay {
   border: 1px solid rgba(37, 99, 235, 0.52);
+  border-radius: 6px;
   background: repeating-linear-gradient(
       180deg,
       rgba(244, 246, 250, 0.96) 0,
@@ -1329,12 +1403,14 @@
 
 :root[data-theme='myanime2026'] .anime-hover-preview-score {
   border: 1px solid rgba(37, 99, 235, 0.58);
+  border-radius: 8px;
   background: rgba(37, 99, 235, 0.14);
   color: rgba(37, 99, 235, 0.98);
 }
 
 :root[data-theme='myanime2026'] .anime-hover-preview-members {
   border: 1px solid rgba(16, 24, 40, 0.24);
+  border-radius: 8px;
   background: rgba(16, 24, 40, 0.038);
   color: rgba(16, 24, 40, 0.88);
 }
@@ -1364,6 +1440,7 @@
 
 :root[data-theme='myanime2026'] .anime-card-poster-episode-badge {
   border: 1px solid rgba(37, 99, 235, 0.5);
+  border-radius: 6px;
   background: repeating-linear-gradient(
       180deg,
       rgba(244, 246, 250, 0.96) 0,
@@ -1379,6 +1456,7 @@
 
 :root[data-theme='myanime2026'] .anime-card-poster-overlay-badge {
   border: 1px solid rgba(244, 246, 250, 0.66);
+  border-radius: 6px;
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(29, 78, 216, 0.96));
   color: rgba(244, 246, 250, 0.96);
   box-shadow: 0 5px 14px transparent;
@@ -1394,6 +1472,7 @@
 
 :root[data-theme='myanime2026'] .anime-card-video-badge {
   border: 1px solid rgba(37, 99, 235, 0.34);
+  border-radius: 8px;
   background: rgba(37, 99, 235, 0.1);
   color: rgba(16, 24, 40, 0.9);
 }
@@ -1417,6 +1496,7 @@
   border: 1px solid rgba(37, 99, 235, 0.28);
   background: rgba(255, 255, 255, 0.55);
   color: rgba(37, 99, 235, 0.9);
+  border-radius: 10px;
 }
 
 :root[data-theme='myanime2026'] .hero-boombox {
@@ -1508,6 +1588,7 @@
 
 :root[data-theme='myanime2026'] .compact-add-playlist-btn {
   border: 1.5px dotted rgba(16, 24, 40, 0.62);
+  border-radius: 10px;
   background: rgba(16, 24, 40, 0.02);
   color: rgba(16, 24, 40, 0.78);
 }
@@ -1542,6 +1623,16 @@
   box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.05) inset;
 }
 
+:root[data-theme='myanime2026'] .library-row-card,
+:root[data-theme='myanime2026'] .history-item,
+:root[data-theme='myanime2026'] .notifications-item,
+:root[data-theme='myanime2026'] .history-stat-card,
+:root[data-theme='myanime2026'] .history-search,
+:root[data-theme='myanime2026'] .history-select-wrap select,
+:root[data-theme='myanime2026'] .history-remove-btn {
+  border-radius: 10px;
+}
+
 :root[data-theme='myanime2026'] .notifications-item {
   border: 1px solid rgba(16, 24, 40, 0.2);
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.05), rgba(16, 24, 40, 0.026)),
@@ -1561,6 +1652,7 @@
 
 :root[data-theme='myanime2026'] .notifications-item-image {
   border: 1px solid rgba(16, 24, 40, 0.24);
+  border-radius: 10px;
 }
 
 :root[data-theme='myanime2026'] .seeall-hero-filter-trigger {
@@ -1890,4 +1982,60 @@
 
 :root[data-theme='myanime2026'] .bg-black\/35 {
   background-color: rgba(16, 24, 40, 0.056);
+}
+
+/* Panels, cards and controls the base sheet never gave a radius at all, so the
+   generated pass had nothing to rebase. Full-bleed shells (.app-main, .app-main-scroll,
+   .top-nav) stay square on purpose — they run edge to edge. */
+:root[data-theme='myanime2026'] .vhs-panel,
+:root[data-theme='myanime2026'] .app-card,
+:root[data-theme='myanime2026'] .hero-scene,
+:root[data-theme='myanime2026'] .seeall-header,
+:root[data-theme='myanime2026'] .history-content {
+  border-radius: 12px;
+}
+
+:root[data-theme='myanime2026'] .anime-card-poster-wrap,
+:root[data-theme='myanime2026'] .right-now-video-wrap,
+:root[data-theme='myanime2026'] .right-now-no-signal-crt {
+  border-radius: 10px;
+}
+
+:root[data-theme='myanime2026'] .right-now-no-signal-badge,
+:root[data-theme='myanime2026'] .hero-seeall-menu-trigger,
+:root[data-theme='myanime2026'] .logo-select-trigger,
+:root[data-theme='myanime2026'] .accent-amberline {
+  border-radius: 8px;
+}
+
+/* Re-assert Tailwind's radius scale last. Any theme-scoped selector outranks a single
+   utility class, so without this a component asking for a pill or a specific radius
+   inline would be overridden by the rules above. */
+:root[data-theme='myanime2026'] .rounded-none {
+  border-radius: 0;
+}
+
+:root[data-theme='myanime2026'] .rounded-sm {
+  border-radius: 6px;
+}
+
+:root[data-theme='myanime2026'] .rounded,
+:root[data-theme='myanime2026'] .rounded-md {
+  border-radius: 8px;
+}
+
+:root[data-theme='myanime2026'] .rounded-lg {
+  border-radius: 10px;
+}
+
+:root[data-theme='myanime2026'] .rounded-xl {
+  border-radius: 12px;
+}
+
+:root[data-theme='myanime2026'] .rounded-2xl {
+  border-radius: 16px;
+}
+
+:root[data-theme='myanime2026'] .rounded-full {
+  border-radius: 9999px;
 }
