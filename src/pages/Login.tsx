@@ -37,8 +37,8 @@ export default function Login() {
         <WindowControls />
       </div>
       <section className="app-card grid w-full max-w-5xl grid-cols-[1.1fr_0.9fr] overflow-hidden max-md:grid-cols-1">
-        <div className="relative min-h-[620px] overflow-hidden bg-black/35 p-8 max-md:min-h-0">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(232,184,115,0.2),transparent_24rem)]" />
+        <div className="login-hero relative min-h-[620px] overflow-hidden p-8 max-md:min-h-0">
+          <div className="login-hero-glow absolute inset-0" />
           <div className="relative z-10 flex h-full flex-col justify-between">
             <img src={brandLogoSrc} alt="My Anime" className="logo-glow w-full max-w-xl" />
             <div>

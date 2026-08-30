@@ -26,6 +26,22 @@
         --splash-title-glow: rgba(231, 176, 97, 0.24);
       }
 
+      :root[data-theme='myanime2026'] {
+        --splash-fg: #101828;
+        --splash-bg: #ffffff;
+        --splash-radial-a: transparent;
+        --splash-radial-b: transparent;
+        --splash-border: rgba(16, 24, 40, 0.12);
+        --splash-panel-a: #ffffff;
+        --splash-panel-b: #ffffff;
+        --splash-glow: transparent;
+        --splash-desc: #5b6779;
+        --splash-rail-bg: rgba(16, 24, 40, 0.1);
+        --splash-rail-a: #2563eb;
+        --splash-rail-b: #2563eb;
+        --splash-title-glow: transparent;
+      }
+
       :root[data-theme='myanime2077'] {
         --splash-fg: #d9fbff;
         --splash-bg: #04070f;
@@ -179,12 +195,17 @@
       (function applyStartupTheme() {
         const root = document.documentElement;
         const logo = document.getElementById('splash-logo');
+        const LOGOS = {
+          myanime1996: '/assets/logo.png',
+          myanime2077: '/assets/logo-2077.png',
+          myanime2026: '/assets/logo-2026.png',
+        };
         const setTheme = (value) => {
-          const next = value === 'myanime2077' ? 'myanime2077' : 'myanime1996';
+          const next = LOGOS[value] ? value : 'myanime1996';
           root.setAttribute('data-theme', next);
           document.body.setAttribute('data-theme', next);
           if (logo) {
-            logo.setAttribute('src', next === 'myanime2077' ? '/assets/logo-2077.png' : '/assets/logo.png');
+            logo.setAttribute('src', LOGOS[next]);
           }
         };
 

@@ -1,4 +1,4 @@
-export type ThemeId = 'myanime1996' | 'myanime2077';
+export type ThemeId = 'myanime1996' | 'myanime2077' | 'myanime2026';
 
 export type ThemeOption = {
   value: ThemeId;

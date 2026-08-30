@@ -39,6 +39,7 @@ import {
 } from '../services/store';
 import { migrateJikanStoreDataToTenrai } from '../services/tenraiMigration';
 import { startCacheMaintenance } from '../services/cacheMaintenance';
+import { normalizeThemeId, type ThemeId } from '../theme';
 import { importSourcePluginFromPicker } from '../services/pluginImport';
 import { getAvailableSourcePlugins, getDefaultPluginPriority } from '../services/sourceResolver';
 import { clearSourceResolveCache } from '../services/sourceCache';
@@ -177,7 +178,9 @@ async function syncRunOnStartup(enabled: boolean) {
 export type PlaybackSupportMode = 'fully-supported' | 'fullscreen-only' | 'fully-unsupported';
 export type AnimeSkipType = 'op' | 'ed' | 'recap';
 export type UpcomingSeasonFilter = 'all' | 'tv' | 'movie' | 'ova' | 'special' | 'ona' | 'music';
-export type AppTheme = 'myanime1996' | 'myanime2077';
+// Single source of truth is the theme registry, so adding a theme cannot leave this
+// union or normalizeAppTheme() behind.
+export type AppTheme = ThemeId;
 
 const LIBRARY_STATUSES: LibraryStatus[] = ['watching', 'plan-to-watch', 'on-hold', 'dropped', 'completed'];
 const MAX_LIBRARY_NOTIFICATIONS = 100;
@@ -553,7 +556,7 @@ function normalizeSourceAudioLanguage(value: unknown): SourceAudioLanguage {
 }
 
 function normalizeAppTheme(value: unknown): AppTheme {
-  return value === 'myanime2077' ? 'myanime2077' : 'myanime1996';
+  return normalizeThemeId(typeof value === 'string' ? value : null);
 }
 
 function normalizeBaseCatalogSource(value: unknown): BaseCatalogSource {
