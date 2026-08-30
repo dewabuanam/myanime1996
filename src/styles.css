@@ -5356,13 +5356,17 @@ button {
 
 .anime-relations-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
-  gap: 0.6rem;
+  /* The right panel is ~220px wide, where a 108px minimum collapsed to one column and
+     blew the poster up to 275px tall. A smaller track plus a cap on the tile keeps
+     these small in the panel and stops them stretching on the wide detail page. */
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.5rem;
 }
 
 .anime-relations-tile {
   display: block;
   width: 100%;
+  max-width: 140px;
   text-align: left;
   cursor: pointer;
   padding: 0.3rem;

@@ -10,6 +10,7 @@ import { getEpisodeDisplayTitles } from '../utils/episodeTitle';
 import { parseReleaseTimestamp } from '../utils/releaseTime';
 import { getSeasonLabelUpper, resolveAnimeSeason } from '../utils/season';
 import SeasonLinkBadge from './SeasonLinkBadge';
+import AnimeRelationsSection from './AnimeRelationsSection';
 
 type DetailEpisodeIcon = {
   pluginId: string;
@@ -434,6 +435,8 @@ export default function RightNowDetailPane({
 
           </div>
         </div>
+
+        <AnimeRelationsSection anime={detailAnimeView} />
 
         {!isCompactPane ? (
           <div className="mt-2 space-y-2 border-t border-cream/10 pt-2 pb-2">
