@@ -5328,3 +5328,104 @@ button {
   padding: 0.12rem;
   background: rgba(245, 234, 210, 0.08);
 }
+
+/* Toast and the library status picker used to carry their colours as Tailwind
+   arbitrary values (and, for the status rows, an inline style that no stylesheet could
+   override). Held here instead so every theme can restyle them. */
+.toast-card {
+  background: rgba(28, 18, 12, 0.92);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+.library-status-picker-modal {
+  background: #0f0b09;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.68);
+}
+
+.library-status-picker-option {
+  background: #16110f;
+}
+
+.library-status-picker-option.is-active {
+  background: #2a1c12;
+}
+
+.library-status-picker-option.is-danger {
+  background: #1b1110;
+}
+
+.anime-relations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 0.6rem;
+}
+
+.anime-relations-tile {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.3rem;
+  border: 1px solid rgba(245, 234, 210, 0.12);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.anime-relations-tile:hover {
+  border-color: rgba(236, 183, 104, 0.45);
+  background: rgba(236, 183, 104, 0.06);
+}
+
+.anime-relations-tile.is-current {
+  border-color: rgba(236, 183, 104, 0.62);
+  background: rgba(236, 183, 104, 0.1);
+}
+
+.anime-relations-tile-poster {
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+}
+
+.anime-relations-tile-year {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: rgba(245, 234, 210, 0.55);
+}
+
+.anime-relations-sort-btn {
+  border: 1px solid rgba(245, 234, 210, 0.15);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.16rem 0.5rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: rgba(245, 234, 210, 0.58);
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.anime-relations-sort-btn:hover {
+  border-color: rgba(236, 183, 104, 0.45);
+  color: rgba(236, 183, 104, 0.9);
+}
+
+.anime-relations-sort-btn.is-active {
+  border-color: rgba(236, 183, 104, 0.55);
+  background: rgba(236, 183, 104, 0.12);
+  color: rgba(236, 183, 104, 0.95);
+}
+
+.anime-relations-toggle {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: rgba(236, 183, 104, 0.8);
+}
+
+.anime-relations-toggle:hover {
+  color: rgba(236, 183, 104, 1);
+}

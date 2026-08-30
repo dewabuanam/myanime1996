@@ -95,7 +95,7 @@ export default function LibraryStatusPickerModal({
     <div className="fixed inset-0" style={{ zIndex: 2147483646 }} aria-hidden={false}>
       <section
         ref={popupRef}
-        className="library-status-picker-modal pointer-events-auto max-w-none border border-amberline/45 bg-[#0f0b09] p-2.5 shadow-[0_20px_56px_rgba(0,0,0,0.68)]"
+        className="library-status-picker-modal pointer-events-auto max-w-none border border-amberline/45 p-2.5"
         role="dialog"
         aria-modal="false"
         aria-label={title ? `Add ${title} to library` : 'Add to library'}
@@ -125,15 +125,13 @@ export default function LibraryStatusPickerModal({
         <div className="library-status-picker-list space-y-1">
           {LIBRARY_STATUS_OPTIONS.map((option) => {
             const active = initialStatus === option.value;
-            const rowBackgroundColor = active ? '#2a1c12' : '#16110f';
             return (
               <button
                 key={option.value}
                 type="button"
                 className={`library-status-picker-option relative z-[1] w-full cursor-pointer border px-2.5 py-2 text-left transition-colors ${
-                  active ? 'border-amberline/45' : 'border-cream/12 hover:border-cream/28'
+                  active ? 'is-active border-amberline/45' : 'border-cream/12 hover:border-cream/28'
                 }`}
-                style={{ backgroundColor: rowBackgroundColor, opacity: 1 }}
                 onClick={() => {
                   onConfirm(option.value);
                 }}
@@ -147,7 +145,7 @@ export default function LibraryStatusPickerModal({
           <div className="mt-2 border-t border-cream/12 pt-2">
             <button
               type="button"
-              className="library-status-picker-option relative z-[1] w-full cursor-pointer border border-rust/45 bg-[#1b1110] px-2.5 py-2 text-left transition-colors hover:border-rust/65"
+              className="library-status-picker-option is-danger relative z-[1] w-full cursor-pointer border border-rust/45 px-2.5 py-2 text-left transition-colors hover:border-rust/65"
               onClick={() => {
                 onRemove();
               }}

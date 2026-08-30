@@ -1,4 +1,4 @@
-import type { AnimeDetail, AnimeEpisode, AnimeSummary, CachedPayload } from '../types/anime';
+import type { AnimeDetail, AnimeEpisode, AnimeRelationGroup, AnimeSummary, CachedPayload } from '../types/anime';
 import { getStoredValue, setStoredValue } from './store';
 import { getCurrentSeasonYear, inferSeasonFromDate, normalizeSeasonKey, type SeasonKey } from '../utils/season';
 
@@ -286,6 +286,7 @@ interface TenraiAnime {
   members?: number;
   aired?: { from?: string; to?: string; string?: string };
   season?: string;
+  relations?: TenraiRelation[];
 }
 
 interface TenraiListResponse {
@@ -318,6 +319,17 @@ interface TenraiProducerListResponse {
     last_visible_page?: number;
     has_next_page?: boolean;
   };
+}
+
+interface TenraiRelationEntry {
+  mal_id?: number;
+  type?: string;
+  name?: string;
+}
+
+interface TenraiRelation {
+  relation?: string;
+  entry?: TenraiRelationEntry[];
 }
 
 interface TenraiDetailResponse {
@@ -624,7 +636,28 @@ function normalizeDetail(anime: TenraiAnime): AnimeDetail {
     themeItems: toTaxonomyItems(anime.themes),
     demographicItems: toTaxonomyItems(anime.demographics),
     producerItems: toTaxonomyItems(anime.producers),
+    relations: normalizeRelations(anime.relations),
   };
+}
+
+// Only /anime/{id}/full carries relations; list endpoints leave it undefined.
+function normalizeRelations(relations?: TenraiRelation[]): AnimeRelationGroup[] | undefined {
+  if (!Array.isArray(relations) || relations.length === 0) return undefined;
+
+  const groups = relations
+    .map((group) => ({
+      relation: (group.relation ?? '').trim(),
+      entries: (group.entry ?? [])
+        .filter((entry) => typeof entry.mal_id === 'number' && entry.mal_id > 0)
+        .map((entry) => ({
+          id: Math.floor(entry.mal_id as number),
+          name: (entry.name ?? '').trim(),
+          type: (entry.type ?? '').trim().toLowerCase(),
+        })),
+    }))
+    .filter((group) => group.relation.length > 0 && group.entries.length > 0);
+
+  return groups.length > 0 ? groups : undefined;
 }
 
 function toEpisodeDurationMinutes(duration?: number) {
@@ -1180,7 +1213,10 @@ export function getAnimeDetails(id: string | number) {
     `/anime/${id}/full`,
     HOUR,
     (json) => normalizeDetail((json as TenraiDetailResponse).data),
-    { cacheContext: `anime-detail:${normalizedId}`, useDailyCacheKey: true },
+    // v2: entries cached before relations were parsed lack the field entirely, and a
+    // stale one would silently hide the relations section. Bumping the context retires
+    // them instead of waiting out the TTL.
+    { cacheContext: `anime-detail-v2:${normalizedId}`, useDailyCacheKey: true },
   )
     .then(async (detail) => {
       const cache = await getStoredValue('tenraiCache', {});

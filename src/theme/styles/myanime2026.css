@@ -1925,6 +1925,77 @@
   background: rgba(16, 24, 40, 0.08);
 }
 
+:root[data-theme='myanime2026'] .toast-card {
+  background: rgba(244, 246, 250, 0.92);
+  box-shadow: 0 10px 26px transparent;
+}
+
+:root[data-theme='myanime2026'] .library-status-picker-modal {
+  background: rgb(255, 255, 255);
+  box-shadow: 0 20px 56px transparent;
+}
+
+:root[data-theme='myanime2026'] .library-status-picker-option {
+  background: rgb(244, 246, 250);
+}
+
+:root[data-theme='myanime2026'] .library-status-picker-option.is-active {
+  background: rgb(233, 237, 244);
+}
+
+:root[data-theme='myanime2026'] .library-status-picker-option.is-danger {
+  background: rgb(244, 246, 250);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-tile {
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 10px;
+  background: rgba(16, 24, 40, 0.02);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-tile:hover {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-tile.is-current {
+  border-color: rgba(37, 99, 235, 0.62);
+  background: rgba(37, 99, 235, 0.1);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-tile-year {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(16, 24, 40, 0.55);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-sort-btn {
+  border: 1px solid rgba(16, 24, 40, 0.15);
+  border-radius: 10px;
+  background: rgba(16, 24, 40, 0.02);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(16, 24, 40, 0.58);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-sort-btn:hover {
+  border-color: rgba(37, 99, 235, 0.45);
+  color: rgba(37, 99, 235, 0.9);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-sort-btn.is-active {
+  border-color: rgba(37, 99, 235, 0.55);
+  background: rgba(37, 99, 235, 0.12);
+  color: rgba(37, 99, 235, 0.95);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-toggle {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(37, 99, 235, 0.8);
+}
+
+:root[data-theme='myanime2026'] .anime-relations-toggle:hover {
+  color: rgb(37, 99, 235);
+}
+
 /* ===========================================================================
  * 3. Flat pass — last so it wins over the surface map above.
  * ======================================================================== */
@@ -2367,6 +2438,30 @@
   background: #ffffff;
   border: 1px solid rgba(16, 24, 40, 0.12);
   border-radius: 12px;
+}
+
+/* Toast and the status picker float above the page. The flat pass strips cast shadows,
+   but these two need to sit apart from what is behind them, so they keep one soft
+   elevation -- the same exception the rank numerals get. */
+:root[data-theme='myanime2026'] .toast-card,
+:root[data-theme='myanime2026'] .library-status-picker-modal {
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+  border-radius: 12px;
+}
+
+:root[data-theme='myanime2026'] .library-status-picker-option {
+  border-radius: 8px;
+}
+
+/* Selection is the accent, not a grey step; the luminance mapping cannot know that. */
+:root[data-theme='myanime2026'] .library-status-picker-option.is-active {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+/* The destructive row was a warm red-black that mapped to the same neutral as its
+   siblings, losing the warning entirely. */
+:root[data-theme='myanime2026'] .library-status-picker-option.is-danger {
+  background: rgba(220, 38, 38, 0.08);
 }
 
 /* Re-assert Tailwind's radius scale last. Any theme-scoped selector outranks a single

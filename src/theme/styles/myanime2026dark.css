@@ -1843,6 +1843,75 @@
   background: rgba(232, 237, 245, 0.08);
 }
 
+:root[data-theme='myanime2026dark'] .toast-card {
+  background: rgba(22, 29, 43, 0.92);
+  box-shadow: 0 10px 26px transparent;
+}
+
+:root[data-theme='myanime2026dark'] .library-status-picker-modal {
+  background: rgb(18, 24, 38);
+  box-shadow: 0 20px 56px transparent;
+}
+
+:root[data-theme='myanime2026dark'] .library-status-picker-option {
+  background: rgb(22, 29, 43);
+}
+
+:root[data-theme='myanime2026dark'] .library-status-picker-option.is-active {
+  background: rgb(28, 36, 52);
+}
+
+:root[data-theme='myanime2026dark'] .library-status-picker-option.is-danger {
+  background: rgb(22, 29, 43);
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-tile {
+  border: 1px solid rgba(232, 237, 245, 0.12);
+  border-radius: 10px;
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-tile:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-tile.is-current {
+  border-color: rgba(59, 130, 246, 0.62);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-tile-year {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(232, 237, 245, 0.55);
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-sort-btn {
+  border: 1px solid rgba(232, 237, 245, 0.15);
+  border-radius: 10px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(232, 237, 245, 0.58);
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-sort-btn:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+  color: rgba(59, 130, 246, 0.9);
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-sort-btn.is-active {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(59, 130, 246, 0.12);
+  color: rgba(59, 130, 246, 0.95);
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-toggle {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(59, 130, 246, 0.8);
+}
+
+:root[data-theme='myanime2026dark'] .anime-relations-toggle:hover {
+  color: rgb(59, 130, 246);
+}
+
 /* ===========================================================================
  * 3. Flat pass — last so it wins over the surface map above.
  * ======================================================================== */
@@ -2133,9 +2202,9 @@
 
 :root[data-theme='myanime2026dark'] .history-action-btn-remove:hover,
 :root[data-theme='myanime2026dark'] .history-action-btn-remove:focus-visible {
-  background: rgba(248, 113, 113, 0.16);
-  border-color: #f87171;
-  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.14);
+  border-color: #dc2626;
+  color: #b91c1c;
 }
 
 :root[data-theme='myanime2026dark'] .hero-seeall-menu-trigger:hover,
@@ -2250,6 +2319,30 @@
   background: #161d2b;
   border: 1px solid rgba(232, 237, 245, 0.14);
   border-radius: 12px;
+}
+
+/* Toast and the status picker float above the page. The flat pass strips cast shadows,
+   but these two need to sit apart from what is behind them, so they keep one soft
+   elevation -- the same exception the rank numerals get. */
+:root[data-theme='myanime2026dark'] .toast-card,
+:root[data-theme='myanime2026dark'] .library-status-picker-modal {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  border-radius: 12px;
+}
+
+:root[data-theme='myanime2026dark'] .library-status-picker-option {
+  border-radius: 8px;
+}
+
+/* Selection is the accent, not a grey step; the luminance mapping cannot know that. */
+:root[data-theme='myanime2026dark'] .library-status-picker-option.is-active {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+/* The destructive row was a warm red-black that mapped to the same neutral as its
+   siblings, losing the warning entirely. */
+:root[data-theme='myanime2026dark'] .library-status-picker-option.is-danger {
+  background: rgba(248, 113, 113, 0.14);
 }
 
 /* Re-assert Tailwind's radius scale last. Any theme-scoped selector outranks a single

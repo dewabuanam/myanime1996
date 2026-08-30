@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import LibraryStatusPickerModal from '../components/LibraryStatusPickerModal';
 import PlaylistPickerModal from '../components/PlaylistPickerModal';
 import SeasonLinkBadge from '../components/SeasonLinkBadge';
+import AnimeRelationsSection from '../components/AnimeRelationsSection';
 import { FALLBACK_PAGE_SIZE, getTenraiDetailEpisodeBundle } from '../services/animeDetailEpisodes';
 import { getAnimeEpisodeById } from '../services/tenrai';
 import { useAppStore } from '../state/appStore';
@@ -248,6 +249,8 @@ export default function AnimeDetail() {
           </div>
 
           <p className="mt-4 text-sm leading-6 text-cream/70">{anime.synopsis}</p>
+
+          <AnimeRelationsSection anime={anime} />
 
           {renderTaxonomySection('Genres', anime.genreItems ?? anime.genres.map((name) => ({ id: 0, name })), 'genre')}
           {allowNsfw ? renderTaxonomySection('Explicit Genres', anime.explicitGenreItems ?? [], 'genre') : null}

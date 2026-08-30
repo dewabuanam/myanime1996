@@ -88,6 +88,19 @@ export interface AnimeDetail extends AnimeSummary {
   themeItems?: AnimeTaxonomyItem[];
   demographicItems?: AnimeTaxonomyItem[];
   producerItems?: AnimeTaxonomyItem[];
+  relations?: AnimeRelationGroup[];
+}
+
+/** One related title as the catalogue reports it (Sequel, Prequel, Side Story, ...). */
+export interface AnimeRelationEntry {
+  id: number;
+  name: string;
+  type: string;
+}
+
+export interface AnimeRelationGroup {
+  relation: string;
+  entries: AnimeRelationEntry[];
 }
 
 export interface AnimeEpisode {

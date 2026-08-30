@@ -16,7 +16,7 @@ export default function InAppNotificationToasts() {
         return (
           <div
             key={toast.id}
-            className="pointer-events-auto rounded-xl border border-amberline/45 bg-[rgba(28,18,12,0.92)] px-3 py-2 shadow-[0_10px_26px_rgba(0,0,0,0.5)]"
+            className="toast-card pointer-events-auto rounded-xl border border-amberline/45 px-3 py-2"
             role="status"
             aria-live="polite"
           >
