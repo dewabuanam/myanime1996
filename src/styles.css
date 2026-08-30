@@ -4557,8 +4557,7 @@ button {
   top: 0;
 }
 
-.history-content,
-.notifications-content {
+.history-content {
   border: 1px solid rgba(245, 234, 210, 0.14);
   background:
     radial-gradient(circle at 92% 10%, rgba(236, 183, 104, 0.08), transparent 16rem),
@@ -4569,9 +4568,11 @@ button {
   padding-bottom: 1rem;
 }
 
-.notifications-scrollable {
-  max-height: calc(100vh - 12rem);
-  overflow-y: auto;
+/* The notifications list scrolls with the page, like Search Results. It used to be its
+   own scroll container inside the page scroller, which gave the view two scrollbars. */
+.notifications-content {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
 }
 
 .library-row-card,
@@ -5318,4 +5319,12 @@ button {
 
 .login-hero-glow {
   background: radial-gradient(circle at 25% 20%, rgba(232, 184, 115, 0.2), transparent 24rem);
+}
+
+.profile-avatar {
+  /* The theme logos are wide wordmarks; object-cover cropped them to an unreadable
+     sliver. Contain them in the circle and give the transparent art a backing. */
+  object-fit: contain;
+  padding: 0.12rem;
+  background: rgba(245, 234, 210, 0.08);
 }

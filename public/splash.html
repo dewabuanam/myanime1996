@@ -26,6 +26,22 @@
         --splash-title-glow: rgba(231, 176, 97, 0.24);
       }
 
+      :root[data-theme='myanime2026dark'] {
+        --splash-fg: #e8edf5;
+        --splash-bg: #0e1420;
+        --splash-radial-a: transparent;
+        --splash-radial-b: transparent;
+        --splash-border: rgba(232, 237, 245, 0.14);
+        --splash-panel-a: #161d2b;
+        --splash-panel-b: #161d2b;
+        --splash-glow: transparent;
+        --splash-desc: #94a3b8;
+        --splash-rail-bg: rgba(232, 237, 245, 0.12);
+        --splash-rail-a: #3b82f6;
+        --splash-rail-b: #3b82f6;
+        --splash-title-glow: transparent;
+      }
+
       :root[data-theme='myanime2026'] {
         --splash-fg: #101828;
         --splash-bg: #ffffff;
@@ -199,6 +215,7 @@
           myanime1996: '/assets/logo.png',
           myanime2077: '/assets/logo-2077.png',
           myanime2026: '/assets/logo-2026.png',
+          myanime2026dark: '/assets/logo-2026-dark.png',
         };
         const setTheme = (value) => {
           const next = LOGOS[value] ? value : 'myanime1996';

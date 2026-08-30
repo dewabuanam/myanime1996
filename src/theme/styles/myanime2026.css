@@ -100,8 +100,10 @@
   --theme-action-btn-b: #2563eb;
   --theme-action-btn-fg: #ffffff;
 
-  --theme-font-display: 'Rajdhani', 'Oswald', system-ui, sans-serif;
-  --theme-font-ui: 'Rajdhani', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Platform UI stack for both roles. Weight and size carry the hierarchy; no retro
+     display or monospace face anywhere in this theme. */
+  --theme-font-display: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --theme-font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* ===========================================================================
@@ -110,6 +112,7 @@
 
 :root[data-theme='myanime2026'] .retro-tooltip::after {
   border-radius: 10px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   box-shadow: 0 6px 18px transparent;
 }
 
@@ -119,6 +122,7 @@
 
 :root[data-theme='myanime2026'] .global-retro-tooltip {
   border-radius: 10px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   box-shadow: 0 6px 18px transparent;
 }
 
@@ -187,6 +191,7 @@
   border: 1px solid rgba(16, 24, 40, 0.14);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.76);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .jb-sidebar-item:hover,
@@ -238,6 +243,7 @@
 :root[data-theme='myanime2026'] .jb-playlist-type-badge {
   border: 1px solid rgba(37, 99, 235, 0.26);
   background: rgba(16, 24, 40, 0.02);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .jb-playlist-type-badge.is-anime {
@@ -345,6 +351,14 @@
   border-radius: 8px;
 }
 
+:root[data-theme='myanime2026'] .source-select-label {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root[data-theme='myanime2026'] .source-select {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
 :root[data-theme='myanime2026'] .logo-select-icon {
   border-radius: 6px;
   background: rgba(16, 24, 40, 0.051);
@@ -354,6 +368,14 @@
   border-radius: 6px;
   background: linear-gradient(135deg, rgba(16, 24, 40, 0.34), rgba(16, 24, 40, 0.16));
   box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.18);
+}
+
+:root[data-theme='myanime2026'] .logo-select-label {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root[data-theme='myanime2026'] .logo-select-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .logo-select-menu {
@@ -366,6 +388,7 @@
 }
 
 :root[data-theme='myanime2026'] .source-status-text {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.82);
 }
 
@@ -374,6 +397,7 @@
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.85);
   color: rgba(16, 24, 40, 0.9);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .source-log-btn:hover {
@@ -391,6 +415,7 @@
   border: 1px solid rgba(37, 99, 235, 0.45);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(233, 237, 244, 0.9));
   color: rgba(16, 24, 40, 0.94);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   box-shadow: 0 6px 14px transparent;
 }
 
@@ -411,10 +436,12 @@
 }
 
 :root[data-theme='myanime2026'] .source-trace-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.9);
 }
 
 :root[data-theme='myanime2026'] .source-trace-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.65);
 }
 
@@ -425,14 +452,17 @@
 }
 
 :root[data-theme='myanime2026'] .source-trace-item-order {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.62);
 }
 
 :root[data-theme='myanime2026'] .source-trace-item-plugin {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.9);
 }
 
 :root[data-theme='myanime2026'] .source-trace-item-status {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   border: 1px solid rgba(16, 24, 40, 0.18);
 }
 
@@ -461,14 +491,17 @@
 }
 
 :root[data-theme='myanime2026'] .source-trace-step {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.68);
 }
 
 :root[data-theme='myanime2026'] .source-trace-item-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.55);
 }
 
 :root[data-theme='myanime2026'] .source-trace-rate-limit-clear-btn {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.92);
   background: rgba(220, 38, 38, 0.08);
   border: 1px solid rgba(220, 38, 38, 0.32);
@@ -487,6 +520,7 @@
 }
 
 :root[data-theme='myanime2026'] .source-trace-empty {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.66);
 }
 
@@ -504,14 +538,17 @@
 }
 
 :root[data-theme='myanime2026'] .right-now-no-signal-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.9);
 }
 
 :root[data-theme='myanime2026'] .right-now-no-signal-subtitle {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.62);
 }
 
 :root[data-theme='myanime2026'] .right-now-no-signal-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.86);
 }
 
@@ -519,15 +556,18 @@
   border: 1px solid rgba(37, 99, 235, 0.38);
   background: linear-gradient(180deg, rgba(233, 237, 244, 0.92), rgba(255, 255, 255, 0.92));
   color: rgba(16, 24, 40, 0.95);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .plugins-feedback-text {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.72);
 }
 
 :root[data-theme='myanime2026'] .plugins-empty-state {
   border: 1px dashed rgba(37, 99, 235, 0.32);
   background: rgba(255, 255, 255, 0.5);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.75);
 }
 
@@ -550,10 +590,12 @@
 }
 
 :root[data-theme='myanime2026'] .plugin-row-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.95);
 }
 
 :root[data-theme='myanime2026'] .plugin-row-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.55);
 }
 
@@ -571,6 +613,10 @@
   color: rgba(16, 24, 40, 0.7);
 }
 
+:root[data-theme='myanime2026'] .plugin-prefer-btn {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
 :root[data-theme='myanime2026'] .plugin-prefer-btn.is-preferred {
   border-color: rgba(37, 99, 235, 0.62);
   color: rgba(37, 99, 235, 0.95);
@@ -585,6 +631,7 @@
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(233, 237, 244, 0.94));
   color: rgba(16, 24, 40, 0.96);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   box-shadow: 0 12px 22px transparent;
 }
 
@@ -596,6 +643,7 @@
 :root[data-theme='myanime2026'] .skip-toast {
   border-radius: 8px;
   color: rgba(16, 24, 40, 0.85);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .right-now-full-overlay-row .source-select-wrap {
@@ -625,6 +673,7 @@
   border: 1px solid rgba(16, 24, 40, 0.17);
   background: linear-gradient(180deg, rgba(244, 246, 250, 0.9), rgba(255, 255, 255, 0.92));
   color: rgba(16, 24, 40, 0.92);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background-image: linear-gradient(45deg, transparent 50%, rgba(37, 99, 235, 0.92) 50%), linear-gradient(135deg, rgba(37, 99, 235, 0.92) 50%, transparent 50%), linear-gradient(180deg, rgba(244, 246, 250, 0.9), rgba(255, 255, 255, 0.92));
 }
 
@@ -641,6 +690,7 @@
 :root[data-theme='myanime2026'] .right-now-episode-page-select option {
   background: rgb(244, 246, 250);
   color: rgba(16, 24, 40, 0.95);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .right-now-queue-drawer {
@@ -660,6 +710,7 @@
   border-radius: 8px;
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.8);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .right-queue-clear-btn:hover {
@@ -685,14 +736,17 @@
 
 :root[data-theme='myanime2026'] .right-queue-item-title {
   color: rgba(16, 24, 40, 0.92);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .right-queue-item-jp {
   color: rgba(16, 24, 40, 0.62);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .right-queue-item-type {
   color: rgba(37, 99, 235, 0.8);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .right-queue-item-action-btn {
@@ -720,6 +774,7 @@
   border-radius: 10px;
   background: rgba(16, 24, 40, 0.02);
   color: rgba(16, 24, 40, 0.86);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .right-queue-item-menu-btn:hover {
@@ -821,15 +876,18 @@
 }
 
 :root[data-theme='myanime2026'] .profile-popup-eyebrow {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.9);
 }
 
 :root[data-theme='myanime2026'] .profile-popup-name {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.94);
   text-shadow: 0 0 12px rgba(37, 99, 235, 0.28);
 }
 
 :root[data-theme='myanime2026'] .profile-popup-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.7);
 }
 
@@ -838,6 +896,7 @@
   border: 1px solid rgba(220, 38, 38, 0.5);
   background: linear-gradient(180deg, rgba(221, 227, 236, 0.8), rgba(221, 227, 236, 0.82));
   color: rgba(37, 99, 235, 0.94);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .search-dropdown {
@@ -852,10 +911,12 @@
 }
 
 :root[data-theme='myanime2026'] .search-dropdown-eyebrow {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.9);
 }
 
 :root[data-theme='myanime2026'] .search-dropdown-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.62);
 }
 
@@ -863,6 +924,7 @@
   border: 1px solid rgba(16, 24, 40, 0.16);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.9);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .search-dropdown-pill:hover,
@@ -872,6 +934,7 @@
 }
 
 :root[data-theme='myanime2026'] .search-dropdown-empty {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.58);
 }
 
@@ -891,6 +954,7 @@
   border: 1px solid rgba(16, 24, 40, 0.15);
   background: rgba(16, 24, 40, 0.02);
   color: rgba(16, 24, 40, 0.82);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .search-dropdown-footer {
@@ -902,6 +966,7 @@
   border: 1px solid rgba(37, 99, 235, 0.5);
   background: rgba(37, 99, 235, 0.14);
   color: rgba(16, 24, 40, 0.95);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .search-dropdown-close {
@@ -915,10 +980,12 @@
 }
 
 :root[data-theme='myanime2026'] .advanced-search-eyebrow {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.88);
 }
 
 :root[data-theme='myanime2026'] .advanced-search-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.96);
 }
 
@@ -929,12 +996,14 @@
 }
 
 :root[data-theme='myanime2026'] .advanced-search-field > span {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.84);
 }
 
 :root[data-theme='myanime2026'] .advanced-search-field input,
 :root[data-theme='myanime2026'] .advanced-search-field select {
   background: linear-gradient(180deg, color-mix(in srgb, var(--theme-control-bg-raised) 96%, black), color-mix(in srgb, var(--theme-control-bg) 94%, black));
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .advanced-search-field input::placeholder {
@@ -956,6 +1025,7 @@
 :root[data-theme='myanime2026'] .advanced-search-field select optgroup {
   background: rgb(244, 246, 250);
   color: rgba(16, 24, 40, 0.95);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .advanced-search-section {
@@ -965,6 +1035,7 @@
 
 :root[data-theme='myanime2026'] .advanced-search-section-title,
 :root[data-theme='myanime2026'] .advanced-search-group-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.88);
 }
 
@@ -972,6 +1043,7 @@
   border: 1px solid rgba(16, 24, 40, 0.16);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.9);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .advanced-search-chip:hover,
@@ -1020,10 +1092,12 @@
 }
 
 :root[data-theme='myanime2026'] .settings-modal-eyebrow {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.9);
 }
 
 :root[data-theme='myanime2026'] .settings-modal-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.95);
   text-shadow: 0 0 14px rgba(37, 99, 235, 0.26);
 }
@@ -1060,6 +1134,7 @@
 }
 
 :root[data-theme='myanime2026'] .settings-nav-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.95);
 }
 
@@ -1078,6 +1153,7 @@
 }
 
 :root[data-theme='myanime2026'] .settings-action-copy h3 {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.95);
 }
 
@@ -1086,6 +1162,7 @@
 }
 
 :root[data-theme='myanime2026'] .settings-action-btn {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.06) inset;
 }
 
@@ -1098,6 +1175,7 @@
   border: 1px solid rgba(16, 24, 40, 0.22);
   background: rgba(255, 255, 255, 0.52);
   color: rgba(16, 24, 40, 0.82);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .settings-upcoming-filter-btn:hover,
@@ -1131,10 +1209,12 @@
 :root[data-theme='myanime2026'] .settings-empty {
   border: 1px dashed rgba(16, 24, 40, 0.18);
   border-radius: 12px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.56);
 }
 
 :root[data-theme='myanime2026'] .settings-status {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.9);
 }
 
@@ -1160,10 +1240,12 @@
 }
 
 :root[data-theme='myanime2026'] .history-stat-card p {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.58);
 }
 
 :root[data-theme='myanime2026'] .history-stat-card strong {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.95);
 }
 
@@ -1182,6 +1264,7 @@
 }
 
 :root[data-theme='myanime2026'] .history-select-wrap {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.62);
 }
 
@@ -1204,6 +1287,7 @@
 }
 
 :root[data-theme='myanime2026'] .history-item-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.95);
 }
 
@@ -1215,6 +1299,7 @@
   border: 1px solid rgba(37, 99, 235, 0.5);
   background: rgba(221, 227, 236, 0.35);
   color: rgba(16, 24, 40, 0.95);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .history-action-btn-resume {
@@ -1249,6 +1334,7 @@
 }
 
 :root[data-theme='myanime2026'] .confirm-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.95);
 }
 
@@ -1260,6 +1346,7 @@
   border: 1px solid rgba(16, 24, 40, 0.2);
   background: rgba(16, 24, 40, 0.05);
   color: rgba(16, 24, 40, 0.92);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .confirm-btn.is-primary {
@@ -1286,7 +1373,12 @@
   text-shadow: 0 1px 0 transparent, 0 0 16px rgba(29, 78, 216, 0.25);
 }
 
+:root[data-theme='myanime2026'] .retro-hero-subtitle {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
 :root[data-theme='myanime2026'] .hero-featured-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.88);
   text-shadow: 0 1px 0 transparent, 0 0 10px transparent;
 }
@@ -1297,6 +1389,7 @@
 }
 
 :root[data-theme='myanime2026'] .airing-rank-badge {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-text-stroke: 1.6px rgba(37, 99, 235, 0.72);
   text-shadow: 0 1px 0 transparent, 0 0 10px transparent;
 }
@@ -1349,6 +1442,7 @@
   text-shadow: 0 1px 0 transparent;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.14),
     0 4px 10px transparent;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .anime-hover-static-overlay {
@@ -1383,6 +1477,7 @@
 }
 
 :root[data-theme='myanime2026'] .anime-hover-preview-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.95);
 }
 
@@ -1390,6 +1485,7 @@
   border: 1px solid rgba(37, 99, 235, 0.58);
   border-radius: 8px;
   background: rgba(37, 99, 235, 0.14);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.98);
 }
 
@@ -1397,6 +1493,7 @@
   border: 1px solid rgba(16, 24, 40, 0.24);
   border-radius: 8px;
   background: rgba(16, 24, 40, 0.038);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.88);
 }
 
@@ -1405,10 +1502,16 @@
 }
 
 :root[data-theme='myanime2026'] .anime-hover-preview-status {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.9);
 }
 
+:root[data-theme='myanime2026'] .anime-hover-preview-genres {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
 :root[data-theme='myanime2026'] .anime-hover-preview-media-type {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.82);
 }
 
@@ -1416,6 +1519,7 @@
   border: 1px solid rgba(37, 99, 235, 0.34);
   background: rgba(37, 99, 235, 0.12);
   color: rgba(29, 78, 216, 0.9);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .anime-card-poster-wrap {
@@ -1431,6 +1535,7 @@
   text-shadow: 0 1px 0 transparent;
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.14),
     0 4px 10px transparent;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .anime-card-poster-overlay-badge {
@@ -1439,13 +1544,16 @@
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.98), rgba(29, 78, 216, 0.96));
   color: rgba(244, 246, 250, 0.96);
   box-shadow: 0 5px 14px transparent;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .anime-card-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.93);
 }
 
 :root[data-theme='myanime2026'] .anime-card-jp {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(29, 78, 216, 0.75);
 }
 
@@ -1454,9 +1562,11 @@
   border-radius: 8px;
   background: rgba(37, 99, 235, 0.1);
   color: rgba(16, 24, 40, 0.9);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .anime-card-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.66);
 }
 
@@ -1476,6 +1586,7 @@
   background: rgba(255, 255, 255, 0.55);
   color: rgba(37, 99, 235, 0.9);
   border-radius: 10px;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .hero-boombox {
@@ -1486,6 +1597,7 @@
   border: 1px solid rgba(37, 99, 235, 0.4);
   background: rgba(255, 255, 255, 0.82);
   color: rgba(16, 24, 40, 0.92);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .hero-seeall-menu-trigger:hover,
@@ -1501,6 +1613,7 @@
 }
 
 :root[data-theme='myanime2026'] .hero-seeall-menu-eyebrow {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.88);
 }
 
@@ -1508,6 +1621,7 @@
   border: 1px solid rgba(16, 24, 40, 0.16);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.9);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .hero-seeall-menu-link:hover,
@@ -1521,6 +1635,7 @@
 }
 
 :root[data-theme='myanime2026'] .see-all-link {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.9);
 }
 
@@ -1532,6 +1647,7 @@
   border: 1px solid rgba(37, 99, 235, 0.38);
   background: rgba(255, 255, 255, 0.56);
   color: rgba(16, 24, 40, 0.9);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .season-link-badge:hover,
@@ -1593,8 +1709,7 @@
     linear-gradient(180deg, rgba(244, 246, 250, 0.64), rgba(255, 255, 255, 0.5));
 }
 
-:root[data-theme='myanime2026'] .history-content,
-:root[data-theme='myanime2026'] .notifications-content {
+:root[data-theme='myanime2026'] .history-content {
   border: 1px solid rgba(16, 24, 40, 0.14);
   background: radial-gradient(circle at 92% 10%, rgba(37, 99, 235, 0.08), transparent 16rem), linear-gradient(180deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.48));
   box-shadow: 0 0 0 1px rgba(16, 24, 40, 0.05) inset;
@@ -1637,6 +1752,7 @@
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.24), rgba(200, 209, 222, 0.24)),
     rgba(255, 255, 255, 0.7);
   color: rgba(37, 99, 235, 0.95);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .seeall-hero-filter-trigger:hover,
@@ -1664,6 +1780,7 @@
 }
 
 :root[data-theme='myanime2026'] .seeall-subtitle {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.67);
 }
 
@@ -1671,6 +1788,7 @@
   border: 1px solid rgba(16, 24, 40, 0.2);
   background: rgba(16, 24, 40, 0.03);
   color: rgba(16, 24, 40, 0.9);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .seeall-sort-btn.is-active,
@@ -1690,6 +1808,7 @@
 }
 
 :root[data-theme='myanime2026'] .seeall-row-rank {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-text-stroke: 1.5px rgba(37, 99, 235, 0.72);
   text-shadow: 0 1px 0 transparent, 0 0 10px transparent;
 }
@@ -1698,6 +1817,7 @@
   border: 1px solid rgba(37, 99, 235, 0.7);
   background: rgba(37, 99, 235, 0.92);
   color: rgb(244, 246, 250);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .seeall-row-trailer-btn {
@@ -1712,6 +1832,7 @@
 }
 
 :root[data-theme='myanime2026'] .seeall-row-score-value {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.98);
   text-shadow: 0 0 14px rgba(37, 99, 235, 0.28);
 }
@@ -1719,10 +1840,12 @@
 :root[data-theme='myanime2026'] .seeall-row-members {
   border: 1px solid rgba(16, 24, 40, 0.24);
   background: rgba(16, 24, 40, 0.035);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.84);
 }
 
 :root[data-theme='myanime2026'] .seeall-row-title {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.96);
 }
 
@@ -1731,6 +1854,7 @@
 }
 
 :root[data-theme='myanime2026'] .seeall-row-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.84);
 }
 
@@ -1739,6 +1863,7 @@
 }
 
 :root[data-theme='myanime2026'] .seeall-sentinel {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(16, 24, 40, 0.62);
 }
 
@@ -1748,6 +1873,7 @@
 }
 
 :root[data-theme='myanime2026'] .seeall-upcoming-filter-eyebrow {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(37, 99, 235, 0.9);
 }
 
@@ -1755,6 +1881,7 @@
   border: 1px solid rgba(16, 24, 40, 0.22);
   background: rgba(255, 255, 255, 0.56);
   color: rgba(16, 24, 40, 0.82);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 :root[data-theme='myanime2026'] .seeall-upcoming-filter-btn:hover,
@@ -1794,6 +1921,10 @@
   background: radial-gradient(circle at 25% 20%, rgba(37, 99, 235, 0.2), transparent 24rem);
 }
 
+:root[data-theme='myanime2026'] .profile-avatar {
+  background: rgba(16, 24, 40, 0.08);
+}
+
 /* ===========================================================================
  * 3. Flat pass — last so it wins over the surface map above.
  * ======================================================================== */
@@ -1804,15 +1935,42 @@
   display: none;
 }
 
-/* CRT / TV-static treatments. The elements stay (they are real "no signal" and
-   "searching" states) but render as plain light placeholders instead of tube noise. */
+/* CRT / TV-static treatments. These all sit *over* something -- the trailer, the video
+   frame -- so they are cleared rather than filled. (.right-now-static-overlay is not a
+   static effect at all despite the name: it is the z-index utility on the fullscreen
+   control containers, and painting it put a white slab behind the source/audio card.) */
 :root[data-theme='myanime2026'] .right-now-no-signal-crt,
 :root[data-theme='myanime2026'] .right-now-finding-signal-crt,
-:root[data-theme='myanime2026'] .right-now-static-overlay,
-:root[data-theme='myanime2026'] .anime-hover-static-overlay {
-  background: #eef1f6;
+:root[data-theme='myanime2026'] .right-now-static-overlay {
+  background: none;
   animation: none;
   filter: none;
+  mix-blend-mode: normal;
+}
+
+/* The trailer's tube-noise layer has no place in a flat theme, and as a solid fill it
+   simply hid the video. */
+:root[data-theme='myanime2026'] .anime-hover-static-overlay {
+  display: none;
+}
+
+/* Video surfaces stay dark (see the --theme-video-frame-* tokens), so the placeholder
+   behind the player is opaque dark rather than black-over-white, which landed at a
+   muddy mid grey and left the light "no signal" type sitting on top of it. */
+:root[data-theme='myanime2026'] .right-now-video-wrap,
+:root[data-theme='myanime2026'] .anime-hover-preview-media {
+  background: #0e1420;
+}
+
+/* Fullscreen controls sit on the video. The card itself keeps its surface; the wrap
+   behind it must not paint, or it reads as a white slab across the picture. */
+:root[data-theme='myanime2026'] .right-now-full-overlay-row .source-select-wrap {
+  background: transparent;
+  border-color: transparent;
+}
+
+:root[data-theme='myanime2026'] .right-now-full-overlay-row .source-select-label {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 :root[data-theme='myanime2026'] .right-now-no-signal-crt::before,
@@ -2019,11 +2177,196 @@
   border-radius: 8px;
 }
 
-:root[data-theme='myanime2026'] button,
-:root[data-theme='myanime2026'] input,
-:root[data-theme='myanime2026'] select,
-:root[data-theme='myanime2026'] textarea {
+/* A default for bare controls, wrapped in :where() so it carries zero specificity and
+   yields to every class rule -- including the base sheet's intentional 9999px pills,
+   which a normally-scoped element selector would silently flatten. */
+:where(:root[data-theme='myanime2026']) :where(button, input, select, textarea) {
   border-radius: 8px;
+}
+
+/* tailwind.config.js binds font-mono to Share Tech Mono and font-display to Oswald, so
+   the 151 inline uses of those two classes bypass the theme tokens entirely. */
+:root[data-theme='myanime2026'] .font-mono,
+:root[data-theme='myanime2026'] .font-display {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Retro labels lean on wide tracking that reads as dated at small sizes next to a
+   neutral face; tighten it without flattening the uppercase styling itself. */
+:root[data-theme='myanime2026'] [class*='tracking-'] {
+  letter-spacing: 0.04em;
+}
+
+/* Search popup and the search-result / see-all rows carry no radius in the base sheet,
+   so the rebasing pass had nothing to act on. `overflow: hidden` lets the popup clip its
+   own footer rather than needing a matching bottom radius of its own. */
+:root[data-theme='myanime2026'] .search-dropdown {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+:root[data-theme='myanime2026'] .search-dropdown-block {
+  border-radius: 8px;
+}
+
+:root[data-theme='myanime2026'] .seeall-row-card {
+  border-radius: 12px;
+}
+
+/* The history controls were warm brown fills on the dark themes. Mapping them by
+   luminance produced a washed grey pill that reads as disabled here, so they are
+   restated as flat controls: neutral outline, blue primary, red destructive. */
+:root[data-theme='myanime2026'] .history-action-btn {
+  background: #ffffff;
+  border-color: rgba(16, 24, 40, 0.18);
+  color: #101828;
+}
+
+:root[data-theme='myanime2026'] .history-action-btn:hover,
+:root[data-theme='myanime2026'] .history-action-btn:focus-visible {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+:root[data-theme='myanime2026'] .history-action-btn-resume {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+:root[data-theme='myanime2026'] .history-action-btn-resume:hover,
+:root[data-theme='myanime2026'] .history-action-btn-resume:focus-visible {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+:root[data-theme='myanime2026'] .history-action-btn-remove {
+  background: #ffffff;
+  border-color: rgba(220, 38, 38, 0.45);
+  color: #dc2626;
+}
+
+:root[data-theme='myanime2026'] .history-action-btn-remove:hover,
+:root[data-theme='myanime2026'] .history-action-btn-remove:focus-visible {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: #dc2626;
+  color: #b91c1c;
+}
+
+:root[data-theme='myanime2026'] .hero-seeall-menu-trigger:hover,
+:root[data-theme='myanime2026'] .hero-seeall-menu-trigger:focus-visible {
+  background: rgba(37, 99, 235, 0.08);
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+/* These four use `@apply font-mono` / `font-display` in @layer components. Tailwind
+   inlines the face at build time, so it never appears as a font-family declaration in
+   the source the generator reads, and it is not carried by the .font-mono class either. */
+:root[data-theme='myanime2026'] .eyebrow,
+:root[data-theme='myanime2026'] .section-title,
+:root[data-theme='myanime2026'] .vhs-button,
+:root[data-theme='myanime2026'] .vhs-button-ghost {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Settings stacks three or four translucent "recessed panel" fills inside one another
+   -- modal > detail > action card > row. On a dark ground each step read as depth; over
+   white the ink tints compound, and the innermost rows landed around rgb(228) which is
+   plainly grey. Inside the modal every surface is opaque, so nesting cannot darken it,
+   and the hairline borders carry the separation instead. */
+:root[data-theme='myanime2026'] .settings-modal,
+:root[data-theme='myanime2026'] .settings-sidebar,
+:root[data-theme='myanime2026'] .settings-detail,
+:root[data-theme='myanime2026'] .settings-action-card,
+:root[data-theme='myanime2026'] .settings-api-status-card,
+:root[data-theme='myanime2026'] .settings-empty,
+:root[data-theme='myanime2026'] .settings-nav-item {
+  background: #ffffff;
+}
+
+/* Rows tinted inline with bg-black/N (theme options, toggles, the catalog default). */
+:root[data-theme='myanime2026'] .settings-modal [class*='bg-black/'] {
+  background-color: #ffffff;
+}
+
+:root[data-theme='myanime2026'] .settings-nav-item:hover,
+:root[data-theme='myanime2026'] .settings-modal [class*='bg-black/']:hover {
+  background-color: rgba(37, 99, 235, 0.06);
+}
+
+/* Advanced search carries no radius of its own, so the rebasing pass had nothing to
+   act on -- same story as the search popup. */
+:root[data-theme='myanime2026'] .advanced-search-modal {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+:root[data-theme='myanime2026'] .advanced-search-field select,
+:root[data-theme='myanime2026'] .advanced-search-field input,
+:root[data-theme='myanime2026'] .advanced-search-body input,
+:root[data-theme='myanime2026'] .advanced-search-body select {
+  border-radius: 8px;
+}
+
+/* The plugin/source dropdown was a near-black popover with hairline options. Restated
+   as a flat menu: one surface, rounded, no inner boxes -- selection reads as a blue
+   row rather than a bordered chip. */
+:root[data-theme='myanime2026'] .logo-select-menu {
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: none;
+  padding: 4px;
+}
+
+:root[data-theme='myanime2026'] .logo-select-option {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #101828;
+  min-height: 1.9rem;
+  padding: 0.3rem 0.5rem;
+}
+
+:root[data-theme='myanime2026'] .logo-select-option:hover,
+:root[data-theme='myanime2026'] .logo-select-option:focus-visible {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+}
+
+:root[data-theme='myanime2026'] .logo-select-option.is-active {
+  background: rgba(37, 99, 235, 0.14);
+  color: #1d4ed8;
+}
+
+:root[data-theme='myanime2026'] .logo-select-trigger {
+  border-radius: 8px;
+}
+
+/* Rank numerals are drawn as outline-only type over poster art, relying on a drop
+   shadow the flat pass removed -- which left them barely legible. A solid fill reads
+   at any size; the one soft shadow earns its place over arbitrary artwork. */
+:root[data-theme='myanime2026'] .seeall-row-rank,
+:root[data-theme='myanime2026'] .airing-rank-badge {
+  color: #ffffff;
+  -webkit-text-stroke: 0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+/* Poster overlays need to stay dark: they sit on artwork and carry light type. */
+:root[data-theme='myanime2026'] .seeall-row-poster-overlay,
+:root[data-theme='myanime2026'] .anime-card-poster-overlay {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.62));
+}
+
+/* Library cards were a translucent black wash; on white that left no card at all. */
+:root[data-theme='myanime2026'] .library-row-card {
+  background: #ffffff;
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 12px;
 }
 
 /* Re-assert Tailwind's radius scale last. Any theme-scoped selector outranks a single

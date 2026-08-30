@@ -2,10 +2,11 @@ import type { ThemeDefinition, ThemeId, ThemeOption } from './theme.types';
 import myanime1996Theme from './themes/myanime1996';
 import myanime2077Theme from './themes/myanime2077';
 import myanime2026Theme from './themes/myanime2026';
+import myanime2026DarkTheme from './themes/myanime2026dark';
 
 export const DEFAULT_THEME_ID: ThemeId = 'myanime1996';
 
-const THEME_DEFINITIONS: ThemeDefinition[] = [myanime1996Theme, myanime2077Theme, myanime2026Theme];
+const THEME_DEFINITIONS: ThemeDefinition[] = [myanime1996Theme, myanime2077Theme, myanime2026Theme, myanime2026DarkTheme];
 
 const THEME_BY_ID = new Map<ThemeId, ThemeDefinition>(
   THEME_DEFINITIONS.map((theme) => [theme.id, theme]),
@@ -29,13 +30,14 @@ export function listThemeOptions(): ThemeOption[] {
   return THEME_DEFINITIONS.map((theme) => ({
     value: theme.id,
     label: theme.label,
-  }));
+  })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 }
 
 const THEME_STYLESHEET_LOADERS: Record<ThemeId, () => Promise<unknown>> = {
   myanime1996: () => import('./styles/myanime1996.css'),
   myanime2077: () => import('./styles/myanime2077.css'),
   myanime2026: () => import('./styles/myanime2026.css'),
+  myanime2026dark: () => import('./styles/myanime2026dark.css'),
 };
 
 const loadedThemeStylesheets = new Set<ThemeId>();

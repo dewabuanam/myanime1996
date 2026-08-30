@@ -40,6 +40,7 @@ fn normalize_theme(value: &str) -> String {
     match value {
         "myanime2077" => "myanime2077".to_string(),
         "myanime2026" => "myanime2026".to_string(),
+        "myanime2026dark" => "myanime2026dark".to_string(),
         _ => "myanime1996".to_string(),
     }
 }

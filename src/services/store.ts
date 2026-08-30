@@ -25,8 +25,8 @@ type StoreShape = {
   rightPanelView: RightPanelView;
   rightPanelWidth: number;
   titleLanguage: TitleLanguage;
-  appTheme: 'myanime1996' | 'myanime2077' | 'myanime2026';
-  lastAppTheme: 'myanime1996' | 'myanime2077' | 'myanime2026';
+  appTheme: 'myanime1996' | 'myanime2077' | 'myanime2026' | 'myanime2026dark';
+  lastAppTheme: 'myanime1996' | 'myanime2077' | 'myanime2026' | 'myanime2026dark';
   shuffleEnabled: boolean;
   repeatMode: 'off' | 'one';
   importedSourcePlugins: ImportedSourcePluginDefinition[];

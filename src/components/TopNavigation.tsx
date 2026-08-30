@@ -5,6 +5,7 @@ import { useEffect, useState, useRef, type MouseEvent as ReactMouseEvent } from 
 import { useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../state/appStore';
+import { resolveTheme } from '../theme';
 import SearchDropdown from './SearchDropdown';
 import AdvancedSearchModal from './AdvancedSearchModal';
 import { useAnimeSearch } from '../hooks/useAnimeSearch';
@@ -16,6 +17,7 @@ export default function TopNavigation() {
   const location = useLocation();
   const navigationType = useNavigationType();
   const session = useAppStore((state) => state.session);
+  const appTheme = useAppStore((state) => state.appTheme);
   const titleLanguage = useAppStore((state) => state.titleLanguage);
   const allowNsfw = useAppStore((state) => state.allowNsfw);
   const toggleTitleLanguage = useAppStore((state) => state.toggleTitleLanguage);
@@ -388,7 +390,7 @@ export default function TopNavigation() {
           setProfilePopupOpen(!isProfilePopupOpen);
         }}
       >
-        <img src="/assets/logo.png" alt="User avatar" className="h-7 w-7 rounded-full object-cover" />
+        <img src={resolveTheme(appTheme).logos.primary} alt="User avatar" className="profile-avatar h-7 w-7 rounded-full" />
         <ChevronDown size={14} className={`text-cream/70 transition-transform ${isProfilePopupOpen ? 'rotate-180' : ''}`} />
       </button>
       {isProfilePopupOpen &&
