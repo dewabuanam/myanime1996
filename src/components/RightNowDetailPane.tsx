@@ -71,6 +71,7 @@ export default function RightNowDetailPane({
 }: RightNowDetailPaneProps) {
   const navigate = useNavigate();
   const allowNsfw = useAppStore((state) => state.allowNsfw);
+  const selectAnime = useAppStore((state) => state.selectAnime);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
   const [isCompactPane, setIsCompactPane] = useState(false);
@@ -436,7 +437,29 @@ export default function RightNowDetailPane({
           </div>
         </div>
 
-        <AnimeRelationsSection anime={detailAnimeView} />
+        <AnimeRelationsSection
+          anime={detailAnimeView}
+          collapsedCount={4}
+          onSelect={(node) => {
+            void selectAnime({
+              id: node.id,
+              tenraiId: node.id,
+              title: node.title,
+              titleEnglish: node.titleEnglish,
+              titleJapanese: node.titleJapanese,
+              image: node.image ?? '',
+              synopsis: '',
+              year: node.year,
+              season: node.season,
+              seasonYear: node.seasonYear,
+              airingDate: node.airingDate,
+              episodes: node.episodes,
+              mediaType: node.mediaType,
+              studios: [],
+              genres: [],
+            });
+          }}
+        />
 
         {!isCompactPane ? (
           <div className="mt-2 space-y-2 border-t border-cream/10 pt-2 pb-2">

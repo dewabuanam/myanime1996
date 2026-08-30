@@ -12,17 +12,22 @@ import type { AnimeDetail } from '../types/anime';
 
 type AnimeRelationsSectionProps = {
   anime: AnimeDetail;
+  /**
+   * Where a tile should take the user. The right panel swaps its own detail view rather
+   * than navigating away; the full page routes to the entry.
+   */
+  onSelect?: (node: RelationChainNode) => void;
+  /** Tiles shown before "show more". The narrow panel fits fewer than the page. */
+  collapsedCount?: number;
 };
 
-// Collapsed height shows a single row on a typical detail pane; the rest is one click
-// away rather than pushing the synopsis and genres far down the page.
-const COLLAPSED_COUNT = 6;
+const DEFAULT_COLLAPSED_COUNT = 6;
 
 function tileTitle(node: RelationChainNode) {
   return node.titleEnglish?.trim() || node.title;
 }
 
-export default function AnimeRelationsSection({ anime }: AnimeRelationsSectionProps) {
+export default function AnimeRelationsSection({ anime, onSelect, collapsedCount }: AnimeRelationsSectionProps) {
   const navigate = useNavigate();
   const [chain, setChain] = useState<RelationChainNode[]>([]);
   const [isLoading, setLoading] = useState(false);
@@ -60,7 +65,8 @@ export default function AnimeRelationsSection({ anime }: AnimeRelationsSectionPr
   }, [anime]);
 
   const sorted = useMemo(() => sortRelationChain(chain, sort), [chain, sort]);
-  const visible = isExpanded ? sorted : sorted.slice(0, COLLAPSED_COUNT);
+  const collapseAt = Math.max(1, collapsedCount ?? DEFAULT_COLLAPSED_COUNT);
+  const visible = isExpanded ? sorted : sorted.slice(0, collapseAt);
   const hiddenCount = sorted.length - visible.length;
 
   if (isLoading && chain.length === 0) {
@@ -106,7 +112,7 @@ export default function AnimeRelationsSection({ anime }: AnimeRelationsSectionPr
             key={node.id}
             type="button"
             className={`anime-relations-tile ${node.isCurrent ? 'is-current' : ''}`}
-            onClick={() => navigate(`/anime/${node.id}`)}
+            onClick={() => (onSelect ? onSelect(node) : navigate(`/anime/${node.id}`))}
             aria-label={tileTitle(node)}
             aria-current={node.isCurrent ? 'true' : undefined}
           >
@@ -119,8 +125,9 @@ export default function AnimeRelationsSection({ anime }: AnimeRelationsSectionPr
               <div className="anime-relations-tile-meta mt-1 flex flex-wrap items-center gap-1">
                 {node.season && node.seasonYear ? (
                   <SeasonLinkBadge season={node.season} year={node.seasonYear} variant="compact" />
-                ) : null}
-                <span className="anime-relations-tile-year">{node.year ?? 'TBA'}</span>
+                ) : (
+                  <span className="anime-relations-tile-year">{node.year ?? 'TBA'}</span>
+                )}
               </div>
             </div>
           </button>
