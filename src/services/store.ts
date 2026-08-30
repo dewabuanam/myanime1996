@@ -37,6 +37,7 @@ type StoreShape = {
   autoSkipOpening: boolean;
   autoSkipEnding: boolean;
   autoSkipRecap: boolean;
+  relationsExpanded: boolean;
   runInBackgroundOnClose: boolean;
   runOnStartup: boolean;
   assumeEpisodeCountFromReleaseDate: boolean;
@@ -99,6 +100,7 @@ const PROFILE_SCOPED_KEYS: ReadonlySet<keyof StoreShape> = new Set<keyof StoreSh
   'autoSkipOpening',
   'autoSkipEnding',
   'autoSkipRecap',
+  'relationsExpanded',
   'runInBackgroundOnClose',
   'runOnStartup',
   'assumeEpisodeCountFromReleaseDate',

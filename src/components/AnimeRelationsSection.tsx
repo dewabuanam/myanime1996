@@ -8,6 +8,7 @@ import {
   type RelationChainNode,
   type RelationSort,
 } from '../services/animeRelations';
+import { useAppStore } from '../state/appStore';
 import type { AnimeDetail } from '../types/anime';
 
 type AnimeRelationsSectionProps = {
@@ -31,13 +32,15 @@ export default function AnimeRelationsSection({ anime, onSelect, collapsedCount 
   const navigate = useNavigate();
   const [chain, setChain] = useState<RelationChainNode[]>([]);
   const [isLoading, setLoading] = useState(false);
-  const [isExpanded, setExpanded] = useState(false);
   const [sort, setSort] = useState<RelationSort>('chronology');
+  // Expansion is a stored preference rather than local state, so it survives moving
+  // between titles and restarts, and the page and panel stay in step.
+  const isExpanded = useAppStore((state) => state.relationsExpanded);
+  const setRelationsExpanded = useAppStore((state) => state.setRelationsExpanded);
 
   useEffect(() => {
     let alive = true;
     setChain([]);
-    setExpanded(false);
 
     // Nothing to walk if the catalogue reports no prequel or sequel for this title.
     const hasChainLink = (anime.relations ?? []).some((group) => {
@@ -138,7 +141,7 @@ export default function AnimeRelationsSection({ anime, onSelect, collapsedCount 
         <button
           type="button"
           className="anime-relations-toggle mt-2 inline-flex items-center gap-1.5"
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => void setRelationsExpanded(!isExpanded)}
         >
           <ChevronDown size={13} className={isExpanded ? 'rotate-180 transition-transform' : 'transition-transform'} />
           {isExpanded ? 'Show less' : `Show ${hiddenCount} more`}

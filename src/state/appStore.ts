@@ -391,6 +391,7 @@ interface AppState {
   autoSkipOpening: boolean;
   autoSkipEnding: boolean;
   autoSkipRecap: boolean;
+  relationsExpanded: boolean;
   runInBackgroundOnClose: boolean;
   runOnStartup: boolean;
   allowNsfw: boolean;
@@ -488,6 +489,7 @@ interface AppState {
   setRunOnStartup: (enabled: boolean) => Promise<void>;
   setAllowNsfw: (enabled: boolean) => Promise<void>;
   setUpcomingSeasonFilter: (filter: UpcomingSeasonFilter) => Promise<void>;
+  setRelationsExpanded: (expanded: boolean) => Promise<void>;
   setAppTheme: (theme: AppTheme) => Promise<void>;
   setAnimeSkipButtonSegment: (segment: AnimeSkipButtonSegment | null) => void;
   setBaseCatalogSource: (source: BaseCatalogSource) => Promise<void>;
@@ -1845,6 +1847,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   autoSkipOpening: false,
   autoSkipEnding: false,
   autoSkipRecap: false,
+  relationsExpanded: false,
   runInBackgroundOnClose: true,
   runOnStartup: true,
   allowNsfw: false,
@@ -1890,6 +1893,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         rawAutoSkipOpening,
         rawAutoSkipEnding,
         rawAutoSkipRecap,
+        rawRelationsExpanded,
         rawRunInBackgroundOnClose,
         rawRunOnStartup,
         rawAllowNsfw,
@@ -1942,6 +1946,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('autoSkipOpening', false),
         getStoredValue('autoSkipEnding', false),
         getStoredValue('autoSkipRecap', false),
+        getStoredValue('relationsExpanded', false),
         getStoredValue('runInBackgroundOnClose', true),
         getStoredValue('runOnStartup', true),
         getStoredValue('allowNsfw', false),
@@ -1999,6 +2004,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         scopedRawAutoSkipOpening,
         scopedRawAutoSkipEnding,
         scopedRawAutoSkipRecap,
+        scopedRawRelationsExpanded,
         scopedRawRunInBackgroundOnClose,
         scopedRawRunOnStartup,
         scopedRawAllowNsfw,
@@ -2047,6 +2053,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         getStoredValue('autoSkipOpening', rawAutoSkipOpening),
         getStoredValue('autoSkipEnding', rawAutoSkipEnding),
         getStoredValue('autoSkipRecap', rawAutoSkipRecap),
+        getStoredValue('relationsExpanded', rawRelationsExpanded),
         getStoredValue('runInBackgroundOnClose', rawRunInBackgroundOnClose),
         getStoredValue('runOnStartup', rawRunOnStartup),
         getStoredValue('allowNsfw', rawAllowNsfw),
@@ -2322,6 +2329,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipOpening: Boolean(scopedRawAutoSkipOpening),
         autoSkipEnding: Boolean(scopedRawAutoSkipEnding),
         autoSkipRecap: Boolean(scopedRawAutoSkipRecap),
+        relationsExpanded: Boolean(scopedRawRelationsExpanded),
         runInBackgroundOnClose,
         runOnStartup,
         allowNsfw,
@@ -2415,6 +2423,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoSkipOpening: false,
         autoSkipEnding: false,
         autoSkipRecap: false,
+        relationsExpanded: false,
         runInBackgroundOnClose: true,
         runOnStartup: true,
         allowNsfw: false,
@@ -3982,6 +3991,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = normalizeUpcomingSeasonFilter(filter);
     await setStoredValue('upcomingSeasonFilter', next);
     set({ upcomingSeasonFilter: next, homeRefreshVersion: get().homeRefreshVersion + 1 });
+  },
+
+  setRelationsExpanded: async (expanded) => {
+    const next = Boolean(expanded);
+    await setStoredValue('relationsExpanded', next);
+    set({ relationsExpanded: next });
   },
 
   setAppTheme: async (theme) => {
