@@ -229,3 +229,70 @@ export interface SearchProducerCacheEntry {
   favorites?: number;
   count?: number;
 }
+
+/** One entry from an /pictures endpoint. Anime, character, and person all share it. */
+export interface MediaPicture {
+  imageUrl: string;
+  largeImageUrl?: string;
+  smallImageUrl?: string;
+}
+
+export interface VoiceActorRef {
+  personId: number;
+  name: string;
+  image?: string;
+  language: string;
+}
+
+export interface AnimeCharacterEntry {
+  characterId: number;
+  name: string;
+  image?: string;
+  role?: string;
+  favorites?: number;
+  voiceActors: VoiceActorRef[];
+}
+
+export interface AnimeStaffEntry {
+  personId: number;
+  name: string;
+  image?: string;
+  positions: string[];
+}
+
+export interface CharacterDetail {
+  id: number;
+  name: string;
+  nameKanji?: string;
+  nicknames: string[];
+  favorites?: number;
+  about?: string;
+  image?: string;
+  /** Who voices this character, one entry per dub language. */
+  voiceActors: VoiceActorRef[];
+}
+
+/** One role a person voiced, as listed on their own page. */
+export interface VoiceActingRole {
+  role?: string;
+  animeId: number;
+  animeTitle: string;
+  animeImage?: string;
+  characterId: number;
+  characterName: string;
+  characterImage?: string;
+}
+
+export interface PersonDetail {
+  id: number;
+  name: string;
+  givenName?: string;
+  familyName?: string;
+  alternateNames: string[];
+  birthday?: string;
+  favorites?: number;
+  about?: string;
+  image?: string;
+  websiteUrl?: string;
+  voiceActingRoles: VoiceActingRole[];
+}

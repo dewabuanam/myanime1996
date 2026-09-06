@@ -5387,20 +5387,20 @@ button {
 
 .anime-relations-grid {
   display: grid;
-  /* The right panel is ~220px wide, where a 108px minimum collapsed to one column and
-     blew the poster up to 275px tall. A smaller track plus a cap on the tile keeps
-     these small in the panel and stops them stretching on the wide detail page. */
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 0.5rem;
+  /* The right panel is ~220px wide, where a wide minimum collapsed to one column and
+     blew the poster up. A small track plus a cap on the tile keeps these compact in the
+     panel and stops them stretching on the wide detail page. */
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 0.3rem;
 }
 
 .anime-relations-tile {
   display: block;
   width: 100%;
-  max-width: 140px;
+  max-width: 70px;
   text-align: left;
   cursor: pointer;
-  padding: 0.3rem;
+  padding: 0.15rem;
   border: 1px solid rgba(245, 234, 210, 0.12);
   border-radius: 0;
   background: rgba(255, 255, 255, 0.02);
@@ -5422,11 +5422,230 @@ button {
   overflow: hidden;
 }
 
+.anime-relations-tile .anime-card-title {
+  font-size: 0.52rem;
+  letter-spacing: 0.02em;
+}
+
+.anime-relations-tile .anime-card-jp {
+  font-size: 0.42rem;
+  letter-spacing: 0.04em;
+}
+
+.anime-relations-tile .season-link-badge {
+  gap: 0.16rem;
+  padding: 0.04rem 0.2rem;
+  font-size: 0.4rem;
+  letter-spacing: 0.04em;
+}
+
+.anime-relations-tile-meta {
+  gap: 0.15rem;
+}
+
 .anime-relations-tile-year {
   font-family: 'Share Tech Mono', monospace;
-  font-size: 0.6rem;
+  font-size: 0.42rem;
   letter-spacing: 0.08em;
   color: rgba(245, 234, 210, 0.55);
+}
+
+/* Collapsible detail sections: pictures, characters and staff. */
+.anime-detail-section-head {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.anime-detail-section-toggle {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: rgba(236, 183, 104, 0.8);
+}
+
+.anime-detail-section-head:hover .anime-detail-section-toggle {
+  color: rgba(236, 183, 104, 1);
+}
+
+.anime-pictures-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 0.35rem;
+}
+
+.anime-pictures-tile {
+  display: block;
+  width: 100%;
+  padding: 0;
+  cursor: zoom-in;
+  border: 1px solid rgba(245, 234, 210, 0.12);
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.28);
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  transition: border-color 140ms ease;
+}
+
+.anime-pictures-tile:hover {
+  border-color: rgba(236, 183, 104, 0.55);
+}
+
+.anime-pictures-tile-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.anime-cast-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 0.4rem;
+}
+
+.anime-cast-tile {
+  display: block;
+  width: 100%;
+  max-width: 140px;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.3rem;
+  border: 1px solid rgba(245, 234, 210, 0.12);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.02);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.anime-cast-tile:hover {
+  border-color: rgba(236, 183, 104, 0.45);
+  background: rgba(236, 183, 104, 0.06);
+}
+
+.anime-cast-tile-portrait {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.anime-cast-tile-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Stands in for entries MAL has no artwork for. */
+.anime-cast-tile-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.2rem;
+  color: rgba(245, 234, 210, 0.32);
+}
+
+.anime-cast-tile-copy {
+  margin-top: 0.3rem;
+}
+
+.anime-cast-tile-name {
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(245, 234, 210, 0.93);
+}
+
+.anime-cast-tile-meta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(236, 183, 104, 0.78);
+}
+
+.anime-cast-tile-sub {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.52rem;
+  letter-spacing: 0.05em;
+  color: rgba(245, 234, 210, 0.55);
+}
+
+/* A voiced role pairs the character with the anime it is from, each side clickable. */
+.voice-role-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 0.4rem;
+}
+
+.voice-role-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.4rem;
+  align-items: stretch;
+  border: 1px solid rgba(245, 234, 210, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.3rem;
+}
+
+.voice-role-side {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.2rem;
+  text-align: left;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.voice-role-side:hover {
+  border-color: rgba(236, 183, 104, 0.42);
+  background: rgba(236, 183, 104, 0.06);
+}
+
+.voice-role-side-anime {
+  justify-content: flex-end;
+}
+
+.voice-role-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 38px;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.voice-role-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.voice-role-name {
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: rgba(245, 234, 210, 0.93);
+}
+
+.voice-role-meta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.54rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: rgba(236, 183, 104, 0.75);
 }
 
 .anime-relations-sort-btn {

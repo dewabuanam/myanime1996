@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AppShell from './components/AppShell';
 import AnimeDetail from './pages/AnimeDetail';
+import CharacterDetail from './pages/CharacterDetail';
+import PersonDetail from './pages/PersonDetail';
 import History from './pages/History';
 import Home from './pages/Home';
 import Library from './pages/Library';
@@ -121,6 +123,8 @@ export default function App() {
         <Route path="/home" element={<Home />} />
         <Route path="/library" element={<Library />} />
         <Route path="/anime/:id" element={<AnimeDetail />} />
+        <Route path="/character/:id" element={<CharacterDetail />} />
+        <Route path="/person/:id" element={<PersonDetail />} />
         <Route path="/history" element={<History />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/search" element={<Search />} />

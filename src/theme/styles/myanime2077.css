@@ -733,6 +733,24 @@
   text-shadow: 0 0 8px rgba(63, 240, 255, 0.28);
 }
 
+:root[data-theme='myanime2077'] .anime-cast-tile-name,
+:root[data-theme='myanime2077'] .voice-role-name {
+  font-family: var(--theme-font-display);
+}
+
+:root[data-theme='myanime2077'] .anime-cast-tile-meta,
+:root[data-theme='myanime2077'] .anime-cast-tile-sub,
+:root[data-theme='myanime2077'] .voice-role-meta,
+:root[data-theme='myanime2077'] .anime-detail-section-toggle {
+  font-family: var(--theme-font-ui);
+}
+
+:root[data-theme='myanime2077'] .anime-cast-tile:hover,
+:root[data-theme='myanime2077'] .voice-role-side:hover,
+:root[data-theme='myanime2077'] .anime-pictures-tile:hover {
+  border-color: rgba(84, 243, 255, 0.66);
+}
+
 :root[data-theme='myanime2077'] .anime-hover-btn,
 :root[data-theme='myanime2077'] .anime-hover-trailer-play-btn,
 :root[data-theme='myanime2077'] .anime-hover-mute-btn {

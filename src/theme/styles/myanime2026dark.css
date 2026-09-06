@@ -1911,6 +1911,73 @@
   color: rgba(232, 237, 245, 0.55);
 }
 
+:root[data-theme='myanime2026dark'] .anime-detail-section-toggle {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(59, 130, 246, 0.8);
+}
+
+:root[data-theme='myanime2026dark'] .anime-detail-section-head:hover .anime-detail-section-toggle {
+  color: rgb(59, 130, 246);
+}
+
+:root[data-theme='myanime2026dark'] .anime-pictures-tile {
+  border: 1px solid rgba(232, 237, 245, 0.12);
+  border-radius: 10px;
+  background: rgba(232, 237, 245, 0.03);
+}
+
+:root[data-theme='myanime2026dark'] .anime-pictures-tile:hover {
+  border-color: rgba(59, 130, 246, 0.55);
+}
+
+:root[data-theme='myanime2026dark'] .anime-cast-tile {
+  border: 1px solid rgba(232, 237, 245, 0.12);
+  border-radius: 10px;
+  background: rgba(232, 237, 245, 0.02);
+}
+
+:root[data-theme='myanime2026dark'] .anime-cast-tile:hover {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+:root[data-theme='myanime2026dark'] .anime-cast-tile-name,
+:root[data-theme='myanime2026dark'] .voice-role-name {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(232, 237, 245, 0.93);
+}
+
+:root[data-theme='myanime2026dark'] .anime-cast-tile-meta,
+:root[data-theme='myanime2026dark'] .voice-role-meta {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(59, 130, 246, 0.78);
+}
+
+:root[data-theme='myanime2026dark'] .anime-cast-tile-sub {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(232, 237, 245, 0.55);
+}
+
+:root[data-theme='myanime2026dark'] .anime-cast-tile-fallback {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: rgba(232, 237, 245, 0.32);
+}
+
+:root[data-theme='myanime2026dark'] .voice-role-row {
+  border: 1px solid rgba(232, 237, 245, 0.1);
+  border-radius: 10px;
+  background: rgba(232, 237, 245, 0.02);
+}
+
+:root[data-theme='myanime2026dark'] .voice-role-side {
+  border-radius: 8px;
+}
+
+:root[data-theme='myanime2026dark'] .voice-role-side:hover {
+  border-color: rgba(59, 130, 246, 0.42);
+  background: rgba(59, 130, 246, 0.06);
+}
+
 :root[data-theme='myanime2026dark'] .anime-relations-sort-btn {
   border: 1px solid rgba(232, 237, 245, 0.15);
   border-radius: 10px;

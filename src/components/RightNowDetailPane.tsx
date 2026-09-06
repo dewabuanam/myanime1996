@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { CalendarDays, ChevronDown, Clock3, FolderPlus, List, ListPlus, Minus, Play, Plus, RotateCcw, X } from 'lucide-react';
-import { createPortal } from 'react-dom';
+import { useEffect, useRef, useState } from 'react';
+import { CalendarDays, ChevronDown, Clock3, FolderPlus, List, ListPlus, Play, RotateCcw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { AnimeDetail, AnimeEpisode, AnimeEpisodePagination, PlayableItem, TitleLanguage } from '../types/anime';
 import { useAppStore } from '../state/appStore';
@@ -11,6 +10,9 @@ import { parseReleaseTimestamp } from '../utils/releaseTime';
 import { getSeasonLabelUpper, resolveAnimeSeason } from '../utils/season';
 import SeasonLinkBadge from './SeasonLinkBadge';
 import AnimeRelationsSection from './AnimeRelationsSection';
+import AnimePicturesSection from './AnimePicturesSection';
+import AnimeCastSection from './AnimeCastSection';
+import ImageLightbox from './ImageLightbox';
 
 type DetailEpisodeIcon = {
   pluginId: string;
@@ -18,8 +20,6 @@ type DetailEpisodeIcon = {
   pluginName: string;
 };
 
-const MIN_POSTER_ZOOM = 1;
-const MAX_POSTER_ZOOM = 4;
 const RIGHT_PANEL_MIN_WIDTH_PX = 260;
 const RIGHT_PANEL_MAX_WIDTH_PX = 560;
 const COMPACT_DETAIL_PANE_RANGE_RATIO = 0.5;
@@ -75,10 +75,8 @@ export default function RightNowDetailPane({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
   const [isCompactPane, setIsCompactPane] = useState(false);
-  const [isPosterModalOpen, setIsPosterModalOpen] = useState(false);
-  const [posterZoom, setPosterZoom] = useState(1);
-  const [posterPan, setPosterPan] = useState({ x: 0, y: 0 });
-  const [isPosterDragging, setIsPosterDragging] = useState(false);
+  // Poster and pictures share one preview; whichever image was clicked lives here.
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; label: string; positionLabel?: string } | null>(null);
   const seasonMeta = detailAnimeView ? resolveAnimeSeason(detailAnimeView) : null;
   const scoreLabel = detailAnimeView?.score?.toFixed(1) ?? 'N/A';
   const membersLabel = detailAnimeView?.members ? detailAnimeView.members.toLocaleString('en-US') : 'N/A';
@@ -179,67 +177,15 @@ export default function RightNowDetailPane({
   }, []);
 
   useEffect(() => {
-    if (!isPosterModalOpen) return;
+    if (!lightboxImage) return;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsPosterModalOpen(false);
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', onKeyDown);
     };
-  }, [isPosterModalOpen]);
-
-  const adjustPosterZoom = (delta: number) => {
-    setPosterZoom((current) => {
-      const next = Math.min(MAX_POSTER_ZOOM, Math.max(MIN_POSTER_ZOOM, Number((current + delta).toFixed(2))));
-      if (next <= MIN_POSTER_ZOOM) {
-        setPosterPan({ x: 0, y: 0 });
-      }
-      return next;
-    });
-  };
-
-  const openPosterModal = () => {
-    setPosterZoom(1);
-    setPosterPan({ x: 0, y: 0 });
-    setIsPosterDragging(false);
-    setIsPosterModalOpen(true);
-  };
-
-  const handlePosterDragStart = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (posterZoom <= MIN_POSTER_ZOOM) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const startPan = { ...posterPan };
-    setIsPosterDragging(true);
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      setPosterPan({
-        x: startPan.x + (moveEvent.clientX - startX),
-        y: startPan.y + (moveEvent.clientY - startY),
-      });
-    };
-
-    const onMouseUp = () => {
-      setIsPosterDragging(false);
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  };
+  }, [lightboxImage]);
 
   if (isDetailLoading && !detailAnimeView) {
     return (
@@ -301,7 +247,7 @@ export default function RightNowDetailPane({
             <button
               type="button"
               className="absolute inset-0 z-[1] cursor-zoom-in"
-              onClick={openPosterModal}
+              onClick={() => setLightboxImage({ src: detailAnimeView.image, label: `${detailAnimeView.title} poster` })}
               aria-label="Open poster in fullscreen"
             >
               <img src={detailAnimeView.image} alt={`${detailAnimeView.title} poster`} className="anime-card-poster" />
@@ -460,6 +406,14 @@ export default function RightNowDetailPane({
             });
           }}
         />
+
+        <AnimePicturesSection
+          animeId={detailAnimeView.id}
+          animeTitle={detailAnimeView.title}
+          onOpenImage={setLightboxImage}
+        />
+
+        <AnimeCastSection animeId={detailAnimeView.id} collapsedCount={isCompactPane ? 4 : 8} />
 
         {!isCompactPane ? (
           <div className="mt-2 space-y-2 border-t border-cream/10 pt-2 pb-2">
@@ -699,89 +653,14 @@ export default function RightNowDetailPane({
         )}
       </div>
 
-      {isPosterModalOpen
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[220] bg-black/62 backdrop-blur-md"
-              role="dialog"
-              aria-modal="true"
-              aria-label="Poster fullscreen preview"
-              onClick={() => setIsPosterModalOpen(false)}
-            >
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.08)_0%,rgba(0,0,0,0.42)_72%,rgba(0,0,0,0.62)_100%)]" />
-              <div className="absolute right-3 top-3 z-[2] flex items-center gap-1.5">
-                <button
-                  type="button"
-                  className="vhs-button-ghost p-2"
-                  aria-label="Zoom out"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    adjustPosterZoom(-0.2);
-                  }}
-                >
-                  <Minus size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="vhs-button-ghost p-2"
-                  aria-label="Reset zoom"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setPosterZoom(1);
-                    setPosterPan({ x: 0, y: 0 });
-                  }}
-                >
-                  <RotateCcw size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="vhs-button-ghost p-2"
-                  aria-label="Zoom in"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    adjustPosterZoom(0.2);
-                  }}
-                >
-                  <Plus size={14} />
-                </button>
-                <button
-                  type="button"
-                  className="vhs-button-ghost p-2"
-                  aria-label="Close poster preview"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setIsPosterModalOpen(false);
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
-              <div
-                className={`flex h-full w-full items-center justify-center p-5 ${posterZoom > MIN_POSTER_ZOOM ? (isPosterDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'}`}
-                onClick={(event) => event.stopPropagation()}
-                onMouseDown={handlePosterDragStart}
-                onWheel={(event) => {
-                  event.preventDefault();
-                  adjustPosterZoom(event.deltaY < 0 ? 0.15 : -0.15);
-                }}
-              >
-                <img
-                  src={detailAnimeView.image}
-                  alt={`${detailAnimeView.title} poster fullscreen`}
-                  draggable={false}
-                  className="max-h-[92vh] max-w-[92vw] border border-amberline/45 object-contain shadow-[0_16px_42px_rgba(0,0,0,0.6)]"
-                  style={{ transform: `translate(${posterPan.x}px, ${posterPan.y}px) scale(${posterZoom})`, transformOrigin: 'center center' }}
-                />
-              </div>
-
-              <p className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 border border-amberline/35 bg-black/60 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-cream/84">
-                Zoom {Math.round(posterZoom * 100)}% · Mouse wheel, buttons, drag to pan
-              </p>
-            </div>,
-            document.body,
-          )
-        : null}
+      {lightboxImage ? (
+        <ImageLightbox
+          src={lightboxImage.src}
+          label={lightboxImage.label}
+          positionLabel={lightboxImage.positionLabel}
+          onClose={() => setLightboxImage(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,17 @@
-import type { AnimeDetail, AnimeEpisode, AnimeRelationGroup, AnimeSummary, CachedPayload } from '../types/anime';
+import type {
+  AnimeCharacterEntry,
+  AnimeDetail,
+  AnimeEpisode,
+  AnimeRelationGroup,
+  AnimeStaffEntry,
+  AnimeSummary,
+  CachedPayload,
+  CharacterDetail,
+  MediaPicture,
+  PersonDetail,
+  VoiceActingRole,
+  VoiceActorRef,
+} from '../types/anime';
 import { getStoredValue, setStoredValue } from './store';
 import { getCurrentSeasonYear, inferSeasonFromDate, normalizeSeasonKey, type SeasonKey } from '../utils/season';
 
@@ -1380,4 +1393,257 @@ export async function refreshHomeShelvesIfNeeded(limit = 20, callbacks: HomeRefr
       [HOME_BACKGROUND_REFRESH_KEY]: now,
     });
   });
+}
+
+// --- Pictures, characters, staff, and the people behind them -----------------
+// These back the collapsible sections in the detail pane and the character and
+// person pages they link to. All of them are static once published, so they cache
+// for a day rather than the hour a running anime's detail entry gets.
+
+const MEDIA_METADATA_TTL = 24 * HOUR;
+
+type RawImageSet = {
+  jpg?: { image_url?: string; small_image_url?: string; large_image_url?: string };
+  webp?: { image_url?: string; small_image_url?: string; large_image_url?: string };
+};
+
+type RawNamedEntity = {
+  mal_id?: number;
+  name?: string;
+  title?: string;
+  images?: RawImageSet;
+};
+
+// webp first: MAL serves both, and the webp variants are markedly smaller.
+function pickImage(images: RawImageSet | undefined, size: 'small' | 'default' | 'large' = 'default') {
+  if (!images) return undefined;
+  const key = size === 'small' ? 'small_image_url' : size === 'large' ? 'large_image_url' : 'image_url';
+  const candidate = images.webp?.[key] || images.jpg?.[key] || images.webp?.image_url || images.jpg?.image_url;
+  const trimmed = candidate?.trim();
+  // MAL stands in a question-mark placeholder for entries with no artwork; an empty
+  // slot reads better than a broken-looking graphic.
+  if (!trimmed || trimmed.includes('questionmark')) return undefined;
+  return trimmed;
+}
+
+function normalizePictures(json: unknown): MediaPicture[] {
+  const data = (json as { data?: RawImageSet[] })?.data ?? [];
+  const seen = new Set<string>();
+  const pictures: MediaPicture[] = [];
+
+  for (const entry of data) {
+    const imageUrl = pickImage(entry);
+    if (!imageUrl || seen.has(imageUrl)) continue;
+    seen.add(imageUrl);
+    pictures.push({
+      imageUrl,
+      largeImageUrl: pickImage(entry, 'large'),
+      smallImageUrl: pickImage(entry, 'small'),
+    });
+  }
+
+  return pictures;
+}
+
+function normalizeVoiceActor(entry: { person?: RawNamedEntity; language?: string }): VoiceActorRef | null {
+  const personId = Math.floor(Number(entry.person?.mal_id) || 0);
+  const name = entry.person?.name?.trim();
+  if (personId <= 0 || !name) return null;
+  return {
+    personId,
+    name,
+    image: pickImage(entry.person?.images),
+    language: entry.language?.trim() || 'Unknown',
+  };
+}
+
+export function getAnimePictures(id: string | number) {
+  return cachedFetch(`/anime/${id}/pictures`, MEDIA_METADATA_TTL, normalizePictures, {
+    cacheContext: `anime-pictures:${id}`,
+  }).catch(() => [] as MediaPicture[]);
+}
+
+export function getAnimeCharacters(id: string | number) {
+  return cachedFetch(
+    `/anime/${id}/characters`,
+    MEDIA_METADATA_TTL,
+    (json) => {
+      type RawEntry = {
+        character?: RawNamedEntity;
+        role?: string;
+        favorites?: number;
+        voice_actors?: Array<{ person?: RawNamedEntity; language?: string }>;
+      };
+      const data = (json as { data?: RawEntry[] })?.data ?? [];
+
+      return data
+        .map((entry): AnimeCharacterEntry | null => {
+          const characterId = Math.floor(Number(entry.character?.mal_id) || 0);
+          const name = entry.character?.name?.trim();
+          if (characterId <= 0 || !name) return null;
+
+          return {
+            characterId,
+            name,
+            image: pickImage(entry.character?.images),
+            role: entry.role?.trim() || undefined,
+            favorites: Number.isFinite(entry.favorites) ? Number(entry.favorites) : undefined,
+            voiceActors: (entry.voice_actors ?? [])
+              .map(normalizeVoiceActor)
+              .filter((actor): actor is VoiceActorRef => Boolean(actor)),
+          };
+        })
+        .filter((entry): entry is AnimeCharacterEntry => Boolean(entry))
+        // Main cast first, then by how many people favourited them, so the collapsed
+        // view opens on the characters a viewer is most likely looking for.
+        .sort((a, b) => {
+          const aMain = a.role?.toLowerCase() === 'main' ? 0 : 1;
+          const bMain = b.role?.toLowerCase() === 'main' ? 0 : 1;
+          if (aMain !== bMain) return aMain - bMain;
+          return (b.favorites ?? 0) - (a.favorites ?? 0);
+        });
+    },
+    { cacheContext: `anime-characters:${id}` },
+  ).catch(() => [] as AnimeCharacterEntry[]);
+}
+
+export function getAnimeStaff(id: string | number) {
+  return cachedFetch(
+    `/anime/${id}/staff`,
+    MEDIA_METADATA_TTL,
+    (json) => {
+      type RawEntry = { person?: RawNamedEntity; positions?: string[] };
+      const data = (json as { data?: RawEntry[] })?.data ?? [];
+
+      return data
+        .map((entry): AnimeStaffEntry | null => {
+          const personId = Math.floor(Number(entry.person?.mal_id) || 0);
+          const name = entry.person?.name?.trim();
+          if (personId <= 0 || !name) return null;
+
+          return {
+            personId,
+            name,
+            image: pickImage(entry.person?.images),
+            positions: (entry.positions ?? []).map((position) => position.trim()).filter(Boolean),
+          };
+        })
+        .filter((entry): entry is AnimeStaffEntry => Boolean(entry));
+    },
+    { cacheContext: `anime-staff:${id}` },
+  ).catch(() => [] as AnimeStaffEntry[]);
+}
+
+export function getCharacterPictures(id: string | number) {
+  return cachedFetch(`/characters/${id}/pictures`, MEDIA_METADATA_TTL, normalizePictures, {
+    cacheContext: `character-pictures:${id}`,
+  }).catch(() => [] as MediaPicture[]);
+}
+
+export function getPersonPictures(id: string | number) {
+  return cachedFetch(`/people/${id}/pictures`, MEDIA_METADATA_TTL, normalizePictures, {
+    cacheContext: `person-pictures:${id}`,
+  }).catch(() => [] as MediaPicture[]);
+}
+
+export function getCharacterDetail(id: string | number): Promise<CharacterDetail | null> {
+  return cachedFetch(
+    `/characters/${id}/full`,
+    MEDIA_METADATA_TTL,
+    (json) => {
+      const data = (json as {
+        data?: RawNamedEntity & {
+          name_kanji?: string;
+          nicknames?: string[];
+          favorites?: number;
+          about?: string;
+          voices?: Array<{ person?: RawNamedEntity; language?: string }>;
+        };
+      })?.data;
+
+      const characterId = Math.floor(Number(data?.mal_id) || 0);
+      const name = data?.name?.trim();
+      if (!data || characterId <= 0 || !name) return null;
+
+      const detail: CharacterDetail = {
+        id: characterId,
+        name,
+        nameKanji: data.name_kanji?.trim() || undefined,
+        nicknames: (data.nicknames ?? []).map((entry) => entry.trim()).filter(Boolean),
+        favorites: Number.isFinite(data.favorites) ? Number(data.favorites) : undefined,
+        about: data.about?.trim() || undefined,
+        image: pickImage(data.images, 'large') ?? pickImage(data.images),
+        voiceActors: (data.voices ?? [])
+          .map(normalizeVoiceActor)
+          .filter((actor): actor is VoiceActorRef => Boolean(actor)),
+      };
+      return detail;
+    },
+    { cacheContext: `character-detail:${id}` },
+  ).catch(() => null);
+}
+
+export function getPersonDetail(id: string | number): Promise<PersonDetail | null> {
+  return cachedFetch(
+    `/people/${id}/full`,
+    MEDIA_METADATA_TTL,
+    (json) => {
+      const data = (json as {
+        data?: RawNamedEntity & {
+          given_name?: string;
+          family_name?: string;
+          alternate_names?: string[];
+          birthday?: string;
+          favorites?: number;
+          about?: string;
+          website_url?: string;
+          voices?: Array<{ role?: string; anime?: RawNamedEntity; character?: RawNamedEntity }>;
+        };
+      })?.data;
+
+      const personId = Math.floor(Number(data?.mal_id) || 0);
+      const name = data?.name?.trim();
+      if (!data || personId <= 0 || !name) return null;
+
+      const detail: PersonDetail = {
+        id: personId,
+        name,
+        givenName: data.given_name?.trim() || undefined,
+        familyName: data.family_name?.trim() || undefined,
+        alternateNames: (data.alternate_names ?? []).map((entry) => entry.trim()).filter(Boolean),
+        birthday: data.birthday?.trim() || undefined,
+        favorites: Number.isFinite(data.favorites) ? Number(data.favorites) : undefined,
+        about: data.about?.trim() || undefined,
+        image: pickImage(data.images, 'large') ?? pickImage(data.images),
+        websiteUrl: data.website_url?.trim() || undefined,
+        voiceActingRoles: (data.voices ?? [])
+          .map((entry): VoiceActingRole | null => {
+            const animeId = Math.floor(Number(entry.anime?.mal_id) || 0);
+            const characterId = Math.floor(Number(entry.character?.mal_id) || 0);
+            const animeTitle = entry.anime?.title?.trim() || entry.anime?.name?.trim();
+            const characterName = entry.character?.name?.trim();
+            if (animeId <= 0 || characterId <= 0 || !animeTitle || !characterName) return null;
+
+            return {
+              role: entry.role?.trim() || undefined,
+              animeId,
+              animeTitle,
+              animeImage: pickImage(entry.anime?.images),
+              characterId,
+              characterName,
+              characterImage: pickImage(entry.character?.images),
+            };
+          })
+          .filter((entry): entry is VoiceActingRole => Boolean(entry))
+          // Main roles first; a prolific actor's list runs into the hundreds.
+          .sort((a, b) => {
+            const aMain = a.role?.toLowerCase() === 'main' ? 0 : 1;
+            const bMain = b.role?.toLowerCase() === 'main' ? 0 : 1;
+            return aMain - bMain;
+          }),
+      };
+      return detail;
+    },
+    { cacheContext: `person-detail:${id}` },
+  ).catch(() => null);
 }
