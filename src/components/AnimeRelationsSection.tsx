@@ -10,6 +10,7 @@ import {
 } from '../services/animeRelations';
 import { useAppStore } from '../state/appStore';
 import type { AnimeDetail } from '../types/anime';
+import { getDisplayTitle } from '../utils/title';
 
 type AnimeRelationsSectionProps = {
   anime: AnimeDetail;
@@ -24,10 +25,6 @@ type AnimeRelationsSectionProps = {
 
 const DEFAULT_COLLAPSED_COUNT = 6;
 
-function tileTitle(node: RelationChainNode) {
-  return node.titleEnglish?.trim() || node.title;
-}
-
 export default function AnimeRelationsSection({ anime, onSelect, collapsedCount }: AnimeRelationsSectionProps) {
   const navigate = useNavigate();
   const [chain, setChain] = useState<RelationChainNode[]>([]);
@@ -36,6 +33,8 @@ export default function AnimeRelationsSection({ anime, onSelect, collapsedCount 
   // Expansion is a stored preference rather than local state, so it survives moving
   // between titles and restarts, and the page and panel stay in step.
   const isExpanded = useAppStore((state) => state.relationsExpanded);
+  // Tiles follow the same romaji/english preference as every other card in the app.
+  const titleLanguage = useAppStore((state) => state.titleLanguage);
   const setRelationsExpanded = useAppStore((state) => state.setRelationsExpanded);
 
   useEffect(() => {
@@ -110,31 +109,34 @@ export default function AnimeRelationsSection({ anime, onSelect, collapsedCount 
       </div>
 
       <div className="anime-relations-grid">
-        {visible.map((node) => (
-          <button
-            key={node.id}
-            type="button"
-            className={`anime-relations-tile ${node.isCurrent ? 'is-current' : ''}`}
-            onClick={() => (onSelect ? onSelect(node) : navigate(`/anime/${node.id}`))}
-            aria-label={tileTitle(node)}
-            aria-current={node.isCurrent ? 'true' : undefined}
-          >
-            <div className="anime-card-poster-wrap anime-relations-tile-poster">
-              <img src={node.image} alt="" className="anime-card-poster" loading="lazy" />
-            </div>
-            <div className="anime-card-copy anime-relations-tile-copy mt-1.5">
-              <p className="anime-card-title line-clamp-2">{tileTitle(node)}</p>
-              <p className="anime-card-jp line-clamp-1">{node.titleJapanese || '　'}</p>
-              <div className="anime-relations-tile-meta mt-1 flex flex-wrap items-center gap-1">
-                {node.season && node.seasonYear ? (
-                  <SeasonLinkBadge season={node.season} year={node.seasonYear} variant="compact" />
-                ) : (
-                  <span className="anime-relations-tile-year">{node.year ?? 'TBA'}</span>
-                )}
+        {visible.map((node) => {
+          const tileTitle = getDisplayTitle(node, titleLanguage);
+          return (
+            <button
+              key={node.id}
+              type="button"
+              className={`anime-relations-tile ${node.isCurrent ? 'is-current' : ''}`}
+              onClick={() => (onSelect ? onSelect(node) : navigate(`/anime/${node.id}`))}
+              aria-label={tileTitle}
+              aria-current={node.isCurrent ? 'true' : undefined}
+            >
+              <div className="anime-card-poster-wrap anime-relations-tile-poster">
+                <img src={node.image} alt="" className="anime-card-poster" loading="lazy" />
               </div>
-            </div>
-          </button>
-        ))}
+              <div className="anime-card-copy anime-relations-tile-copy mt-1.5">
+                <p className="anime-card-title line-clamp-2">{tileTitle}</p>
+                <p className="anime-card-jp line-clamp-1">{node.titleJapanese || '　'}</p>
+                <div className="anime-relations-tile-meta mt-1 flex flex-wrap items-center gap-1">
+                  {node.season && node.seasonYear ? (
+                    <SeasonLinkBadge season={node.season} year={node.seasonYear} variant="compact" />
+                  ) : (
+                    <span className="anime-relations-tile-year">{node.year ?? 'TBA'}</span>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {hiddenCount > 0 || isExpanded ? (
