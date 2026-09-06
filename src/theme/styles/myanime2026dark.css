@@ -2376,3 +2376,12 @@
 :root[data-theme='myanime2026dark'] .rounded-full {
   border-radius: 9999px;
 }
+
+/* Artwork runs through a sepia/hue-rotate wash in the retro base sheet so posters look
+   like faded VHS covers. The modern themes show cover art as the publisher shipped it. */
+:root[data-theme='myanime2026dark'] .anime-card-poster,
+:root[data-theme='myanime2026dark'] .anime-hover-preview-poster,
+:root[data-theme='myanime2026dark'] .seeall-row-poster,
+:root[data-theme='myanime2026dark'] .hero-retro-image {
+  filter: none;
+}

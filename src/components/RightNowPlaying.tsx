@@ -111,6 +111,7 @@ export default function RightNowPlaying() {
   const subtitleFontSizeFullscreen = useAppStore((state) => state.subtitleFontSizeFullscreen);
   const subtitleDropShadow = useAppStore((state) => state.subtitleDropShadow);
   const subtitleBackgroundHighlight = useAppStore((state) => state.subtitleBackgroundHighlight);
+  const appTheme = useAppStore((state) => state.appTheme);
   const autoSkipOpening = useAppStore((state) => state.autoSkipOpening);
   const autoSkipEnding = useAppStore((state) => state.autoSkipEnding);
   const autoSkipRecap = useAppStore((state) => state.autoSkipRecap);
@@ -191,6 +192,9 @@ export default function RightNowPlaying() {
   const isResolvingTrailerSignal =
     currentlyPlayingItem?.kind === 'trailer' && !hasTrailerPlayback && !hasTrailerFindingSignalTimedOut;
   const isNonTrailerPlayback = Boolean(currentlyPlayingItem && currentlyPlayingItem.kind !== 'trailer');
+  // The retro theme frames source resolution as tuning a broadcast; the modern themes have no
+  // CRT to tune, so they name what is actually being looked for.
+  const findingSurfaceLabel = appTheme === 'myanime1996' ? 'Finding Signal' : 'Finding Server';
   const isNowPlayingView = rightPanelView === 'now-playing';
   const isDetailView = rightPanelView === 'detail';
   const isPlaylistView = rightPanelView === 'playlist';
@@ -1670,7 +1674,7 @@ export default function RightNowPlaying() {
               <div className="right-now-no-signal">
                 <div className="right-now-no-signal-crt right-now-finding-signal-crt" aria-hidden="true" />
                 <div className="right-now-no-signal-badge">
-                  <p className="right-now-no-signal-title">Finding Signal</p>
+                  <p className="right-now-no-signal-title">{findingSurfaceLabel}</p>
                   <p className="right-now-no-signal-subtitle">
                     {isResolvingTrailerSignal
                       ? 'Scanning Tenrai trailer signal for a playable stream.'
