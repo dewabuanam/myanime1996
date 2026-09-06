@@ -182,6 +182,12 @@ export interface LibraryAnimeItem {
    * title in their own library.
    */
   airingStatus?: string;
+  /**
+   * Which round of catalogue metadata this item was last filled in from. Bumping
+   * LIBRARY_ITEM_METADATA_VERSION re-runs the backfill once over the whole library,
+   * which is how items saved with stale fields get corrected in place.
+   */
+  metadataVersion?: number;
   addedAt: string;
   updatedAt: string;
 }

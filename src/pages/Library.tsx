@@ -78,7 +78,7 @@ export default function Library() {
   const addAnimeToPlaylist = useAppStore((state) => state.addAnimeToPlaylist);
   const addVideoToPlaylist = useAppStore((state) => state.addVideoToPlaylist);
   const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
-  const hydrateLibraryAiringStatus = useAppStore((state) => state.hydrateLibraryAiringStatus);
+  const hydrateLibraryMetadata = useAppStore((state) => state.hydrateLibraryMetadata);
   const hydrated = useAppStore((state) => state.hydrated);
   const [editingItem, setEditingItem] = useState<LibraryAnimeItem | null>(null);
   const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
@@ -140,12 +140,12 @@ export default function Library() {
   const isActiveStatusNotificationEnabled = Boolean(libraryStatusNotificationSettings[activeTab]);
   const activeStatusTooltip = `${formatStatus(activeTab)} alerts are ${isActiveStatusNotificationEnabled ? 'enabled' : 'disabled'}`;
 
-  // Titles added before airing status was recorded fill theirs in on the first visit.
-  // Waits for hydration, since the library is empty until the store has read it back.
+  // Items stored by an older metadata round are re-read from the catalogue on the first
+  // visit. Waits for hydration, since the library is empty until the store reads it back.
   useEffect(() => {
     if (!hydrated) return;
-    void hydrateLibraryAiringStatus();
-  }, [hydrated, hydrateLibraryAiringStatus, libraryItems]);
+    void hydrateLibraryMetadata();
+  }, [hydrated, hydrateLibraryMetadata, libraryItems]);
 
   useEffect(() => {
     return () => {

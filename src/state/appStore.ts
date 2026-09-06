@@ -195,10 +195,13 @@ const BACKEND_LIBRARY_TICK_EVENT = 'backend:library-check-tick';
 let libraryEpisodePollTimer: ReturnType<typeof setInterval> | null = null;
 let libraryEpisodeCheckInFlight = false;
 let libraryEpisodeCheckPromise: Promise<void> | null = null;
-// Backfilling airing status walks the whole library one request at a time; this keeps a
+// Backfilling library metadata walks the library a few requests at a time; this keeps a
 // second Library visit from starting the same walk again while the first is running.
-let libraryAiringStatusHydrationInFlight = false;
-const LIBRARY_AIRING_STATUS_HYDRATION_CONCURRENCY = 3;
+let libraryMetadataHydrationInFlight = false;
+const LIBRARY_METADATA_HYDRATION_CONCURRENCY = 3;
+// Bump to re-run the backfill over every stored item. 1: airing status. 2: release year,
+// which timetable rows had been reporting from the listed episode's air date.
+const LIBRARY_ITEM_METADATA_VERSION = 2;
 let libraryNotificationActionListenerBound = false;
 let backendSchedulerEventListenerBound = false;
 let lastBackendHomeRefreshAt = 0;
@@ -473,7 +476,7 @@ interface AppState {
   pushActionToast: (toast: Omit<InAppActionToast, 'id'>) => void;
   dismissActionToast: (toastId: string) => void;
   runLibraryEpisodeDailyCheck: (force?: boolean) => Promise<void>;
-  hydrateLibraryAiringStatus: () => Promise<void>;
+  hydrateLibraryMetadata: () => Promise<void>;
   setPlaying: (playing: boolean) => void;
   setPlaybackTime: (seconds: number) => void;
   setPlaybackDuration: (seconds: number) => void;
@@ -1206,6 +1209,7 @@ function normalizeLibraryItems(value: unknown): Record<number, LibraryAnimeItem>
       currentEpisode: Number.isFinite(item.currentEpisode) ? Number(item.currentEpisode) : undefined,
       status: item.status,
       airingStatus: typeof item.airingStatus === 'string' && item.airingStatus.trim().length > 0 ? item.airingStatus : undefined,
+      metadataVersion: Number.isFinite(item.metadataVersion) ? Number(item.metadataVersion) : undefined,
       addedAt: typeof item.addedAt === 'string' ? item.addedAt : new Date().toISOString(),
       updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString(),
     };
@@ -1247,6 +1251,7 @@ function buildLibraryItemFromAnime(anime: AnimeSummary, status: LibraryStatus, e
     // Falls back to what the item already carried so a summary without the field
     // cannot blank out an airing status resolved earlier.
     airingStatus: anime.status?.trim() || existing?.airingStatus,
+    metadataVersion: LIBRARY_ITEM_METADATA_VERSION,
     addedAt: existing?.addedAt ?? now,
     updatedAt: now,
   };
@@ -3670,19 +3675,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((current) => ({ actionToasts: current.actionToasts.filter((entry) => entry.id !== toastId) }));
   },
 
-  hydrateLibraryAiringStatus: async () => {
-    if (libraryAiringStatusHydrationInFlight) return;
+  hydrateLibraryMetadata: async () => {
+    if (libraryMetadataHydrationInFlight) return;
 
-    const pending = Object.values(get().libraryItems).filter((item) => !item.airingStatus?.trim());
+    const pending = Object.values(get().libraryItems).filter(
+      (item) => (item.metadataVersion ?? 0) < LIBRARY_ITEM_METADATA_VERSION,
+    );
     if (pending.length === 0) return;
 
-    libraryAiringStatusHydrationInFlight = true;
+    libraryMetadataHydrationInFlight = true;
     try {
-      // Items saved before airing status was stored have to be filled in from the
-      // catalogue. A few at a time keeps a large library from tripping the rate
-      // limiter, and each result is persisted so this only ever runs once per title.
+      // Items stored by an older round carry fields the catalogue has since reported
+      // differently, so each one is re-read from its detail entry. A few at a time keeps
+      // a large library from tripping the rate limiter, and the stamped version means a
+      // title is only ever walked once per round.
       let cursor = 0;
-      const resolved = new Map<number, string>();
+      const resolved = new Map<number, Pick<LibraryAnimeItem, 'airingStatus' | 'year'>>();
 
       const worker = async () => {
         while (cursor < pending.length) {
@@ -3693,13 +3701,17 @@ export const useAppStore = create<AppState>((set, get) => ({
           if (detailId <= 0) continue;
 
           const detail = await getAnimeDetails(detailId).catch(() => null);
-          const airingStatus = detail?.status?.trim();
-          if (airingStatus) resolved.set(item.animeId, airingStatus);
+          if (!detail) continue;
+
+          resolved.set(item.animeId, {
+            airingStatus: detail.status?.trim() || item.airingStatus,
+            year: detail.year ?? item.year,
+          });
         }
       };
 
       await Promise.all(
-        Array.from({ length: Math.min(LIBRARY_AIRING_STATUS_HYDRATION_CONCURRENCY, pending.length) }, () => worker()),
+        Array.from({ length: Math.min(LIBRARY_METADATA_HYDRATION_CONCURRENCY, pending.length) }, () => worker()),
       );
 
       if (resolved.size === 0) return;
@@ -3708,10 +3720,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       // that the user may have added or dropped titles while it ran.
       const libraryItems = { ...get().libraryItems };
       let changed = false;
-      for (const [animeId, airingStatus] of resolved) {
+      for (const [animeId, patch] of resolved) {
         const item = libraryItems[animeId];
-        if (!item || item.airingStatus?.trim()) continue;
-        libraryItems[animeId] = { ...item, airingStatus };
+        if (!item) continue;
+        libraryItems[animeId] = {
+          ...item,
+          airingStatus: patch.airingStatus ?? item.airingStatus,
+          year: patch.year ?? item.year,
+          metadataVersion: LIBRARY_ITEM_METADATA_VERSION,
+        };
         changed = true;
       }
       if (!changed) return;
@@ -3719,7 +3736,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await setStoredValue('libraryItems', libraryItems);
       set({ libraryItems });
     } finally {
-      libraryAiringStatusHydrationInFlight = false;
+      libraryMetadataHydrationInFlight = false;
     }
   },
 
@@ -3769,14 +3786,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         Math.floor(Number(episodeBundle.detail.currentEpisode) || 0),
       );
 
-      // Airing status is refreshed even when no episode number came back, so a title
-      // that has since finished (or has not started) stops showing a stale badge.
+      // Airing status and release year are refreshed even when no episode number came
+      // back, so a title that has since finished (or has not started) stops showing a
+      // stale badge, and a year stored from a timetable row gets corrected.
       const refreshedAiringStatus = episodeBundle.detail.status?.trim() || item.airingStatus;
+      const refreshedYear = episodeBundle.detail.year ?? item.year;
       if (latestEpisode <= 0) {
-        if (refreshedAiringStatus !== item.airingStatus) {
+        if (refreshedAiringStatus !== item.airingStatus || refreshedYear !== item.year) {
           libraryItems[item.animeId] = {
             ...item,
             airingStatus: refreshedAiringStatus,
+            year: refreshedYear,
             updatedAt: new Date().toISOString(),
           };
         }
@@ -3787,6 +3807,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...item,
         currentEpisode: latestEpisode,
         airingStatus: refreshedAiringStatus,
+        year: refreshedYear,
         updatedAt: new Date().toISOString(),
       };
 

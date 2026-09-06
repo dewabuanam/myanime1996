@@ -538,15 +538,34 @@ function toAnimeSummary(raw: unknown, options: AnimeScheduleNormalizeOptions = {
   // comparisons are timezone-independent regardless of host runtime.
   const normalizedStartDateText = startDateText ? normalizeTimestampToUtc(startDateText) : undefined;
   const startDate = normalizedStartDateText ? new Date(normalizedStartDateText) : null;
-  const year =
-    getNumber(record, ['year']) ??
-    (startDate && Number.isFinite(startDate.getUTCFullYear()) ? startDate.getUTCFullYear() : undefined) ??
-    parseYearFromText(getString(toRecord(record.season), ['title']));
   const seasonTitle = getString(toRecord(record.season), ['title']);
+
+  // `episodeDate` above is the airing date of this row's episode, which for a running
+  // show sits years after the premiere. Release year has to come from the series start
+  // date or the season the title is filed under, or a 2016 show reads as this year.
+  const premiereDateText =
+    getString(media, ['startDate']) ||
+    getString(record, ['premier', 'subPremier', 'dubPremier', 'startDate']);
+  const premiereDate = premiereDateText ? new Date(normalizeTimestampToUtc(premiereDateText)) : null;
+  const premiereYear = premiereDate && Number.isFinite(premiereDate.getUTCFullYear())
+    ? premiereDate.getUTCFullYear()
+    : undefined;
+
+  // The premiere date wins over the record's own `year`, which on a timetable row
+  // describes the season the listed episode airs in rather than the season the show
+  // premiered in. Both agree for catalogue rows, so preferring it costs nothing there.
+  const year =
+    premiereYear ??
+    getNumber(record, ['year']) ??
+    parseYearFromText(seasonTitle) ??
+    // Last resort only: better a year off by a season than no year at all.
+    (startDate && Number.isFinite(startDate.getUTCFullYear()) ? startDate.getUTCFullYear() : undefined);
   const season =
     parseSeasonFromText(seasonTitle) ??
     normalizeSeasonKey(getString(record, ['season'])) ??
     normalizeSeasonKey(getString(media, ['season'])) ??
+    // Same reasoning as the year above: infer from the premiere, not this row's episode.
+    inferSeasonFromDate(premiereDateText)?.season ??
     inferSeasonFromDate(normalizedStartDateText)?.season;
 
   const mediaType = getString(media, ['format', 'type']) || getString(toRecord((record.mediaTypes as unknown[] | undefined)?.[0]), ['name']);
