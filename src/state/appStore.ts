@@ -28,7 +28,7 @@ import {
   probeAnimeScheduleApiHealth,
   type AnimeScheduleApiHealthEvent,
 } from '../services/animeSchedule';
-import { clearTenraiDataCache, onTenraiApiHealth, probeTenraiApiHealth, type TenraiApiHealthEvent } from '../services/tenrai';
+import { clearTenraiDataCache, getAnimeDetails, onTenraiApiHealth, probeTenraiApiHealth, type TenraiApiHealthEvent } from '../services/tenrai';
 import {
   getStoredValue,
   migrateLegacyStoreDataToProfile,
@@ -195,6 +195,10 @@ const BACKEND_LIBRARY_TICK_EVENT = 'backend:library-check-tick';
 let libraryEpisodePollTimer: ReturnType<typeof setInterval> | null = null;
 let libraryEpisodeCheckInFlight = false;
 let libraryEpisodeCheckPromise: Promise<void> | null = null;
+// Backfilling airing status walks the whole library one request at a time; this keeps a
+// second Library visit from starting the same walk again while the first is running.
+let libraryAiringStatusHydrationInFlight = false;
+const LIBRARY_AIRING_STATUS_HYDRATION_CONCURRENCY = 3;
 let libraryNotificationActionListenerBound = false;
 let backendSchedulerEventListenerBound = false;
 let lastBackendHomeRefreshAt = 0;
@@ -469,6 +473,7 @@ interface AppState {
   pushActionToast: (toast: Omit<InAppActionToast, 'id'>) => void;
   dismissActionToast: (toastId: string) => void;
   runLibraryEpisodeDailyCheck: (force?: boolean) => Promise<void>;
+  hydrateLibraryAiringStatus: () => Promise<void>;
   setPlaying: (playing: boolean) => void;
   setPlaybackTime: (seconds: number) => void;
   setPlaybackDuration: (seconds: number) => void;
@@ -1200,6 +1205,7 @@ function normalizeLibraryItems(value: unknown): Record<number, LibraryAnimeItem>
       episodes: Number.isFinite(item.episodes) ? Number(item.episodes) : undefined,
       currentEpisode: Number.isFinite(item.currentEpisode) ? Number(item.currentEpisode) : undefined,
       status: item.status,
+      airingStatus: typeof item.airingStatus === 'string' && item.airingStatus.trim().length > 0 ? item.airingStatus : undefined,
       addedAt: typeof item.addedAt === 'string' ? item.addedAt : new Date().toISOString(),
       updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString(),
     };
@@ -1238,6 +1244,9 @@ function buildLibraryItemFromAnime(anime: AnimeSummary, status: LibraryStatus, e
     episodes: anime.episodes,
     currentEpisode: anime.currentEpisode,
     status,
+    // Falls back to what the item already carried so a summary without the field
+    // cannot blank out an airing status resolved earlier.
+    airingStatus: anime.status?.trim() || existing?.airingStatus,
     addedAt: existing?.addedAt ?? now,
     updatedAt: now,
   };
@@ -3661,6 +3670,59 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((current) => ({ actionToasts: current.actionToasts.filter((entry) => entry.id !== toastId) }));
   },
 
+  hydrateLibraryAiringStatus: async () => {
+    if (libraryAiringStatusHydrationInFlight) return;
+
+    const pending = Object.values(get().libraryItems).filter((item) => !item.airingStatus?.trim());
+    if (pending.length === 0) return;
+
+    libraryAiringStatusHydrationInFlight = true;
+    try {
+      // Items saved before airing status was stored have to be filled in from the
+      // catalogue. A few at a time keeps a large library from tripping the rate
+      // limiter, and each result is persisted so this only ever runs once per title.
+      let cursor = 0;
+      const resolved = new Map<number, string>();
+
+      const worker = async () => {
+        while (cursor < pending.length) {
+          const item = pending[cursor];
+          cursor += 1;
+
+          const detailId = item.tenraiId && item.tenraiId > 0 ? Math.floor(item.tenraiId) : item.animeId;
+          if (detailId <= 0) continue;
+
+          const detail = await getAnimeDetails(detailId).catch(() => null);
+          const airingStatus = detail?.status?.trim();
+          if (airingStatus) resolved.set(item.animeId, airingStatus);
+        }
+      };
+
+      await Promise.all(
+        Array.from({ length: Math.min(LIBRARY_AIRING_STATUS_HYDRATION_CONCURRENCY, pending.length) }, () => worker()),
+      );
+
+      if (resolved.size === 0) return;
+
+      // Re-read rather than patching the snapshot taken above: the walk is slow enough
+      // that the user may have added or dropped titles while it ran.
+      const libraryItems = { ...get().libraryItems };
+      let changed = false;
+      for (const [animeId, airingStatus] of resolved) {
+        const item = libraryItems[animeId];
+        if (!item || item.airingStatus?.trim()) continue;
+        libraryItems[animeId] = { ...item, airingStatus };
+        changed = true;
+      }
+      if (!changed) return;
+
+      await setStoredValue('libraryItems', libraryItems);
+      set({ libraryItems });
+    } finally {
+      libraryAiringStatusHydrationInFlight = false;
+    }
+  },
+
   runLibraryEpisodeDailyCheck: async (_force = false) => {
     if (libraryEpisodeCheckInFlight) {
       await (libraryEpisodeCheckPromise ?? Promise.resolve());
@@ -3706,11 +3768,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         0,
         Math.floor(Number(episodeBundle.detail.currentEpisode) || 0),
       );
-      if (latestEpisode <= 0) continue;
+
+      // Airing status is refreshed even when no episode number came back, so a title
+      // that has since finished (or has not started) stops showing a stale badge.
+      const refreshedAiringStatus = episodeBundle.detail.status?.trim() || item.airingStatus;
+      if (latestEpisode <= 0) {
+        if (refreshedAiringStatus !== item.airingStatus) {
+          libraryItems[item.animeId] = {
+            ...item,
+            airingStatus: refreshedAiringStatus,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        continue;
+      }
 
       libraryItems[item.animeId] = {
         ...item,
         currentEpisode: latestEpisode,
+        airingStatus: refreshedAiringStatus,
         updatedAt: new Date().toISOString(),
       };
 

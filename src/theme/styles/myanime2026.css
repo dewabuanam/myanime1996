@@ -1557,6 +1557,32 @@
   color: rgba(29, 78, 216, 0.75);
 }
 
+:root[data-theme='myanime2026'] .library-airing-badge {
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.08);
+  color: rgba(16, 24, 40, 0.82);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+:root[data-theme='myanime2026'] .library-airing-badge-airing {
+  border-color: rgba(37, 99, 235, 0.45);
+  background: rgba(37, 99, 235, 0.12);
+  color: rgba(37, 99, 235, 0.95);
+}
+
+:root[data-theme='myanime2026'] .library-airing-badge-completed {
+  border-color: rgba(100, 116, 139, 0.34);
+  background: rgba(100, 116, 139, 0.1);
+  color: rgba(100, 116, 139, 0.95);
+}
+
+:root[data-theme='myanime2026'] .library-airing-badge-upcoming {
+  border-color: rgba(190, 74, 47, 0.4);
+  background: rgba(190, 74, 47, 0.12);
+  color: rgba(190, 74, 47, 0.95);
+}
+
 :root[data-theme='myanime2026'] .anime-card-video-badge {
   border: 1px solid rgba(37, 99, 235, 0.34);
   border-radius: 8px;

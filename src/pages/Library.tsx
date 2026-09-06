@@ -7,6 +7,7 @@ import PlaylistPickerModal from '../components/PlaylistPickerModal';
 import { resolveCanonicalDetailRouteId } from '../services/catalogSource';
 import { useAppStore } from '../state/appStore';
 import type { LibraryAnimeItem, LibraryStatus } from '../types/anime';
+import { resolveAiringStatusBadge } from '../utils/airingStatus';
 
 const LIBRARY_STATUS_ORDER: LibraryStatus[] = ['watching', 'plan-to-watch', 'on-hold', 'dropped', 'completed'];
 
@@ -77,6 +78,8 @@ export default function Library() {
   const addAnimeToPlaylist = useAppStore((state) => state.addAnimeToPlaylist);
   const addVideoToPlaylist = useAppStore((state) => state.addVideoToPlaylist);
   const createPlaylistImmediate = useAppStore((state) => state.createPlaylistImmediate);
+  const hydrateLibraryAiringStatus = useAppStore((state) => state.hydrateLibraryAiringStatus);
+  const hydrated = useAppStore((state) => state.hydrated);
   const [editingItem, setEditingItem] = useState<LibraryAnimeItem | null>(null);
   const [libraryPickerAnchorElement, setLibraryPickerAnchorElement] = useState<HTMLElement | null>(null);
   const [playlistPickerItem, setPlaylistPickerItem] = useState<LibraryAnimeItem | null>(null);
@@ -136,6 +139,13 @@ export default function Library() {
   const visibleItems = groupedByStatus[activeTab];
   const isActiveStatusNotificationEnabled = Boolean(libraryStatusNotificationSettings[activeTab]);
   const activeStatusTooltip = `${formatStatus(activeTab)} alerts are ${isActiveStatusNotificationEnabled ? 'enabled' : 'disabled'}`;
+
+  // Titles added before airing status was recorded fill theirs in on the first visit.
+  // Waits for hydration, since the library is empty until the store has read it back.
+  useEffect(() => {
+    if (!hydrated) return;
+    void hydrateLibraryAiringStatus();
+  }, [hydrated, hydrateLibraryAiringStatus, libraryItems]);
 
   useEffect(() => {
     return () => {
@@ -353,6 +363,7 @@ export default function Library() {
               const unreadCount = unreadAnimeIds.reduce((total, animeId) => total + (unreadNotificationCountByAnimeId.get(animeId) ?? 0), 0);
               const resumePlan = getResumePlan(item);
               const episodeProgressLabel = getEpisodeProgressLabel(item);
+              const airingBadge = resolveAiringStatusBadge(item.airingStatus);
               const isResumeAction = Boolean(resumePlan);
               const playLabel = isResumeAction ? 'Resume' : 'Play Now';
               const canPlayAnime = canPlayLibraryItem(item, isResumeAction);
@@ -381,6 +392,14 @@ export default function Library() {
                     <p className="anime-card-title anime-card-title-slot line-clamp-2">{getLibraryDisplayTitle(item, preferEnglish)}</p>
                     <p className="anime-card-jp anime-card-jp-slot line-clamp-1">{item.titleJapanese || '\u3000'}</p>
                     <p className="anime-card-jp">{item.mediaType ?? 'anime'} • {item.year ?? 'tba'}</p>
+                    {airingBadge ? (
+                      <span
+                        className={`library-airing-badge library-airing-badge-${airingBadge.tone} retro-tooltip mt-1 inline-flex items-center`}
+                        data-tooltip={`Airing status: ${airingBadge.label}`}
+                      >
+                        {airingBadge.label}
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">

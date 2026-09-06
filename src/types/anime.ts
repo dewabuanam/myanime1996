@@ -176,6 +176,12 @@ export interface LibraryAnimeItem {
   episodes?: number;
   currentEpisode?: number;
   status: LibraryStatus;
+  /**
+   * Airing status as the catalogue reports it ("Finished Airing", "Currently Airing",
+   * "Not yet aired"). Kept separate from `status`, which is where the user filed the
+   * title in their own library.
+   */
+  airingStatus?: string;
   addedAt: string;
   updatedAt: string;
 }

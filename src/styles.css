@@ -4575,6 +4575,37 @@ button {
   padding-bottom: 0.25rem;
 }
 
+.library-airing-badge {
+  border: 1px solid rgba(245, 234, 210, 0.28);
+  border-radius: 0.2rem;
+  background: rgba(245, 234, 210, 0.07);
+  color: rgba(245, 234, 210, 0.82);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.54rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.08rem 0.32rem;
+}
+
+/* Airing reads as live, so it carries the same amber the app uses for active state. */
+.library-airing-badge-airing {
+  border-color: rgba(var(--color-amberline), 0.45);
+  background: rgba(var(--color-amberline), 0.12);
+  color: rgba(var(--color-amberline), 0.95);
+}
+
+.library-airing-badge-completed {
+  border-color: rgba(var(--color-cream), 0.24);
+  background: rgba(var(--color-cream), 0.06);
+  color: rgba(var(--color-cream), 0.62);
+}
+
+.library-airing-badge-upcoming {
+  border-color: rgba(var(--color-rust), 0.5);
+  background: rgba(var(--color-rust), 0.14);
+  color: rgba(238, 158, 143, 0.95);
+}
+
 .library-row-card,
 .history-item,
 .notifications-item,
