@@ -385,7 +385,6 @@ export default function RightNowDetailPane({
 
         <AnimeRelationsSection
           anime={detailAnimeView}
-          collapsedCount={4}
           onSelect={(node) => {
             void selectAnime({
               id: node.id,
