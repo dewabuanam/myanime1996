@@ -20,18 +20,14 @@ $bundleRoot = Join-Path $repoRoot 'src-tauri/target/release/bundle'
 $nsisDir = Join-Path $bundleRoot 'nsis'
 $msiDir = Join-Path $bundleRoot 'msi'
 
-if (Test-Path $nsisDir) {
-  # MSI-only distribution: remove stale NSIS setup files for this version.
-  $nsisMatches = Get-ChildItem -Path $nsisDir -File -Filter "*$version*x64-setup.exe" -ErrorAction SilentlyContinue
-  foreach ($oldFile in $nsisMatches) {
-    Remove-Item -Path $oldFile.FullName -Force -ErrorAction SilentlyContinue
-    Write-Host "Removed stale NSIS installer: $($oldFile.Name)"
-  }
-}
-
+# Both installers ship: the MSI for managed installs, the NSIS setup .exe for the plain
+# double-click download.
 $filesToSign = @()
 if (Test-Path $msiDir) {
   $filesToSign += Get-ChildItem -Path $msiDir -File -Filter "*$version*x64*.msi" -ErrorAction SilentlyContinue
+}
+if (Test-Path $nsisDir) {
+  $filesToSign += Get-ChildItem -Path $nsisDir -File -Filter "*$version*x64-setup.exe" -ErrorAction SilentlyContinue
 }
 
 $filesToSign = $filesToSign | Sort-Object FullName -Unique
