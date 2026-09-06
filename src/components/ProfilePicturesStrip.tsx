@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import type { MediaPicture } from '../types/anime';
+import type { LightboxItem } from './ImageLightbox';
 
 // The character and person pages both show their subject's gallery. Unlike the detail
 // pane's section this one is already loaded by the time the page renders, so it only
@@ -11,10 +12,10 @@ type ProfilePicturesStripProps = {
   /** Names the subject when an image opens fullscreen. */
   subjectLabel: string;
   pictures: MediaPicture[];
-  onOpenImage: (image: { src: string; label: string; positionLabel: string }) => void;
+  onOpenImages: (items: LightboxItem[], index: number) => void;
 };
 
-export default function ProfilePicturesStrip({ title, subjectLabel, pictures, onOpenImage }: ProfilePicturesStripProps) {
+export default function ProfilePicturesStrip({ title, subjectLabel, pictures, onOpenImages }: ProfilePicturesStripProps) {
   const [isOpen, setOpen] = useState(true);
 
   if (pictures.length === 0) return null;
@@ -45,11 +46,13 @@ export default function ProfilePicturesStrip({ title, subjectLabel, pictures, on
               className="anime-pictures-tile"
               aria-label={`Open picture ${index + 1} of ${pictures.length} in fullscreen`}
               onClick={() =>
-                onOpenImage({
-                  src: picture.largeImageUrl || picture.imageUrl,
-                  label: `${subjectLabel} picture ${index + 1}`,
-                  positionLabel: `${index + 1} / ${pictures.length}`,
-                })
+                onOpenImages(
+                  pictures.map((entry, entryIndex) => ({
+                    src: entry.largeImageUrl || entry.imageUrl,
+                    label: `${subjectLabel} picture ${entryIndex + 1}`,
+                  })),
+                  index,
+                )
               }
             >
               <img src={picture.smallImageUrl || picture.imageUrl} alt="" className="anime-pictures-tile-image" loading="lazy" />

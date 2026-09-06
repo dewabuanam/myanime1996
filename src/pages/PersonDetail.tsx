@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CalendarDays, Heart } from 'lucide-react';
-import ImageLightbox from '../components/ImageLightbox';
+import ImageLightbox, { type LightboxItem } from '../components/ImageLightbox';
 import ProfilePicturesStrip from '../components/ProfilePicturesStrip';
 import { getPersonDetail, getPersonPictures } from '../services/tenrai';
 import { useAppStore } from '../state/appStore';
 import type { MediaPicture, PersonDetail as PersonDetailData } from '../types/anime';
 
-type LightboxImage = { src: string; label: string; positionLabel?: string };
+type LightboxState = { items: LightboxItem[]; index: number };
 
 const ROLES_PAGE_SIZE = 24;
 
@@ -21,7 +21,7 @@ export default function PersonDetail() {
   const [person, setPerson] = useState<PersonDetailData | null>(null);
   const [pictures, setPictures] = useState<MediaPicture[]>([]);
   const [isLoading, setLoading] = useState(true);
-  const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
+  const [lightbox, setLightbox] = useState<LightboxState | null>(null);
   const [visibleRoles, setVisibleRoles] = useState(ROLES_PAGE_SIZE);
   const [roleQuery, setRoleQuery] = useState('');
 
@@ -102,7 +102,7 @@ export default function PersonDetail() {
               type="button"
               className="absolute inset-0 z-[1] cursor-zoom-in"
               aria-label="Open portrait in fullscreen"
-              onClick={() => setLightboxImage({ src: person.image as string, label: person.name })}
+              onClick={() => setLightbox({ items: [{ src: person.image as string, label: person.name }], index: 0 })}
             >
               <img src={person.image} alt="" className="h-full w-full object-cover" />
             </button>
@@ -139,7 +139,7 @@ export default function PersonDetail() {
         </div>
       </section>
 
-      <ProfilePicturesStrip title="Pictures" subjectLabel={person.name} pictures={pictures} onOpenImage={setLightboxImage} />
+      <ProfilePicturesStrip title="Pictures" subjectLabel={person.name} pictures={pictures} onOpenImages={(items, index) => setLightbox({ items, index })} />
 
       <section className="app-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -215,12 +215,12 @@ export default function PersonDetail() {
         )}
       </section>
 
-      {lightboxImage ? (
+      {lightbox ? (
         <ImageLightbox
-          src={lightboxImage.src}
-          label={lightboxImage.label}
-          positionLabel={lightboxImage.positionLabel}
-          onClose={() => setLightboxImage(null)}
+          items={lightbox.items}
+          index={lightbox.index}
+          onIndexChange={(index) => setLightbox((current) => (current ? { ...current, index } : current))}
+          onClose={() => setLightbox(null)}
         />
       ) : null}
     </div>

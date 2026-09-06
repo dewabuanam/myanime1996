@@ -733,6 +733,16 @@
   text-shadow: 0 0 8px rgba(63, 240, 255, 0.28);
 }
 
+:root[data-theme='myanime2077'] .image-lightbox-step {
+  border-radius: 0;
+  border-color: rgba(84, 243, 255, 0.66);
+  color: rgba(236, 254, 255, 0.98);
+}
+
+:root[data-theme='myanime2077'] .image-lightbox-step:hover {
+  background: linear-gradient(135deg, rgba(255, 48, 160, 0.9), rgba(35, 230, 255, 0.9));
+}
+
 :root[data-theme='myanime2077'] .anime-cast-tile-name,
 :root[data-theme='myanime2077'] .voice-role-name {
   font-family: var(--theme-font-display);

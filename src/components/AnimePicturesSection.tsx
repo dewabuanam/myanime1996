@@ -2,15 +2,19 @@ import { useEffect, useState } from 'react';
 import CollapsibleDetailSection from './CollapsibleDetailSection';
 import { getAnimePictures } from '../services/tenrai';
 import type { MediaPicture } from '../types/anime';
+import type { LightboxItem } from './ImageLightbox';
 
 type AnimePicturesSectionProps = {
   animeId: number;
   animeTitle: string;
-  /** Opens the shared preview, so a picture behaves exactly like the poster. */
-  onOpenImage: (image: { src: string; label: string; positionLabel: string }) => void;
+  /**
+   * Opens the shared preview on the whole set, so a picture behaves exactly like the
+   * poster and can be stepped through from wherever it was opened.
+   */
+  onOpenImages: (items: LightboxItem[], index: number) => void;
 };
 
-export default function AnimePicturesSection({ animeId, animeTitle, onOpenImage }: AnimePicturesSectionProps) {
+export default function AnimePicturesSection({ animeId, animeTitle, onOpenImages }: AnimePicturesSectionProps) {
   const [isOpen, setOpen] = useState(false);
   const [pictures, setPictures] = useState<MediaPicture[]>([]);
   const [isLoading, setLoading] = useState(false);
@@ -65,12 +69,14 @@ export default function AnimePicturesSection({ animeId, animeTitle, onOpenImage 
             className="anime-pictures-tile"
             aria-label={`Open picture ${index + 1} of ${pictures.length} in fullscreen`}
             onClick={() =>
-              onOpenImage({
+              onOpenImages(
                 // The grid shows the small variant; the preview deserves the big one.
-                src: picture.largeImageUrl || picture.imageUrl,
-                label: `${animeTitle} picture ${index + 1}`,
-                positionLabel: `${index + 1} / ${pictures.length}`,
-              })
+                pictures.map((entry, entryIndex) => ({
+                  src: entry.largeImageUrl || entry.imageUrl,
+                  label: `${animeTitle} picture ${entryIndex + 1}`,
+                })),
+                index,
+              )
             }
           >
             <img

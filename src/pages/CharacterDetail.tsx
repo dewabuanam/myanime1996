@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Heart } from 'lucide-react';
-import ImageLightbox from '../components/ImageLightbox';
+import ImageLightbox, { type LightboxItem } from '../components/ImageLightbox';
 import ProfilePicturesStrip from '../components/ProfilePicturesStrip';
 import { getCharacterDetail, getCharacterPictures } from '../services/tenrai';
 import type { CharacterDetail as CharacterDetailData, MediaPicture } from '../types/anime';
 
-type LightboxImage = { src: string; label: string; positionLabel?: string };
+type LightboxState = { items: LightboxItem[]; index: number };
 
 export default function CharacterDetail() {
   const { id } = useParams();
@@ -16,7 +16,7 @@ export default function CharacterDetail() {
   const [character, setCharacter] = useState<CharacterDetailData | null>(null);
   const [pictures, setPictures] = useState<MediaPicture[]>([]);
   const [isLoading, setLoading] = useState(true);
-  const [lightboxImage, setLightboxImage] = useState<LightboxImage | null>(null);
+  const [lightbox, setLightbox] = useState<LightboxState | null>(null);
 
   useEffect(() => {
     if (characterId <= 0) {
@@ -65,7 +65,7 @@ export default function CharacterDetail() {
               type="button"
               className="absolute inset-0 z-[1] cursor-zoom-in"
               aria-label="Open portrait in fullscreen"
-              onClick={() => setLightboxImage({ src: character.image as string, label: character.name })}
+              onClick={() => setLightbox({ items: [{ src: character.image as string, label: character.name }], index: 0 })}
             >
               <img src={character.image} alt="" className="h-full w-full object-cover" />
             </button>
@@ -104,7 +104,7 @@ export default function CharacterDetail() {
         title="Pictures"
         subjectLabel={character.name}
         pictures={pictures}
-        onOpenImage={setLightboxImage}
+        onOpenImages={(items, index) => setLightbox({ items, index })}
       />
 
       <section className="app-card p-5">
@@ -137,12 +137,12 @@ export default function CharacterDetail() {
         )}
       </section>
 
-      {lightboxImage ? (
+      {lightbox ? (
         <ImageLightbox
-          src={lightboxImage.src}
-          label={lightboxImage.label}
-          positionLabel={lightboxImage.positionLabel}
-          onClose={() => setLightboxImage(null)}
+          items={lightbox.items}
+          index={lightbox.index}
+          onIndexChange={(index) => setLightbox((current) => (current ? { ...current, index } : current))}
+          onClose={() => setLightbox(null)}
         />
       ) : null}
     </div>

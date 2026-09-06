@@ -1911,6 +1911,19 @@
   color: rgba(232, 237, 245, 0.55);
 }
 
+:root[data-theme='myanime2026dark'] .image-lightbox-step {
+  border: 1px solid rgba(59, 130, 246, 0.38);
+  border-radius: 10px;
+  background: rgba(232, 237, 245, 0.72);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme='myanime2026dark'] .image-lightbox-step:hover {
+  border-color: rgba(59, 130, 246, 0.75);
+  background: rgba(59, 130, 246, 0.82);
+  color: rgb(255, 255, 255);
+}
+
 :root[data-theme='myanime2026dark'] .anime-detail-section-toggle {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: rgba(59, 130, 246, 0.8);

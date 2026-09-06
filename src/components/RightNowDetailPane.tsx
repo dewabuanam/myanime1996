@@ -12,7 +12,7 @@ import SeasonLinkBadge from './SeasonLinkBadge';
 import AnimeRelationsSection from './AnimeRelationsSection';
 import AnimePicturesSection from './AnimePicturesSection';
 import AnimeCastSection from './AnimeCastSection';
-import ImageLightbox from './ImageLightbox';
+import ImageLightbox, { type LightboxItem } from './ImageLightbox';
 
 type DetailEpisodeIcon = {
   pluginId: string;
@@ -75,8 +75,9 @@ export default function RightNowDetailPane({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
   const [isCompactPane, setIsCompactPane] = useState(false);
-  // Poster and pictures share one preview; whichever image was clicked lives here.
-  const [lightboxImage, setLightboxImage] = useState<{ src: string; label: string; positionLabel?: string } | null>(null);
+  // Poster and pictures share one preview; whichever set was opened lives here, with
+  // the tile that was clicked as the starting point.
+  const [lightbox, setLightbox] = useState<{ items: LightboxItem[]; index: number } | null>(null);
   const seasonMeta = detailAnimeView ? resolveAnimeSeason(detailAnimeView) : null;
   const scoreLabel = detailAnimeView?.score?.toFixed(1) ?? 'N/A';
   const membersLabel = detailAnimeView?.members ? detailAnimeView.members.toLocaleString('en-US') : 'N/A';
@@ -177,7 +178,7 @@ export default function RightNowDetailPane({
   }, []);
 
   useEffect(() => {
-    if (!lightboxImage) return;
+    if (!lightbox) return;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -185,7 +186,7 @@ export default function RightNowDetailPane({
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [lightboxImage]);
+  }, [lightbox]);
 
   if (isDetailLoading && !detailAnimeView) {
     return (
@@ -247,7 +248,9 @@ export default function RightNowDetailPane({
             <button
               type="button"
               className="absolute inset-0 z-[1] cursor-zoom-in"
-              onClick={() => setLightboxImage({ src: detailAnimeView.image, label: `${detailAnimeView.title} poster` })}
+              onClick={() =>
+                setLightbox({ items: [{ src: detailAnimeView.image, label: `${detailAnimeView.title} poster` }], index: 0 })
+              }
               aria-label="Open poster in fullscreen"
             >
               <img src={detailAnimeView.image} alt={`${detailAnimeView.title} poster`} className="anime-card-poster" />
@@ -409,7 +412,7 @@ export default function RightNowDetailPane({
         <AnimePicturesSection
           animeId={detailAnimeView.id}
           animeTitle={detailAnimeView.title}
-          onOpenImage={setLightboxImage}
+          onOpenImages={(items, index) => setLightbox({ items, index })}
         />
 
         <AnimeCastSection animeId={detailAnimeView.id} collapsedCount={isCompactPane ? 4 : 8} />
@@ -652,12 +655,12 @@ export default function RightNowDetailPane({
         )}
       </div>
 
-      {lightboxImage ? (
+      {lightbox ? (
         <ImageLightbox
-          src={lightboxImage.src}
-          label={lightboxImage.label}
-          positionLabel={lightboxImage.positionLabel}
-          onClose={() => setLightboxImage(null)}
+          items={lightbox.items}
+          index={lightbox.index}
+          onIndexChange={(index) => setLightbox((current) => (current ? { ...current, index } : current))}
+          onClose={() => setLightbox(null)}
         />
       ) : null}
     </div>
